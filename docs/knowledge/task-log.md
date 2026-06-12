@@ -4,6 +4,32 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-12 — new-product-workflow
+- **Что:** Добавлена команда-оркестратор `/new-product` — создание продукта с нуля (greenfield).
+  Стадии `INTAKE → DISCOVER → PRD → PRD-GATE → PHASE-PLAN → PLAN-GATE → BUILD → SHIP → DONE` с
+  эволюционным build-loop (generate → tests → judge → refine) на каждую фазу продукта.
+  - Скилл `skills/new-product/` (SKILL.md, phases.md, **loop.md**, feedback-loop.md, state-schema.md,
+    dashboard-guide.md, knowledge-guide.md) — зеркало `/feature` + greenfield-стадии и спека цикла.
+  - Ростер `agents/np-*.md` с пиннингом модели во frontmatter: `np-thinker` (`model: fable`, tools
+    урезаны до Read/Write/Edit — структурно не читает сырьё), `np-researcher`/`np-coder`/`np-judge`
+    (`model: opus`). Реюз `wf-reviewer`/`wf-documenter`.
+  - Шаблоны `templates/artifacts/{prd,phase-plan,judge-verdict,iteration-scratchpad,research-digest}.md`.
+  - Инфраструктура (сервер/дашборд/телеметрия) не тронута: PRD/фазы → `planBlocks`/`workstreams`,
+    вердикты судьи → `reviews.json` (`kind:"judge"`); greenfield-дифф — через empty-tree `baseCommit`
+    `4b825dc6…`. README, `plugin.json` (0.7.0→0.8.0), `marketplace.json`, eval-фикстура
+    `evals/fixtures/greenfield-mini/`.
+- **Зачем:** второй сценарий плагина — создание продукта с нуля с самоулучшающимся циклом (судья +
+  тесты) при фиксированной маршрутизации моделей (fable — мыслитель на выжимках; opus —
+  исследование/реализация/судейство). «Исследователь кормит мыслителя» реализовано через оркестратора
+  (субагенты не спавнят субагентов).
+- **Гейт-решения:** гибридный гейт (тесты — стена, судья — руль), вердикт-объект вместо pass/fail,
+  заморозка PRD-производных тестов (анти-гейминг), Reflexion-scratchpad, 3 стоп-условия + эскалация,
+  гейт-политика V1 (два гейта).
+- **План:** `.workflow/tasks/new-product-workflow/plan.md`
+- **ADR:** `decisions/ADR-0006-np-agent-roster-model-pinning.md`,
+  `decisions/ADR-0007-evolutionary-build-loop.md`
+- **Область:** `areas/orchestrator-skills.md`
+
 ## 2026-06-10 — changed-files-tree-view
 - **Что:** Вкладка «Изменения» дашборда переписана: дерево файлов, только реально изменённые файлы,
   подсветка синтаксиса в diff.

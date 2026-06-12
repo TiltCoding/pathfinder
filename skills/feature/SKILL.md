@@ -8,7 +8,9 @@ description: >-
   exploration, a reviewed plan, and several coordinated changes. It autonomously explores the
   codebase with sub-agents, opens a live per-task HTML dashboard where the human comments on the
   plan, implements the approved plan with parallel coding sub-agents, and grows a durable project
-  knowledge base. Prefer this over ad-hoc coding for anything beyond a quick one-file edit.
+  knowledge base. Prefer this over ad-hoc coding for anything beyond a quick one-file edit. This is
+  for work on an EXISTING codebase; to create a brand-new product from scratch (greenfield, starting
+  from a PRD) use the new-product skill instead.
 ---
 
 # Feature Workflow (orchestrator)

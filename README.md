@@ -36,14 +36,66 @@ dashboard** and a single explicit approval gate (the plan).
 `INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → DONE` — resumable across sessions via
 `.workflow/tasks/<slug>/state.json`.
 
+## `/new-product` — greenfield, from scratch
+
+A second command, `/new-product`, drives a **brand-new product from a rough pitch** rather than a
+change to an existing codebase. Where `/feature` starts by exploring code that already exists,
+`/new-product` starts from nothing: it elicits requirements, writes a **PRD**, plans the build in
+vertical-slice phases, then materializes the product through an **evolutionary build-loop** — sharing
+the same companion server, dashboard, and telemetry as `/feature`.
+
+Its stages are:
+
+`INTAKE → DISCOVER → PRD → PRD-GATE → PHASE-PLAN → PLAN-GATE → BUILD → SHIP → DONE`
+
+— resumable via the same `.workflow/tasks/<slug>/state.json`. (A *stage* is a workflow step; a *phase*
+is a build slice inside BUILD.) On INTAKE the orchestrator bootstraps git for an empty repo (`git init`,
+empty-tree base commit) so the **«Изменения»** tab works from the very first commit.
+
+**How it differs from `/feature`:** `/feature` is for adding to or refactoring an **existing**
+codebase and gates once on the plan; `/new-product` is **greenfield** — it produces a PRD first, gates
+twice (PRD then phase-plan), and then runs an autonomous generate-and-judge loop to grow the product
+slice by slice.
+
+**Roles & models.** `/new-product` runs its own `np-*` sub-agent roster (model pinned per agent in
+frontmatter) and reuses the workflow's reviewer/documenter:
+
+| sub-agent       | model  | role                                                                |
+|-----------------|--------|---------------------------------------------------------------------|
+| `np-thinker`    | fable  | ideation, PRD, phase goals, judge rubrics & test specs — works **only** from curated digests |
+| `np-researcher` | opus   | gathers and **compresses** domain/stack facts into a research digest |
+| `np-coder`      | opus   | tests-first then implementation; commits only via the orchestrator   |
+| `np-judge`      | opus   | scores a slice against the PRD — one isolated call per rubric dimension |
+| `wf-reviewer`   | —      | reused: code-review / security-review on SHIP                        |
+| `wf-documenter` | —      | reused: grows the product's own `docs/knowledge/`                    |
+
+The thinker is deliberately kept on **fable** and fed only curated digests (never raw sources): all
+hand-offs go through the orchestrator, and sub-agents never spawn sub-agents.
+
+**The evolutionary build-loop (in brief).** Each BUILD phase runs a loop: `np-coder` first materializes
+**executable tests** from the thinker's spec (without seeing the implementation plan), and those tests
+are **frozen** (paths + hashes in state). Then each iteration: implement → run the frozen tests →
+if green, spawn three parallel `np-judge` calls (one per rubric dimension) → merge their verdicts. The
+gate is **hybrid** — the tests are a wall (red tests never close a phase, and the judge isn't even
+called), the judge is the steering wheel (3 dimensions × a 0–3 scale, `PASS_THRESHOLD = 80/100`, no
+dimension at 0). A `decision()` step the orchestrator computes **deterministically** (not an LLM) ends
+each iteration in one of: PASS, REFINE, or one of three **stop conditions** — budget exhausted (≤5
+iterations/phase), a score plateau, or oscillation — which park for a human choice.
+
+**Gate policy (V1).** Two human gates — **PRD-GATE** and **PLAN-GATE** — and then the build-loop is
+**autonomous**: phases advance without a per-phase gate, escalating to the human only when a stop
+condition fires. Both gates reuse the dashboard's existing **«Утвердить план»** signal; the
+orchestrator interprets it by the current stage (PRD approved vs. phase-plan approved).
+
 ## Layout
 
 ```
 .claude-plugin/   plugin.json, marketplace.json
 .mcp.json         bundled MCP servers (playwright, context7)
 hooks/hooks.json  telemetry hooks wiring
-skills/feature/   the orchestrator skill + reference files
-agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter
+skills/feature/   the /feature orchestrator skill + reference files
+skills/new-product/  the /new-product orchestrator skill + reference files
+agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, np-* (thinker, researcher, coder, judge)
 scripts/          server.py (feedback server) + telemetry_hook.py + _aipf.py (shared, stdlib)
 templates/        dashboard.html + Russian artifact & knowledge-base templates
 evals/            fixtures, scenarios, rubrics for measuring the workflow

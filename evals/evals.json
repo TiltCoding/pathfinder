@@ -1,6 +1,6 @@
 {
   "skill_name": "feature",
-  "notes": "Workflow-level evals. Each case runs /feature in headless mode (AIPF_EVAL=1) against a fixture project. The with-workflow run has the plugin enabled; the baseline is vanilla Claude on the same prompt. Grade with rubrics/ + the fixture's own test suite.",
+  "notes": "Workflow-level evals. Each case runs its skill (/feature or /new-product, per the prompt and the case's `skill` field) in headless mode (AIPF_EVAL=1) against a fixture project; case 3 is greenfield (/new-product). The with-workflow run has the plugin enabled; the baseline is vanilla Claude on the same prompt. Grade with rubrics/ + the fixture's own test suite.",
   "evals": [
     {
       "id": 1,
@@ -27,6 +27,23 @@
         { "name": "tests_green", "kind": "script", "text": "Тесты фикстуры зелёные." },
         { "name": "regression_test_added", "kind": "script", "text": "Добавлен тест на пустой список." },
         { "name": "minimal_diff", "kind": "llm", "text": "Изменение минимальное и по существу, без лишнего рефактора." }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "greenfield-mini-todo-cli",
+      "skill": "new-product",
+      "fixture": "fixtures/greenfield-mini",
+      "prompt": "Сделай с нуля крошечный CLI-инструмент списка дел `todo`: команды `todo add \"текст\"` (добавить задачу, напечатать её id), `todo list` (вывести открытые задачи) и `todo done <id>` (отметить выполненной; неизвестный id — ненулевой код выхода). Состояние — один JSON-файл, без внешних зависимостей. Жёсткий лимит прогона: максимум 2 итерации на фазу, максимум 2 фазы.",
+      "seed_submissions": ["fixtures/greenfield-mini/.aipf-seed/submissions/1.json", "fixtures/greenfield-mini/.aipf-seed/submissions/2.json", "fixtures/greenfield-mini/.aipf-seed/submissions/3.json"],
+      "expected_output": "Пройдены стадии INTAKE→…→SHIP: есть prd.md (FR-ID + Given-When-Then + Assumptions), phase-plan.md с ≤2 фазами, эволюционный build-loop отработал с cap 2 итерации/фазу и завершился (PASS либо STOP_*), вердикты судьи в reviews.json обоснованы evidence; реализованы add/list/done.",
+      "assertions": [
+        { "name": "prd_exists", "kind": "script", "text": "Создан prd.md с таблицей FR (ID + Given-When-Then) и разделом Assumptions." },
+        { "name": "phase_plan_bounded", "kind": "script", "text": "Создан phase-plan.md, фаз не больше двух." },
+        { "name": "loop_terminated", "kind": "script", "text": "В state.json build.phases каждая фаза прошла ≤2 итераций (cap соблюдён) и закрыта статусом done или escalated; цикл конечен." },
+        { "name": "judge_verdicts_logged", "kind": "script", "text": "В reviews.json есть записи kind=\"judge\" с id judge-<фаза>-i<итерация>." },
+        { "name": "prd_quality", "kind": "llm", "text": "PRD соответствует rubrics/prd-quality.md: FR-ID, Given-When-Then на каждый FR, Assumptions и Non-goals явные, трассировка FR→тест→рубрика." },
+        { "name": "judge_loop_quality", "kind": "llm", "text": "Цикл судьи соответствует rubrics/judge-loop-quality.md: вердикты обоснованы evidence, гибридный гейт соблюдён (фаза не закрыта на красных тестах), стоп-условия сработали, scratchpad — дистиллят, не сырые логи." }
       ]
     }
   ]

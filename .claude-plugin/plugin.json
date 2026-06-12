@@ -1,7 +1,7 @@
 {
   "name": "ai-pathfinder",
-  "version": "0.7.0",
-  "description": "Long-running, multi-agent coding workflow for large projects: autonomous codebase exploration, a live per-task HTML dashboard with batched human feedback, changed-files + diff view, code-review/security-review gates, checkpoint chat steering, a knowledge tree + graph, and a self-growing project knowledge base.",
+  "version": "0.8.0",
+  "description": "Long-running, multi-agent coding workflow for large projects: autonomous codebase exploration, a live per-task HTML dashboard with batched human feedback, changed-files + diff view, code-review/security-review gates, checkpoint chat steering, a knowledge tree + graph, and a self-growing project knowledge base. Also ships /new-product for greenfield product creation from scratch: PRD, vertical-slice phase plan, and an evolutionary generate-test-judge build-loop.",
   "author": {
     "name": "Gleb"
   },
@@ -13,6 +13,9 @@
     "multi-agent",
     "planning",
     "knowledge-base",
-    "dashboard"
+    "dashboard",
+    "greenfield",
+    "prd",
+    "judge-loop"
   ]
 }
