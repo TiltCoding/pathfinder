@@ -106,14 +106,14 @@ evals/            fixtures, scenarios, rubrics for measuring the workflow
 From GitHub (anyone):
 
 ```
-/plugin marketplace add algolGuru/ai-pathfinder
+/plugin marketplace add algolguru1803-sudo/pathfinder
 /plugin install ai-pathfinder@algolguru
 ```
 
 Or from a local checkout during development:
 
 ```
-/plugin marketplace add /path/to/ai-pathfinder
+/plugin marketplace add /path/to/pathfinder
 /plugin install ai-pathfinder@algolguru
 ```
 
