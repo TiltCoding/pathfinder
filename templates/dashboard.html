@@ -1,0 +1,1614 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-pathfinder — задача</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #4f46e5; --accent-soft: #eef2ff;
+    --ok: #16a34a; --warn: #d97706; --chip: #f3f4f6;
+    --reply-bg: #f0fdf4; --reply-line: #bbf7d0;
+    --sel: #fef9c3; --shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #181b21; --ink: #e6e8eb; --muted: #9aa3af;
+      --line: #2a2f37; --accent: #818cf8; --accent-soft: #1e2230;
+      --chip: #232830; --reply-bg: #132019; --reply-line: #1f4d31;
+      --sel: #3b3a1f; --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding-bottom: 96px;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+  header.top {
+    position: sticky; top: 0; z-index: 20; background: var(--bg);
+    border-bottom: 1px solid var(--line); padding: 14px 20px;
+  }
+  .top-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1.title { font-size: 18px; margin: 0; font-weight: 650; flex: 1 1 280px; }
+  .badge { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--chip); white-space: nowrap; }
+  .badge.phase { background: var(--accent-soft); color: var(--accent); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+  .status.working { background: var(--accent-soft); color: var(--accent); }
+  .status.awaiting { background: #fff7ed; color: var(--warn); }
+  @media (prefers-color-scheme: dark) { .status.awaiting { background: #2a2113; } }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status.working .dot { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
+  section.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  .md p { margin: 0 0 10px; }
+  .md h1 { font-size: 20px; font-weight: 700; margin: 18px 0 8px; }
+  .md h2 { font-size: 17px; font-weight: 700; margin: 16px 0 7px; }
+  .md h3 { font-size: 15px; margin: 14px 0 6px; }
+  .md h4 { font-size: 13px; font-weight: 700; margin: 12px 0 4px; color: var(--muted); }
+  .md ul, .md ol { margin: 6px 0 10px; padding-left: 22px; } .md li { margin: 2px 0; }
+  .md code { background: var(--chip); padding: 1px 5px; border-radius: 5px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .md pre { background: var(--chip); padding: 12px 14px; border-radius: 8px; overflow: auto; }
+  .md pre code { background: none; padding: 0; } .md a { color: var(--accent); }
+  .md em { font-style: italic; }
+  .md hr { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+  .md blockquote { border-left: 3px solid var(--accent); margin: 8px 0; padding: 4px 12px; color: var(--muted); }
+  .md table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  .md th { background: var(--chip); font-weight: 600; }
+  .md tr:nth-child(even) td { background: var(--accent-soft); }
+
+  .block { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; transition: border-color .15s, background .15s; }
+  .block:hover { border-color: var(--accent); }
+  .block.has-draft { border-color: var(--accent); background: var(--accent-soft); }
+  .block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .block-title { font-weight: 600; flex: 1; }
+  .block-id { font: 11px ui-monospace, monospace; color: var(--muted); }
+  ::selection { background: var(--sel); }
+  textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: var(--bg); color: var(--ink); }
+
+  /* commentable prose regions (summary / codebase map) */
+  .region { position: relative; }
+  .region.has-draft { border-left: 3px solid var(--accent); padding-left: 11px; }
+
+  /* a fragment the human has commented on, highlighted inline */
+  mark.commented { background: var(--sel); color: inherit; border-radius: 3px; padding: 0 1px; cursor: pointer; box-shadow: inset 0 -2px 0 var(--accent); }
+  .flash { animation: flashpulse 1.1s ease; }
+  @keyframes flashpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); } 30% { box-shadow: 0 0 0 3px var(--accent); } }
+
+  /* a left comment card (quote + text) shown under its region */
+  .cmt { margin-top: 8px; background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; font-size: 13px; scroll-margin-top: 120px; }
+  .cmt-quote { color: var(--muted); border-left: 3px solid var(--accent); padding: 1px 8px; margin-bottom: 5px; white-space: pre-wrap; cursor: pointer; }
+  .cmt-row { display: flex; gap: 8px; align-items: flex-start; }
+  .cmt-text { flex: 1; }
+  .cmt .x { cursor: pointer; color: var(--muted); font-weight: 700; }
+
+  .reply { margin-top: 8px; background: var(--reply-bg); border: 1px solid var(--reply-line); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .reply .who { font-weight: 600; color: var(--ok); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+
+  .question { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+  .question.answered { border-color: var(--ok); }
+  .q-text { font-weight: 600; margin-bottom: 8px; }
+  .opt { display: block; padding: 4px 0; cursor: pointer; }
+
+  /* visual-demo variants */
+  .demo-intro { margin-bottom: 12px; }
+  .variants { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .variant { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+  .variant:hover { border-color: var(--accent); }
+  .variant.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .variant-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--chip); cursor: pointer; }
+  .variant.sel .variant-head { background: var(--accent-soft); }
+  .variant-head .v-title { font-weight: 600; flex: 1; }
+  .variant-head .open { font-size: 12px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  iframe.mock { display: block; width: 100%; height: 420px; border: none; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; }
+  .variant .region { padding: 10px 12px; }
+  .variant .region.has-draft { border-left: none; padding-left: 12px; }
+
+  .ws { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+  .ws:last-child { border-bottom: none; }
+  .ws .chip { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .ws .todo { background: var(--chip); color: var(--muted); }
+  .ws .in_progress { background: var(--accent-soft); color: var(--accent); }
+  .ws .done { background: var(--reply-bg); color: var(--ok); }
+
+  .actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.06); }
+  .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  .queue { font-size: 13px; color: var(--muted); flex: 1; }
+  .queue b { color: var(--ink); }
+  button.primary { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 10px 18px; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.ghost { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 10px 16px; font-weight: 600; cursor: pointer; }
+  button.ghost:hover { border-color: var(--accent); }
+  .toast { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .empty { color: var(--muted); font-style: italic; }
+  /* inline comment input that appears at a text selection */
+  #sel-popover { position: absolute; display: none; z-index: 40; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 8px; }
+  #sel-popover.open { display: block; }
+  #sel-input { min-height: 34px; resize: none; }
+  #sel-popover .sel-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  #sel-popover .hint { font-size: 11px; color: var(--muted); flex: 1; }
+  #sel-popover button.primary { padding: 6px 12px; font-size: 13px; }
+
+  /* tabs */
+  .tabbar { display: flex; gap: 2px; margin-top: 10px; }
+  .tab { appearance: none; background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font: inherit; font-weight: 600; font-size: 14px; padding: 8px 12px; cursor: pointer; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  [hidden] { display: none !important; }
+
+  /* trace tab */
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; }
+  .stat { background: var(--chip); border-radius: 10px; padding: 10px 14px; min-width: 104px; }
+  .stat .v { font-size: 20px; font-weight: 680; line-height: 1.2; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .bymodel { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .gantt { display: flex; flex-direction: column; gap: 5px; }
+  .lane { position: relative; height: 24px; }
+  .bar { position: absolute; height: 20px; top: 2px; border-radius: 6px; display: flex; align-items: center; padding: 0 7px; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  .bar.err { outline: 2px solid #ef4444; outline-offset: -2px; }
+  .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .phase-h { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 4px; font-weight: 700; }
+  .agent { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
+  .agent.err { border-color: #ef4444; }
+  .agent.orch { background: var(--accent-soft); }
+  .agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .role { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; color: #fff; }
+  .agent-head .ws { border: none; padding: 0; font-size: 13px; color: var(--muted); }
+  .tag { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .tag.bg { background: var(--accent-soft); color: var(--accent); }
+  .tag.fail { background: #fef2f2; color: #ef4444; }
+  @media (prefers-color-scheme: dark) { .tag.fail { background: #2a1414; } }
+  .metrics { display: flex; flex-wrap: wrap; gap: 12px 22px; margin-top: 10px; }
+  .metric .k { font-size: 11px; color: var(--muted); } .metric .v { font-weight: 650; }
+  .ctxbar { height: 7px; background: var(--line); border-radius: 999px; overflow: hidden; width: 150px; margin-top: 4px; }
+  .ctxbar > div { height: 100%; background: var(--accent); }
+  .ctxbar > div.hot { background: var(--warn); }
+  .muted { color: var(--muted); font-weight: 400; }
+
+  /* trace tab: live action feed (grouped by agent/lane, v2 layout) */
+  .feed-live { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 3px 10px; border-radius: 999px; float: right; }
+  .feed-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: feed-pulse 1.2s ease-in-out infinite; }
+  @keyframes feed-pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  .feed-agent { border: 1px solid var(--line); border-radius: 11px; margin: 12px 0; overflow: hidden; }
+  .feed-agent.running .feed-agent-head { box-shadow: inset 3px 0 0 var(--accent); }
+  .feed-agent-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--chip); cursor: pointer; }
+  .feed-caret { color: var(--accent); font-size: 12px; transition: transform .15s; display: inline-block; }
+  .feed-agent.open .feed-caret { transform: rotate(90deg); }
+  .feed-role { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; color: #fff; }
+  .feed-sub { font-size: 12px; color: var(--muted); }
+  .feed-agent-meta { font-size: 12px; color: var(--muted); margin-left: auto; }
+  .feed-body { display: none; }
+  .feed-agent.open .feed-body { display: block; }
+  .feed-timeline { padding: 8px 14px 12px; position: relative; }
+  .feed-timeline::before { content: ""; position: absolute; left: 20px; top: 8px; bottom: 12px; width: 2px; background: var(--line); }
+  .feed-row { position: relative; padding: 5px 0 5px 28px; }
+  .feed-row::before { content: ""; position: absolute; left: 15px; top: 13px; width: 9px; height: 9px; border-radius: 50%; background: var(--line); border: 2px solid var(--panel); }
+  .feed-row.running::before { background: var(--accent); }
+  .feed-row.err::before { background: #ef4444; }
+  .feed-line { display: flex; align-items: center; gap: 7px; }
+  .feed-t { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); min-width: 46px; }
+  .feed-tool { font: 11px ui-monospace, monospace; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .feed-arg { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); word-break: break-all; }
+  .feed-dur { margin-left: auto; font: 11px ui-monospace, monospace; color: var(--muted); white-space: nowrap; }
+  .feed-dur.run { color: var(--accent); }
+  .feed-msgbtn { margin: 4px 14px 12px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; border: 1px dashed var(--line); border-radius: 9px; background: var(--accent-soft); padding: 6px 10px; font-size: 13px; font-weight: 600; }
+  .feed-mcaret { color: var(--accent); font-size: 12px; display: inline-block; transition: transform .15s; }
+  .feed-msgbtn.open .feed-mcaret { transform: rotate(90deg); }
+  .feed-msgs { padding: 0 14px 12px; }
+  .feed-msg { padding: 6px 0 6px 8px; border-left: 2px solid var(--line); margin: 6px 0; font-size: 13px; line-height: 1.55; }
+  .feed-msg .feed-t { display: block; margin-bottom: 2px; }
+  .feed-empty { font-size: 13px; color: var(--muted); padding: 4px 14px 12px; }
+
+  /* changes tab: compact file tree (left) + diff with line-number gutter (right) — design v2 */
+  /* warm "github-light" token palette for diff syntax highlighting */
+  :root {
+    --syn-kw: #cf222e; --syn-str: #0a3069; --syn-com: #6e7781;
+    --syn-num: #0550ae; --syn-fn: #8250df; --syn-punct: #57606a;
+    --gutter: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --syn-kw: #ff7b72; --syn-str: #a5d6ff; --syn-com: #8b949e;
+      --syn-num: #79c0ff; --syn-fn: #d2a8ff; --syn-punct: #89929b;
+      --gutter: #13161b;
+    }
+  }
+  .changes-head { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; flex-wrap: wrap; }
+  .changes-head .base { font: 12px ui-monospace, monospace; color: var(--muted); }
+  .seg { margin-left: auto; display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 12px; }
+  .seg button { appearance: none; border: none; background: var(--panel); color: var(--muted); padding: 4px 10px; cursor: pointer; }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  .changes-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 820px) { .changes-grid { grid-template-columns: 1fr; } }
+  /* compact tree sidebar */
+  .filetree { background: var(--gutter); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow: auto; max-height: 74vh; }
+  .filetree .tnode { display: flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 6px; cursor: pointer; font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  .filetree .tnode:hover { background: var(--chip); }
+  .filetree .tnode.active { background: var(--accent-soft); color: var(--accent); }
+  .filetree .tnode.dir { color: var(--muted); }
+  .filetree .tnode.dir .caret { width: 9px; display: inline-block; transition: transform .15s; }
+  .filetree .tchildren.hidden { display: none; }
+  .filetree .tnode.dir.collapsed .caret { transform: rotate(-90deg); }
+  .filetree .tlabel { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .filetree .tchildren { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 4px; }
+  .filetree .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .dot.added { background: var(--ok); } .dot.modified { background: var(--accent); }
+  .dot.deleted { background: #ef4444; } .dot.renamed { background: var(--warn); }
+  .filetree .mini { font-size: 10px; color: var(--muted); flex: none; }
+  .filetree .mini .add { color: var(--ok); } .filetree .mini .del { color: #ef4444; }
+
+  /* diff with line-number gutter + sign column */
+  .diff { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: auto; max-height: 74vh; }
+  .diff pre { margin: 0; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .diff .dl { display: grid; grid-template-columns: 44px 16px 1fr; align-items: start; }
+  .diff .dl .ln { text-align: right; padding-right: 8px; color: var(--muted); background: var(--gutter); user-select: none; opacity: .7; }
+  .diff .dl .sg { text-align: center; user-select: none; }
+  .diff .dl .code { padding-right: 12px; white-space: pre-wrap; word-break: break-word; }
+  .diff .dl.add { background: rgba(22,163,74,.10); } .diff .dl.add .sg { color: var(--ok); }
+  .diff .dl.del { background: rgba(239,68,68,.10); } .diff .dl.del .sg { color: #ef4444; }
+  .diff .dl.hunk { display: block; padding: 2px 12px; color: var(--accent); background: var(--accent-soft); }
+  .diff .dl.meta { display: block; padding: 1px 12px; color: var(--muted); }
+  .diff .tok-kw { color: var(--syn-kw); } .diff .tok-str { color: var(--syn-str); }
+  .diff .tok-com { color: var(--syn-com); font-style: italic; } .diff .tok-num { color: var(--syn-num); }
+  .diff .tok-fn { color: var(--syn-fn); } .diff .tok-pn { color: var(--syn-punct); }
+
+  /* review runs */
+  .review-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .run { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .run-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .run-kind { font-weight: 650; }
+  .sev { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; color: #fff; }
+  .sev.high { background: #ef4444; } .sev.med { background: var(--warn); } .sev.low { background: var(--muted); }
+  .finding { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .finding .floc { font: 11px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+  .run-status { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .run-status.running { background: var(--accent-soft); color: var(--accent); }
+  .run-status.done { background: var(--reply-bg); color: var(--ok); }
+  .run-status.failed { background: #fef2f2; color: #ef4444; }
+  @media (prefers-color-scheme: dark) { .run-status.failed { background: #2a1414; } }
+
+  /* chat panel */
+  .chat-toggle { position: relative; padding: 7px 12px; }
+  .chat-unread { position: absolute; top: -6px; right: -6px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; min-width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 999px; padding: 0 4px; }
+  .chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92vw; z-index: 50; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgba(0,0,0,.12); display: flex; flex-direction: column; }
+  .chat-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 650; }
+  .chat-head .chat-hint { font-size: 11px; font-weight: 500; color: var(--muted); flex: 1; }
+  .chat-x { appearance: none; background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+  .chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 8px 11px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+  .msg .who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; opacity: .7; margin-bottom: 2px; }
+  .msg.human { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.agent { align-self: flex-start; background: var(--chip); color: var(--ink); border-bottom-left-radius: 4px; }
+  .msg .ts { font-size: 10px; opacity: .6; margin-top: 3px; }
+  .chat-input { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
+  .chat-input textarea { min-height: 38px; }
+  .chat-input button.primary { padding: 8px 14px; white-space: nowrap; }
+
+  /* documentation tab: tree (left) + graph/viewer (right) */
+  .wrap.wide { max-width: 1480px; }
+  .docs-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .docs-grid { grid-template-columns: 1fr; } }
+  .doc-tree { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; max-height: 78vh; overflow: auto; }
+  .doc-tree input.search { width: 100%; margin-bottom: 8px; }
+  .tnode { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 7px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+  .tnode:hover { background: var(--chip); }
+  .tnode.active { background: var(--accent-soft); color: var(--accent); }
+  .tnode.dir { font-weight: 600; cursor: default; color: var(--muted); }
+  .tnode .tdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .tnode.touched .tlabel { font-weight: 700; }
+  .tnode.touched::after { content: "●"; color: var(--accent); font-size: 9px; margin-left: 2px; }
+  .tchildren { margin-left: 12px; border-left: 1px solid var(--line); padding-left: 4px; }
+
+  .doc-main { display: flex; flex-direction: column; gap: 12px; }
+  .graph-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; position: relative; }
+  .graph-legend { position: absolute; top: 12px; right: 14px; display: flex; gap: 12px; font-size: 11px; color: var(--muted); background: var(--panel); padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); }
+  .graph-legend .lk { display: inline-flex; align-items: center; gap: 4px; }
+  .graph-legend .lk i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  svg.graph { width: 100%; height: 56vh; display: block; touch-action: none; }
+  svg.graph .edge { stroke: var(--line); stroke-width: 1.2; }
+  svg.graph .edge.hot { stroke: var(--accent); stroke-width: 2; }
+  svg.graph .node circle { stroke: var(--panel); stroke-width: 2; cursor: pointer; }
+  svg.graph .node.touched circle { stroke: var(--accent); stroke-width: 2.5; }
+  svg.graph .node.sel circle { stroke: var(--ink); stroke-width: 3; }
+  svg.graph .node text { font: 11px -apple-system, system-ui, sans-serif; fill: var(--ink); pointer-events: none; }
+  svg.graph .node.dim { opacity: .25; }
+
+  .doc-viewer { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; min-height: 80px; }
+  .doc-viewer .dv-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .doc-viewer .dv-path { font: 12px ui-monospace, monospace; color: var(--muted); flex: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <h1 class="title" id="title">Задача</h1>
+    <span class="badge phase" id="phase">—</span>
+    <span class="badge" id="iter"></span>
+    <span class="status working" id="status"><span class="dot"></span><span id="status-text">…</span></span>
+    <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
+  </div>
+  <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
+  <div class="top-inner"><nav class="tabbar">
+    <button class="tab active" id="tab-work" data-tab="work">Рабочий процесс</button>
+    <button class="tab" id="tab-changes" data-tab="changes">Изменения</button>
+    <button class="tab" id="tab-docs" data-tab="docs">Документация</button>
+    <button class="tab" id="tab-trace" data-tab="trace">Трейсинг</button>
+  </nav></div>
+</header>
+
+<main class="wrap" id="content">
+  <p class="empty">Загрузка…</p>
+</main>
+
+<main class="wrap" id="changes" hidden>
+  <p class="empty">Загрузка изменений…</p>
+</main>
+
+<main class="wrap wide" id="docs" hidden>
+  <p class="empty">Загрузка документации…</p>
+</main>
+
+<main class="wrap" id="trace" hidden>
+  <p class="empty">Загрузка трейсинга…</p>
+</main>
+
+<div id="sel-popover">
+  <textarea id="sel-input" rows="1" placeholder="Комментарий к выделенному…"></textarea>
+  <div class="sel-row">
+    <span class="hint">Enter — отправить · Esc — отмена</span>
+    <button class="primary" id="sel-send">Отправить</button>
+  </div>
+</div>
+
+<div class="actionbar" id="actionbar">
+  <div class="actionbar-inner">
+    <div class="queue">Очередь правок: <b id="queue-count">0</b></div>
+    <button class="ghost" id="btn-approve">Утвердить план</button>
+    <button class="primary" id="btn-submit" disabled>Отправить агенту на доработку</button>
+  </div>
+</div>
+<aside class="chat-panel" id="chat-panel" hidden>
+  <div class="chat-head">
+    <span>Чат с агентом</span>
+    <span class="chat-hint">стиринг на чекпоинтах</span>
+    <button class="chat-x" id="chat-close" title="Закрыть">✕</button>
+  </div>
+  <div class="chat-log" id="chat-log"><p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p></div>
+  <div class="chat-input">
+    <textarea id="chat-text" rows="2" placeholder="Сообщение агенту… (Enter — отправить)"></textarea>
+    <button class="primary" id="chat-send">Отправить</button>
+  </div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const SLUG = new URLSearchParams(location.search).get("slug") || "";
+const $ = (s, r=document) => r.querySelector(s);
+let draftItems = [];
+let lastDataStamp = "";
+let lastData = null, lastReplies = null;
+
+function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// --- markdown -> html (GFM: headings h1-h4, ul/ol, table, blockquote, hr, code, bold, italic, links) ---
+function md(src){
+  if(!src) return "";
+  const lines = String(src).split("\n");
+  let html = "", inUl = false, inOl = false, inCode = false, inBq = false;
+  let code = "";
+  // table state: pending = first row buffered awaiting separator; body = collecting data rows
+  let tState = "off", tPending = "", tBody = "";
+
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*\s][^*]*)\*/g, "<em>$1</em>")
+    .replace(/(^|[^_\w])_([^_\s][^_]*)_([^_\w]|$)/g, "$1<em>$2</em>$3")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  const splitRow = ln => ln.replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+  const isSep = ln => /^\|?([\s:]*-+[\s:]*\|)+[\s:]*-*[\s:]*\|?$/.test(ln.trim());
+
+  const flushTable = () => {
+    if(tState !== "off"){
+      if(tState === "pending"){
+        // no separator came — treat pending row as plain paragraph
+        html += "<p>"+tPending+"</p>";
+      } else {
+        html += tBody + "</tbody></table>";
+      }
+      tState = "off"; tPending = ""; tBody = "";
+    }
+  };
+  const closeAll = () => {
+    if(inUl){ html += "</ul>"; inUl = false; }
+    if(inOl){ html += "</ol>"; inOl = false; }
+    if(inBq){ html += "</blockquote>"; inBq = false; }
+    flushTable();
+  };
+
+  for(const ln of lines){
+    // fenced code block
+    if(ln.trim().startsWith("```")){
+      if(inCode){ html += "<pre><code>"+esc(code)+"</code></pre>"; code=""; inCode=false; }
+      else { closeAll(); inCode=true; }
+      continue;
+    }
+    if(inCode){ code += ln + "\n"; continue; }
+
+    // GFM table
+    const isTableLine = ln.trim().startsWith("|") || (tState !== "off" && ln.includes("|") && !ln.trim().startsWith("#"));
+    if(isTableLine){
+      if(isSep(ln)){
+        if(tState === "pending"){
+          // promote pending row to header
+          const cells = splitRow(tPending).map(c => `<th>${inline(c)}</th>`).join("");
+          html += `<table><thead><tr>${cells}</tr></thead><tbody>`;
+          tBody = ""; tState = "body";
+        }
+        // skip separator line
+        continue;
+      }
+      if(tState === "off"){
+        closeAll();  // close lists/bq first
+        tState = "pending";
+        tPending = ln;  // raw line — will be processed if sep follows
+        continue;
+      }
+      if(tState === "pending"){
+        // got another row before separator — flush as paragraph, treat new line as pending
+        html += "<p>"+tPending+"</p>";
+        tPending = ln; continue;
+      }
+      // tState === "body"
+      const cells = splitRow(ln).map(c => `<td>${inline(c)}</td>`).join("");
+      tBody += `<tr>${cells}</tr>`;
+      continue;
+    }
+    // non-table line — close table if open
+    if(tState !== "off") flushTable();
+
+    // headings
+    const h = ln.match(/^(#{1,4})\s+(.*)/);
+    if(h){ closeAll(); const lv = h[1].length; html += `<h${lv}>${inline(h[2])}</h${lv}>`; continue; }
+
+    // horizontal rule (3+ of same char: - * _)
+    if(/^[-*_]{3,}$/.test(ln.trim())){ closeAll(); html += "<hr>"; continue; }
+
+    // blockquote
+    if(ln.startsWith("> ")){
+      if(inUl){ html += "</ul>"; inUl=false; }
+      if(inOl){ html += "</ol>"; inOl=false; }
+      if(!inBq){ html += "<blockquote>"; inBq=true; }
+      html += "<p>"+inline(ln.slice(2))+"</p>"; continue;
+    }
+    if(inBq && !ln.startsWith("> ")){ html += "</blockquote>"; inBq=false; }
+
+    // unordered list
+    if(/^\s*[-*]\s+/.test(ln)){
+      if(inOl){ html += "</ol>"; inOl=false; }
+      if(!inUl){ html += "<ul>"; inUl=true; }
+      html += "<li>"+inline(ln.replace(/^\s*[-*]\s+/, ""))+"</li>"; continue;
+    }
+    // ordered list
+    if(/^\s*\d+\.\s+/.test(ln)){
+      if(inUl){ html += "</ul>"; inUl=false; }
+      if(!inOl){ html += "<ol>"; inOl=true; }
+      html += "<li>"+inline(ln.replace(/^\s*\d+\.\s+/, ""))+"</li>"; continue;
+    }
+
+    if(ln.trim() === ""){ closeAll(); continue; }
+    closeAll(); html += "<p>"+inline(ln)+"</p>";
+  }
+  closeAll();
+  if(inCode) html += "<pre><code>"+esc(code)+"</code></pre>";
+  return html;
+}
+
+// --- minimal, dependency-free syntax highlighting for diffs (design v2) ---
+// language detection by file extension
+function langFromPath(path){
+  const m = /\.([a-z0-9]+)$/i.exec(path || "");
+  if(!m) return "";
+  const ext = m[1].toLowerCase();
+  return ({ py:"py", js:"js", mjs:"js", cjs:"js", json:"json", html:"html", htm:"html",
+    md:"md", markdown:"md", yaml:"yaml", yml:"yaml", css:"css", sh:"sh", bash:"sh" })[ext] || "";
+}
+// per-language keyword sets and comment markers
+const SYN = {
+  py:   { kw: ["def","class","return","if","elif","else","for","while","import","from","as","with","try","except","finally","raise","pass","break","continue","in","is","not","and","or","lambda","yield","global","nonlocal","assert","del","async","await","True","False","None","self"], line: "#", fnKw: "def" },
+  js:   { kw: ["function","return","if","else","for","while","do","switch","case","break","continue","var","let","const","new","class","extends","super","this","typeof","instanceof","in","of","try","catch","finally","throw","await","async","yield","import","export","from","default","true","false","null","undefined","void","delete"], line: "//", block: true, fnKw: "function" },
+  css:  { kw: [], line: null, block: true },
+  sh:   { kw: ["if","then","else","elif","fi","for","while","do","done","case","esac","function","in","return","export","local","echo","cd","exit"], line: "#" },
+  yaml: { kw: ["true","false","null","yes","no"], line: "#" },
+  json: { kw: ["true","false","null"], line: null },
+  md:   { kw: [], line: null },
+  html: { kw: [], line: null },
+};
+// Highlight one line of code. ALWAYS escapes input; never emits raw user HTML.
+// Strings/comments take priority over keywords/numbers/functions.
+function highlightCode(line, lang){
+  const conf = SYN[lang];
+  if(line == null) return "";
+  if(!conf) return esc(line);
+  const kwSet = new Set(conf.kw || []);
+  let out = "";
+  let i = 0;
+  const n = line.length;
+  while(i < n){
+    const c = line[i];
+    // line comment (whole rest of line)
+    if(conf.line && line.startsWith(conf.line, i)){
+      out += `<span class="tok-com">${esc(line.slice(i))}</span>`;
+      break;
+    }
+    // block comment /* ... */ (js/css)
+    if(conf.block && c === "/" && line[i+1] === "*"){
+      let j = line.indexOf("*/", i+2);
+      j = j === -1 ? n : j + 2;
+      out += `<span class="tok-com">${esc(line.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    // strings: " ' ` with backslash escapes
+    if(c === '"' || c === "'" || c === "`"){
+      let j = i + 1;
+      while(j < n){
+        if(line[j] === "\\"){ j += 2; continue; }
+        if(line[j] === c){ j++; break; }
+        j++;
+      }
+      out += `<span class="tok-str">${esc(line.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    // numbers
+    if(/[0-9]/.test(c) && !/[A-Za-z_]/.test(line[i-1] || "")){
+      let j = i;
+      while(j < n && /[0-9a-fx_.]/i.test(line[j])) j++;
+      out += `<span class="tok-num">${esc(line.slice(i, j))}</span>`;
+      i = j; continue;
+    }
+    // identifiers / keywords / function names
+    if(/[A-Za-z_$]/.test(c)){
+      let j = i;
+      while(j < n && /[A-Za-z0-9_$]/.test(line[j])) j++;
+      const word = line.slice(i, j);
+      // skip whitespace to detect a following "(" (function call/def) or after def/function keyword
+      let k = j; while(k < n && line[k] === " ") k++;
+      const prevWord = (out.match(/<span class="tok-(?:kw|fn)">([A-Za-z_$]+)<\/span>\s*$/) || [])[1];
+      if(kwSet.has(word)){
+        out += `<span class="tok-kw">${esc(word)}</span>`;
+      } else if(conf.fnKw && prevWord === conf.fnKw){
+        out += `<span class="tok-fn">${esc(word)}</span>`;
+      } else if(line[k] === "("){
+        out += `<span class="tok-fn">${esc(word)}</span>`;
+      } else {
+        out += esc(word);
+      }
+      i = j; continue;
+    }
+    // punctuation
+    if(/[{}()\[\];:,.<>=+\-*/%&|!?]/.test(c)){
+      out += `<span class="tok-pn">${esc(c)}</span>`;
+      i++; continue;
+    }
+    out += esc(c);
+    i++;
+  }
+  return out;
+}
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  return r.json().catch(() => ({}));
+}
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 1800); }
+
+// ----- rendering -----
+function render(data, replies){
+  lastData = data; lastReplies = replies;
+  $("#title").textContent = data.title || "Задача";
+  $("#phase").textContent = data.phase || "—";
+  $("#iter").textContent = data.iteration ? ("итерация " + data.iteration) : "";
+  const st = $("#status"), stt = $("#status-text");
+  if((data.status||"working") === "awaiting-batch"){ st.className="status awaiting"; stt.textContent="ждёт ваши правки"; }
+  else { st.className="status working"; stt.textContent="агент работает"; }
+  const pr = data.progress || {done:0,total:0};
+  $("#progress-bar").style.width = (pr.total ? Math.round(100*pr.done/pr.total) : 0) + "%";
+
+  const repliesByBlock = {}, repliesByQ = {};
+  (replies.replies || []).forEach(r => {
+    if(r.blockId){ (repliesByBlock[r.blockId] = repliesByBlock[r.blockId] || []).push(r); }
+    if(r.questionId){ (repliesByQ[r.questionId] = repliesByQ[r.questionId] || []).push(r); }
+  });
+
+  let h = "";
+  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock));
+  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock));
+
+  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock));
+
+  if((data.planBlocks||[]).length){
+    let b = "";
+    for(const blk of data.planBlocks){
+      const has = draftItems.some(i => i.blockId === blk.id);
+      b += `<div class="block ${has?'has-draft':''}" data-block="${esc(blk.id)}" data-anchor="${esc(blk.id)}">
+        <div class="block-head"><span class="block-title">${esc(blk.title||"")}</span>
+          <span class="block-id">${esc(blk.id)}</span></div>
+        <div class="md block-body">${md(blk.body||"")}</div>
+        ${regionFooter(blk.id, repliesByBlock)}
+      </div>`;
+    }
+    h += card("План", b);
+  }
+
+  if((data.questions||[]).length){
+    let q = "";
+    for(const item of data.questions){
+      const ans = draftItems.find(i => i.kind==="answer" && i.questionId===item.id);
+      const reps = repliesByQ[item.id] || [];
+      let input;
+      if(item.kind === "choice" && (item.options||[]).length){
+        input = item.options.map(o =>
+          `<label class="opt"><input type="radio" name="q-${esc(item.id)}" value="${esc(o)}" ${ans&&ans.text===o?"checked":""}> ${esc(o)}</label>`).join("");
+      } else {
+        input = `<textarea data-answer="${esc(item.id)}" placeholder="Ваш ответ…">${esc(ans?ans.text:"")}</textarea>`;
+      }
+      q += `<div class="question ${ans?'answered':''}" data-question="${esc(item.id)}" data-kind="${esc(item.kind||'open')}">
+        <div class="q-text">${esc(item.text)}</div>${input}
+        ${reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")}
+      </div>`;
+    }
+    h += card("Открытые вопросы", q);
+  }
+
+  if((data.workstreams||[]).length){
+    let w = "";
+    for(const ws of data.workstreams){
+      w += `<div class="ws"><span class="chip ${ws.status||'todo'}">${labelWs(ws.status)}</span><span>${esc(ws.title||"")}</span></div>`;
+    }
+    h += card("Work-streams", w);
+  }
+
+  $("#content").innerHTML = h || `<p class="empty">Агент ещё не наполнил дашборд.</p>`;
+  wireBlocks();
+  highlightComments();
+  updateQueue();
+}
+function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
+// a commentable prose region (summary / codebase map)
+function region(anchor, innerHtml, repliesByBlock){
+  const has = draftItems.some(i => i.blockId === anchor);
+  return `<div class="region ${has?'has-draft':''}" data-anchor="${esc(anchor)}">
+    <div class="md">${innerHtml}</div>
+    ${regionFooter(anchor, repliesByBlock)}
+  </div>`;
+}
+// agent replies + the human's left comments, keyed to one anchor
+function regionFooter(anchor, repliesByBlock){
+  const reps = (repliesByBlock||{})[anchor] || [];
+  const drafts = draftItems.filter(i => i.blockId === anchor);
+  return reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")
+       + drafts.map(d=>cmtCard(d)).join("");
+}
+function cmtCard(d){
+  const quote = d.selectedText ? `<div class="cmt-quote" data-cid="${esc(d.id)}">${esc(d.selectedText)}</div>` : "";
+  return `<div class="cmt" data-cid="${esc(d.id)}">${quote}<div class="cmt-row"><span class="cmt-text">${esc(d.text)}</span><span class="x" data-remove="${esc(d.id)}">✕</span></div></div>`;
+}
+// visual-demo variants: previewed in sandboxed iframes, picked via the edit queue
+function renderDemo(demo, repliesByBlock){
+  const sid = demo.selectionId || "demo";
+  const ans = draftItems.find(i => i.kind==="answer" && i.questionId===sid);
+  const chosen = ans ? ans.text : (demo.selected || "");
+  let v = "";
+  for(const vr of (demo.variants||[])){
+    const sel = vr.id === chosen;
+    const url = `/mockup?slug=${encodeURIComponent(SLUG)}&file=${encodeURIComponent(vr.file||"")}`;
+    const cap = vr.caption ? region(vr.id, md(vr.caption), repliesByBlock) : "";
+    v += `<div class="variant ${sel?'sel':''}" data-variant="${esc(vr.id)}">
+      <label class="variant-head">
+        <input type="radio" name="demo-${esc(sid)}" value="${esc(vr.id)}" data-demo-select="${esc(sid)}" ${sel?"checked":""}>
+        <span class="v-title">${esc(vr.title||vr.id)}</span>
+        <a class="open" href="${url}" target="_blank" rel="noopener">открыть ↗</a>
+      </label>
+      <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
+      ${cap}
+    </div>`;
+  }
+  const intro = demo.intro ? `<div class="md demo-intro">${md(demo.intro)}</div>` : "";
+  return intro + `<div class="variants">${v}</div>`;
+}
+function labelWs(s){ return {todo:"к работе", in_progress:"в работе", done:"готово"}[s||"todo"] || s; }
+
+// ----- interactions -----
+function wireBlocks(){
+  document.querySelectorAll("[data-remove]").forEach(b => b.onclick = (e) => { e.stopPropagation(); removeDraft(b.getAttribute("data-remove")); });
+  document.querySelectorAll("[data-answer]").forEach(t => t.onchange = () => saveAnswer(t.getAttribute("data-answer"), t.value));
+  document.querySelectorAll('.question[data-kind="choice"] input').forEach(r =>
+    r.onchange = () => saveAnswer(r.closest("[data-question]").getAttribute("data-question"), r.value));
+  document.querySelectorAll("[data-demo-select]").forEach(r =>
+    r.onchange = () => saveAnswer(r.getAttribute("data-demo-select"), r.value));
+  // click a comment's quote -> scroll to & flash its highlight in the prose
+  document.querySelectorAll(".cmt-quote[data-cid]").forEach(q =>
+    q.onclick = () => flashTo(`mark.commented[data-cid="${cssesc(q.getAttribute("data-cid"))}"]`));
+}
+function cssesc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/"/g,'\\"'); }
+function flashTo(sel){
+  const el = document.querySelector(sel);
+  if(!el) return;
+  el.scrollIntoView({ behavior:"smooth", block:"center" });
+  el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1100);
+}
+function rerender(){ if(lastData) render(lastData, lastReplies || { replies: [] }); else updateQueue(); }
+
+async function saveAnswer(qid, val){
+  if(!val || !val.trim()) return;
+  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"answer", questionId:qid, text: val.trim() }) });
+  await loadDraft(); toast("Ответ сохранён");
+}
+async function removeDraft(id){
+  await api("/draft/remove", { method:"POST", body: JSON.stringify({ slug:SLUG, id }) });
+  await loadDraft();
+}
+async function loadDraft(){
+  const d = await api("/draft?slug=" + encodeURIComponent(SLUG));
+  draftItems = d.items || [];
+  // re-render so highlights + comment cards reflect the queue (popover lives outside #content)
+  rerender();
+}
+function updateQueue(){
+  $("#queue-count").textContent = draftItems.length;
+  $("#btn-submit").disabled = draftItems.length === 0;
+}
+
+// ----- inline highlight of the human's left comments -----
+function highlightComments(){
+  document.querySelectorAll("#content [data-anchor]").forEach(reg => {
+    const anchor = reg.getAttribute("data-anchor");
+    const comments = draftItems.filter(i => i.blockId === anchor && i.selectedText);
+    const body = reg.querySelector(".md");
+    if(comments.length && body) applyHighlights(body, comments);
+  });
+  document.querySelectorAll("mark.commented[data-cid]").forEach(m =>
+    m.onclick = () => flashTo(`.cmt[data-cid="${cssesc(m.getAttribute("data-cid"))}"]`));
+}
+function applyHighlights(container, comments){
+  const full = container.textContent;
+  const ranges = [], used = [];
+  for(const c of comments){
+    let from = 0, idx;
+    while((idx = full.indexOf(c.selectedText, from)) !== -1){
+      const end = idx + c.selectedText.length;
+      if(!used.some(u => idx < u.end && end > u.start)){ ranges.push({ start: idx, end, cid: c.id }); used.push({ start: idx, end }); break; }
+      from = idx + 1;
+    }
+  }
+  // wrap from the last offset to the first so earlier offsets stay valid
+  ranges.sort((a,b) => b.start - a.start).forEach(r => wrapRange(container, r.start, r.end, r.cid));
+}
+function wrapRange(container, start, end, cid){
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+  let pos = 0, node; const edits = [];
+  while((node = walker.nextNode())){
+    const nodeStart = pos, nodeEnd = pos + node.nodeValue.length; pos = nodeEnd;
+    if(nodeEnd <= start || nodeStart >= end) continue;
+    edits.push({ node, s: Math.max(start, nodeStart) - nodeStart, e: Math.min(end, nodeEnd) - nodeStart });
+  }
+  // wrap each text-node slice; reverse keeps offsets valid if two slices share a node
+  edits.reverse().forEach(ed => {
+    try {
+      const range = document.createRange();
+      range.setStart(ed.node, ed.s); range.setEnd(ed.node, ed.e);
+      const mark = document.createElement("mark");
+      mark.className = "commented"; mark.setAttribute("data-cid", cid);
+      range.surroundContents(mark);
+    } catch(e){ /* skip fragments that can't be wrapped cleanly */ }
+  });
+}
+
+// ----- inline comment input that appears at a text selection -----
+const pop = $("#sel-popover"), popInput = $("#sel-input");
+let selTarget = null;
+function anchorOf(node){ const el = node && (node.nodeType === 1 ? node : node.parentElement); return el ? el.closest("[data-anchor]") : null; }
+function hidePopover(){ pop.classList.remove("open"); selTarget = null; popInput.value = ""; }
+function onSelect(e){
+  if(pop.contains(e.target)) return;            // interacting with the input itself
+  const content = $("#content");
+  const sel = window.getSelection();
+  const text = sel && sel.rangeCount ? sel.toString().trim() : "";
+  const a1 = text ? anchorOf(sel.anchorNode) : null;
+  const a2 = text ? anchorOf(sel.focusNode) : null;
+  if(text && a1 && a1 === a2 && content.contains(a1) && !content.hidden){
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    pop.style.top = (window.scrollY + rect.bottom + 8) + "px";
+    pop.style.left = (window.scrollX + Math.max(8, rect.left)) + "px";
+    pop.classList.add("open");
+    selTarget = { anchor: a1.getAttribute("data-anchor"), text };
+    popInput.focus();
+  } else if(!pop.contains(document.activeElement)){ hidePopover(); }
+}
+document.addEventListener("mouseup", onSelect);
+document.addEventListener("keyup", e => { if(e.key !== "Escape" && !pop.contains(e.target)) onSelect(e); });
+popInput.addEventListener("keydown", e => {
+  if(e.key === "Escape"){ e.preventDefault(); hidePopover(); }
+  else if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
+});
+$("#sel-send").onclick = sendComment;
+async function sendComment(){
+  const text = popInput.value.trim();
+  if(!text || !selTarget) return;
+  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"comment", blockId: selTarget.anchor, selectedText: selTarget.text, text }) });
+  hidePopover(); await loadDraft(); toast("Добавлено в очередь");
+}
+
+// action bar
+$("#btn-submit").onclick = async () => {
+  if(!draftItems.length) return;
+  const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
+  if(r.ok){ draftItems = []; rerender(); toast("Отправлено агенту ✓ Пачка #" + r.submission); }
+};
+$("#btn-approve").onclick = async () => {
+  await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
+  toast("План утверждён ✓");
+};
+
+// ----- tabs + trace -----
+let activeTab = "work";
+let traceTimer = null, changesTimer = null;
+function switchTab(name){
+  activeTab = name;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  $("#content").hidden = name !== "work";
+  $("#changes").hidden = name !== "changes";
+  $("#docs").hidden = name !== "docs";
+  $("#trace").hidden = name !== "trace";
+  $("#actionbar").hidden = name !== "work";
+  hidePopover();
+  if(name === "trace"){
+    traceTick();
+    if(!traceTimer) traceTimer = setInterval(traceTick, 4000);
+  } else if(traceTimer){ clearInterval(traceTimer); traceTimer = null; }
+  if(name === "changes"){
+    changesTick();
+    if(!changesTimer) changesTimer = setInterval(changesTick, 4000);
+  } else if(changesTimer){ clearInterval(changesTimer); changesTimer = null; }
+  if(name === "docs") docsTick();
+  else stopGraph();
+}
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+
+// ----- changes tab (changed files + diff + review runs) -----
+let changedFiles = [], selectedFile = null, selectedDiff = "";
+let changesShowAll = false;            // toggle: false = только tracked (untracked скрыты), true = все
+const changesCollapsed = new Set();    // dir paths collapsed by the user (persists across polling re-renders)
+async function changesTick(){
+  try {
+    const [ch, rv] = await Promise.all([
+      api("/changes?slug=" + encodeURIComponent(SLUG)),
+      api("/reviews?slug=" + encodeURIComponent(SLUG)),
+    ]);
+    renderChanges(ch || {}, rv || {});
+  } catch(e){ /* server may be restarting */ }
+}
+
+async function selectFile(path){
+  selectedFile = path;
+  renderChanges(lastChanges, lastReviews);          // instant highlight
+  const r = await api("/changes?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(path));
+  selectedDiff = (r && r.diff) || "";
+  renderChanges(lastChanges, lastReviews);
+}
+
+let lastChanges = {}, lastReviews = {};
+function renderChanges(ch, rv){
+  lastChanges = ch; lastReviews = rv;
+  const files = ch.files || [];
+  changedFiles = files;
+  let reviewHtml = renderReviews(rv);
+
+  if(ch.notGit){
+    $("#changes").innerHTML = reviewHtml + `<p class="empty">Это не git-репозиторий — изменения файлов недоступны.</p>`;
+    return;
+  }
+  if(!files.length){
+    $("#changes").innerHTML = reviewHtml + `<p class="empty">Пока нет изменений${ch.base?` относительно <code>${esc(ch.base.slice(0,8))}</code>`:""}.</p>`;
+    return;
+  }
+  // toggle "только tracked / все": untracked === true means new 0-byte/untracked noise.
+  // Missing `untracked` (old backend) → treat as tracked, never hide.
+  const visible = changesShowAll ? files : files.filter(f => f.untracked !== true);
+  if(selectedFile && !visible.some(f => f.path === selectedFile)){ selectedFile = null; selectedDiff = ""; }
+
+  const tree = buildFileTree(visible);
+  const treeHtml = (tree.children || []).map(c => renderChangeTree(c, 0)).join("")
+    || `<p class="empty" style="font-size:12px;margin:6px">Нет файлов в этом режиме.</p>`;
+
+  const lang = selectedFile ? langFromPath(selectedFile) : "";
+  const diff = selectedFile
+    ? `<div class="diff">${renderDiff(selectedDiff, lang)}</div>`
+    : `<p class="empty">Выберите файл, чтобы увидеть diff.</p>`;
+
+  const head = `<div class="changes-head">
+      ${ch.base ? `<span class="base">Сравнение с <code>${esc(ch.base.slice(0,8))}</code> · ${visible.length} файлов</span>` : ""}
+      <span class="seg" id="changes-seg">
+        <button data-all="0" class="${changesShowAll?'':'on'}">Только tracked</button><button data-all="1" class="${changesShowAll?'on':''}">Все</button>
+      </span>
+    </div>`;
+  $("#changes").innerHTML = reviewHtml + card("Изменённые файлы", head + `<div class="changes-grid">
+      <div class="filetree">${treeHtml}</div>
+      ${diff}
+    </div>`);
+  $("#changes").querySelectorAll(".filetree .tnode.file").forEach(el => el.onclick = () => selectFile(el.dataset.path));
+  $("#changes").querySelectorAll(".filetree .tnode.dir").forEach(el => el.onclick = () => toggleChangeDir(el));
+  $("#changes").querySelectorAll("#changes-seg button").forEach(el => el.onclick = () => {
+    changesShowAll = el.dataset.all === "1";
+    renderChanges(lastChanges, lastReviews);
+  });
+  $("#changes").querySelectorAll(".floc").forEach(el => el.onclick = () => { const f = el.dataset.f; if(f) selectFile(f); });
+}
+
+// b4: build a {name,path,type,children,status,added,removed,untracked} tree from the flat files list.
+// Dirs sort above files; names alphabetically. Same node shape as the knowledge tree.
+function buildFileTree(files){
+  const root = { name: "", path: "", type: "dir", children: [] };
+  for(const f of (files || [])){
+    const parts = String(f.path || "").split("/").filter(Boolean);
+    let node = root;
+    let acc = "";
+    for(let i = 0; i < parts.length; i++){
+      const seg = parts[i];
+      acc = acc ? acc + "/" + seg : seg;
+      const isFile = i === parts.length - 1;
+      if(isFile){
+        node.children.push({ name: seg, path: f.path, type: "file",
+          status: f.status, added: f.added, removed: f.removed, untracked: f.untracked });
+      } else {
+        let dir = node.children.find(c => c.type === "dir" && c.name === seg);
+        if(!dir){ dir = { name: seg, path: acc, type: "dir", children: [] }; node.children.push(dir); }
+        node = dir;
+      }
+    }
+  }
+  const sortRec = nd => {
+    nd.children.sort((a, b) =>
+      (a.type === b.type) ? a.name.localeCompare(b.name) : (a.type === "dir" ? -1 : 1));
+    nd.children.forEach(c => c.type === "dir" && sortRec(c));
+  };
+  sortRec(root);
+  return root;
+}
+
+// b5: render a change-tree node (dirs collapsible, files selectable) — modeled on renderTree.
+function renderChangeTree(node, depth){
+  if(!node) return "";
+  if(node.type === "dir"){
+    const collapsed = changesCollapsed.has(node.path);
+    const kids = (node.children || []).map(c => renderChangeTree(c, depth+1)).join("");
+    const head = `<div class="tnode dir ${collapsed?'collapsed':''}" data-path="${esc(node.path)}"><span class="caret">▾</span><span class="tlabel">${esc(node.name)}/</span></div>`;
+    return head + `<div class="tchildren ${collapsed?'hidden':''}">${kids}</div>`;
+  }
+  const a = node.added==null ? "" : `<span class="add">+${node.added}</span>`;
+  const d = node.removed==null ? "" : ` <span class="del">−${node.removed}</span>`;
+  return `<div class="tnode file ${selectedFile===node.path?'active':''}" data-path="${esc(node.path)}" title="${esc(node.path)}">
+    <span class="dot ${esc(node.status||'')}" title="${esc(node.status||'')}"></span>
+    <span class="tlabel">${esc(node.name)}</span>
+    <span class="mini">${a}${d}</span></div>`;
+}
+
+// b5: collapse/expand a directory; persist state so polling re-renders don't reset it.
+function toggleChangeDir(el){
+  const path = el.dataset.path;
+  if(changesCollapsed.has(path)) changesCollapsed.delete(path);
+  else changesCollapsed.add(path);
+  el.classList.toggle("collapsed");
+  const kids = el.nextElementSibling;
+  if(kids && kids.classList.contains("tchildren")) kids.classList.toggle("hidden");
+}
+
+function statLetter(s){ return {added:"A",modified:"M",deleted:"D",renamed:"R"}[s] || "•"; }
+
+// b8: render a unified diff with line-number gutter + sign column, syntax-highlighting code lines.
+function renderDiff(text, lang){
+  if(!text) return `<pre><span class="dl meta">— нет содержимого diff —</span></pre>`;
+  let oldLn = 0, newLn = 0;
+  const rows = String(text).split("\n").map(ln => {
+    // meta / hunk lines are never highlighted
+    if(ln.startsWith("@@")){
+      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(ln);
+      if(m){ oldLn = parseInt(m[1], 10); newLn = parseInt(m[2], 10); }
+      return `<span class="dl hunk">${esc(ln)||"&nbsp;"}</span>`;
+    }
+    if(ln.startsWith("+++") || ln.startsWith("---") || ln.startsWith("diff ") || ln.startsWith("index ") || ln.startsWith("new file") || ln.startsWith("deleted file") || ln.startsWith("\\ No newline")){
+      return `<span class="dl meta">${esc(ln)||"&nbsp;"}</span>`;
+    }
+    // code lines: strip the leading +/-/space prefix, highlight the body, then reassemble.
+    let cls = "", sign = " ", num = "";
+    const pfx = ln.charAt(0);
+    let body = ln;
+    if(pfx === "+"){ cls = "add"; sign = "+"; body = ln.slice(1); num = newLn ? String(newLn++) : ""; }
+    else if(pfx === "-"){ cls = "del"; sign = "−"; body = ln.slice(1); num = oldLn ? String(oldLn++) : ""; }
+    else { body = ln.startsWith(" ") ? ln.slice(1) : ln; num = newLn ? String(newLn++) : ""; if(oldLn) oldLn++; }
+    const code = highlightCode(body, lang) || "&nbsp;";
+    return `<span class="dl ${cls}"><span class="ln">${num}</span><span class="sg">${sign==="+"||sign==="−"?sign:"&nbsp;"}</span><span class="code">${code}</span></span>`;
+  }).join("");
+  return `<pre>${rows}</pre>`;
+}
+
+function renderReviews(rv){
+  const runs = (rv && rv.runs) || [];
+  const btns = `<div class="review-bar">
+    <button class="ghost" id="btn-codereview">Запустить code-review</button>
+    <button class="ghost" id="btn-secreview">Запустить security-review</button>
+    <span class="muted" style="font-size:12px">Агент запустит проверку на ближайшем чекпоинте</span>
+  </div>`;
+  let body;
+  if(!runs.length){
+    body = btns + `<p class="empty">Прогонов ревью ещё нет. Они появляются автоматически в фазе VERIFY или по кнопке.</p>`;
+  } else {
+    const cards = runs.slice().reverse().map(run => {
+      const findings = (run.findings || []).map(f =>
+        `<div class="finding"><span class="sev ${esc(f.severity||'low')}">${esc((f.severity||'low').toUpperCase())}</span>
+          ${f.file?`<span class="floc" data-f="${esc(f.file)}">${esc(f.file)}${f.line?":"+f.line:""}</span>`:""}
+          <span>${esc(f.text||"")}</span></div>`).join("");
+      return `<div class="run">
+        <div class="run-head">
+          <span class="run-kind">${esc(run.kind||"review")}</span>
+          <span class="run-status ${esc(run.status||'done')}">${statusLabel(run.status)}</span>
+          ${run.ts?`<span class="muted" style="font-size:11px">${esc(run.ts)}</span>`:""}
+        </div>
+        ${run.summary?`<div class="md" style="font-size:13px">${md(run.summary)}</div>`:""}
+        ${findings}
+      </div>`;
+    }).join("");
+    body = btns + cards;
+  }
+  return card("Ревью кода и безопасности", body);
+}
+function statusLabel(s){ return {running:"выполняется",done:"готово",failed:"ошибка"}[s] || s || "готово"; }
+
+async function triggerReview(kind){
+  await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"run-"+kind }) });
+  toast("Запрошен " + kind + " — агент запустит на чекпоинте");
+}
+// delegated handlers for review buttons (re-rendered each tick)
+$("#changes").addEventListener("click", e => {
+  if(e.target.id === "btn-codereview") triggerReview("code-review");
+  if(e.target.id === "btn-secreview") triggerReview("security-review");
+});
+
+// ----- live action feed (incremental, delta-only) -----
+// feedModel: Map spanId -> { spanId, tool, arg, role, lane, ok, startTs, endTs, running, order }
+let feedModel = new Map(), lastFeedOffset = 0, feedOrder = 0;
+let expandedAgents = new Set();           // lane keys with their section open
+let expandedSpans = new Set();            // lane keys whose "messages" block is open
+let feedMsgs = new Map();                 // lane key -> { messages, pending, loading }
+
+function applyFeedEvents(events){
+  (events || []).forEach(ev => {
+    const id = ev.spanId; if(!id) return;
+    let m = feedModel.get(id);
+    if(!m){ m = { spanId:id, order:feedOrder++ }; feedModel.set(id, m); }
+    // best-effort attribution: keep the more specific lane we have seen
+    if(ev.tool != null) m.tool = ev.tool;
+    if(ev.arg != null && ev.arg !== "") m.arg = ev.arg;
+    if(ev.role != null) m.role = ev.role;
+    if(ev.lane != null && (m.lane == null || (m.lane === "orchestrator" && ev.lane !== "orchestrator"))) m.lane = ev.lane;
+    if(ev.session_id != null) m.session = ev.session_id;
+    if(ev.event === "start"){ if(m.startTs == null) m.startTs = ev.ts; if(m.endTs == null) m.running = true; }
+    else if(ev.event === "end"){ m.endTs = ev.ts; m.running = false; if(ev.ok != null) m.ok = ev.ok; }
+  });
+}
+
+async function traceTick(){
+  try {
+    const [tr, feed] = await Promise.all([
+      api("/trace?slug=" + encodeURIComponent(SLUG)),
+      api("/trace/feed?slug=" + encodeURIComponent(SLUG) + "&since=" + lastFeedOffset),
+    ]);
+    if(feed && Array.isArray(feed.events)){
+      applyFeedEvents(feed.events);
+      if(typeof feed.nextOffset === "number") lastFeedOffset = feed.nextOffset;
+    }
+    renderTrace(tr || {});
+    renderFeed();
+    // retry message blocks that were open but the transcript was not ready yet
+    expandedSpans.forEach(key => {
+      const st = feedMsgs.get(key);
+      if(st && !st.loading && st.pending){ feedMsgs.delete(key); loadFeedMessages(key); }
+    });
+  } catch(e){ /* server may be restarting */ }
+}
+
+// Build lane groups from the incremental feed model. A lane key is the subagent
+// spanId (preferred) or "orchestrator"/session for top-level actions.
+function feedLanes(){
+  const lanes = new Map();   // key -> { key, label, role, actions[], firstTs, running, count }
+  feedModel.forEach(m => {
+    const key = (m.lane && m.lane !== "orchestrator") ? m.lane : "orchestrator";
+    let g = lanes.get(key);
+    if(!g){ g = { key, role: null, actions: [], running: false, count: 0, session: m.session }; lanes.set(key, g); }
+    if(m.role && key !== "orchestrator") g.role = m.role;
+    g.actions.push(m);
+    g.count++;
+    if(m.running) g.running = true;
+  });
+  lanes.forEach(g => {
+    g.actions.sort((a,b) => (ep(a.startTs)||0) - (ep(b.startTs)||0) || a.order - b.order);
+    g.firstTs = g.actions.length ? ep(g.actions[0].startTs) : null;
+    g.label = g.key === "orchestrator" ? "оркестратор" : (g.role || g.key);
+  });
+  // orchestrator last, agents ordered by first activity
+  return [...lanes.values()].sort((a,b) => {
+    if(a.key === "orchestrator") return 1; if(b.key === "orchestrator") return -1;
+    return (a.firstTs||0) - (b.firstTs||0);
+  });
+}
+
+function feedActionRow(m, t0){
+  const tool = (m.tool || "").toLowerCase();
+  const rel = (m.startTs != null && t0 != null) ? Math.max(0, (ep(m.startTs)||0) - t0) : null;
+  const tcell = rel == null ? "" : fmtDur(rel);
+  const dur = m.running
+    ? `<span class="feed-dur run">идёт…</span>`
+    : `<span class="feed-dur">${fmtDur(m.startTs!=null&&m.endTs!=null ? (ep(m.endTs)-ep(m.startTs)) : null)}</span>`;
+  const cls = m.running ? "running" : (m.ok === false ? "err" : "");
+  return `<div class="feed-row ${cls}" data-span="${esc(m.spanId)}">
+    <div class="feed-line">
+      <span class="feed-t">${esc(tcell)}</span>
+      <span class="feed-tool ${esc(tool)}">${esc(m.tool || "—")}</span>
+      ${m.arg ? `<span class="feed-arg">${esc(m.arg)}</span>` : ""}
+      ${dur}
+    </div>
+  </div>`;
+}
+
+function feedAgentSection(g){
+  const open = expandedAgents.has(g.key);
+  const t0 = g.firstTs;
+  const rows = g.actions.map(m => feedActionRow(m, t0)).join("");
+  const color = roleColor(g.label);
+  const sub = g.key === "orchestrator"
+    ? (g.session ? `сессия ${esc(String(g.session).slice(0,8))}` : "")
+    : "";
+  const meta = `${g.count} ${g.count===1?"действие":"действий"}${g.running?" · идёт":""}`;
+  const msgOpen = expandedSpans.has(g.key);
+  const md_state = feedMsgs.get(g.key);
+  let msgBlock = "";
+  if(msgOpen){
+    if(!md_state || md_state.loading){ msgBlock = `<div class="feed-empty">сообщения загружаются…</div>`; }
+    else if(md_state.pending){ msgBlock = `<div class="feed-empty">сообщения ещё подгружаются…</div>`; }
+    else if(!md_state.messages || !md_state.messages.length){ msgBlock = `<div class="feed-empty">сообщений нет.</div>`; }
+    else {
+      msgBlock = `<div class="feed-msgs">` + md_state.messages.map(msg =>
+        `<div class="feed-msg"><span class="feed-t">+${esc(fmtDur(msg.relMs))}</span><div class="md">${md(msg.text||"")}</div></div>`
+      ).join("") + `</div>`;
+    }
+  }
+  return `<div class="feed-agent ${g.running?"running":""} ${open?"open":""}" data-lane="${esc(g.key)}">
+    <div class="feed-agent-head">
+      <span class="feed-caret">▸</span>
+      <span class="feed-role" style="background:${color}">${esc(g.label)}</span>
+      ${sub?`<span class="feed-sub">${sub}</span>`:""}
+      <span class="feed-agent-meta">${esc(meta)}</span>
+    </div>
+    <div class="feed-body">
+      <div class="feed-timeline">${rows || `<div class="feed-empty">нет действий</div>`}</div>
+      <div class="feed-msgbtn ${msgOpen?"open":""}"><span class="feed-mcaret">▸</span>Сообщения агента</div>
+      ${msgBlock}
+    </div>
+  </div>`;
+}
+
+// Diff-render the feed into #trace-feed (a node separate from #trace-summary, so the
+// summary/gantt/subagent cards are never touched). Rewrites the feed subtree only when
+// the model or expansion state actually changed (signature guard) — ticks with no new
+// events are DOM no-ops, so scroll and open sections are preserved. Expansion lives in
+// expandedAgents/expandedSpans Sets + feedMsgs Map, so it survives any rebuild.
+let lastFeedSig = "";
+function renderFeed(){
+  const { feed } = ensureTraceShell();
+  const lanes = feedLanes();
+  if(!lanes.length){
+    if(feed.dataset.empty !== "1"){
+      feed.innerHTML = card("Живая лента действий", `<p class="empty">Пока нет действий — лента наполнится, когда агенты начнут вызывать инструменты.</p>`);
+      feed.dataset.empty = "1"; lastFeedSig = "";
+    }
+    return;
+  }
+  // cheap signature: lanes + per-action end/running state + which sections/messages are open
+  const sig = lanes.map(g =>
+    g.key + ":" + g.actions.map(m => m.spanId + (m.running?"r":"") + (m.ok===false?"x":"") + (m.endTs?"e":"")).join(",") +
+    (expandedAgents.has(g.key)?"|A":"") + (expandedSpans.has(g.key)?"|M":"")
+  ).join(";") + "#" + [...feedMsgs.keys()].map(k => k + (feedMsgs.get(k).loading?"L":"") + (feedMsgs.get(k).pending?"P":"") + ((feedMsgs.get(k).messages||[]).length)).join(",");
+  if(sig === lastFeedSig && feed.dataset.empty === "0") return;
+  lastFeedSig = sig;
+  feed.dataset.empty = "0";
+  const live = `<span class="feed-live"><span class="feed-dot"></span>в реальном времени</span>`;
+  const sections = lanes.map(feedAgentSection).join("");
+  feed.innerHTML = `<section class="card">${live}<h2>Живая лента действий</h2>${sections}</section>`;
+}
+
+// Lazily load agent messages for a lane (spanId or "orchestrator"/role).
+async function loadFeedMessages(laneKey){
+  const cur = feedMsgs.get(laneKey);
+  // re-fetch if still pending (transcript not ready yet); skip if loaded or in-flight
+  if(cur && (cur.loading || (cur.messages && cur.messages.length) || (cur.messages && !cur.pending))) return;
+  feedMsgs.set(laneKey, { loading: true });
+  renderFeed();
+  try {
+    const r = await api("/trace/messages?slug=" + encodeURIComponent(SLUG) + "&agent=" + encodeURIComponent(laneKey));
+    feedMsgs.set(laneKey, { loading: false, pending: !!(r && r.pending), messages: (r && r.messages) || [] });
+  } catch(e){
+    feedMsgs.set(laneKey, { loading: false, pending: true, messages: [] });
+  }
+  renderFeed();
+}
+
+// Delegated handler — the feed is re-rendered each tick, so bind once on #trace.
+$("#trace").addEventListener("click", e => {
+  const head = e.target.closest(".feed-agent-head");
+  if(head){
+    const key = head.parentElement.dataset.lane;
+    if(expandedAgents.has(key)) expandedAgents.delete(key); else expandedAgents.add(key);
+    renderFeed();
+    return;
+  }
+  const msgbtn = e.target.closest(".feed-msgbtn");
+  if(msgbtn){
+    const key = msgbtn.closest(".feed-agent").dataset.lane;
+    if(expandedSpans.has(key)){ expandedSpans.delete(key); renderFeed(); }
+    else { expandedSpans.add(key); loadFeedMessages(key); }
+  }
+});
+
+function fmtTok(n){ if(n==null) return "—"; if(n<1000) return ""+n; if(n<1e6) return (n/1000).toFixed(n<10000?1:0)+"k"; return (n/1e6).toFixed(2)+"M"; }
+function fmtDur(ms){ if(ms==null) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60), r=s%60; return r?`${m}м ${r}с`:`${m}м`; }
+function fmtUsd(v){ if(v==null) return "—"; return "≈$"+(v<0.01?v.toFixed(4):v.toFixed(2)); }
+function fmtPct(v){ return v==null?"—":v+"%"; }
+const ROLE_COLORS = {
+  "wf-explorer":"#0ea5e9","wf-planner":"#8b5cf6","wf-coder":"#10b981","wf-reviewer":"#f59e0b",
+  "wf-documenter":"#ec4899","оркестратор":"#64748b",
+  "Explore":"#0ea5e9","Plan":"#8b5cf6","Code":"#10b981","Review":"#f59e0b"
+};
+function roleColor(r){ if(ROLE_COLORS[r]) return ROLE_COLORS[r];
+  let h=0; for(const c of (r||"")) h=(h*31+c.charCodeAt(0))%360; return `hsl(${h} 58% 46%)`; }
+function ep(ts){ const v = Date.parse(ts||""); return isNaN(v)?null:v; }
+
+// Ensure #trace has stable child containers so the live feed (#trace-feed) is
+// never clobbered by the summary re-render. The feed is diff-rendered separately.
+function ensureTraceShell(){
+  let feed = $("#trace-feed");
+  if(!feed){
+    $("#trace").innerHTML = `<div id="trace-feed"></div><div id="trace-summary"></div>`;
+    feed = $("#trace-feed");
+  }
+  return { feed, summary: $("#trace-summary") };
+}
+
+function renderTrace(tr){
+  const { summary } = ensureTraceShell();
+  const agents = tr.agents || [];
+  if(!agents.length){ summary.innerHTML = `<p class="empty">Пока нет данных трейсинга — сводка появится, когда отработают сабагенты.</p>`; return; }
+  const subs = agents.filter(a => a.kind === "subagent");
+  const orch = agents.filter(a => a.kind === "orchestrator");
+  const T = tr.totals || {};
+
+  // --- summary ---
+  const byModel = Object.entries(T.byModel || {})
+    .map(([m,d]) => `${esc(m)}: ${fmtTok(d.out)} ток · ${fmtUsd(d.costUsd)} · ${d.agents} аг.`).join(" · ");
+  let h = card("Сводка сессии", `
+    <div class="stats">
+      ${stat(tr.sessions ? tr.sessions.length : 0, "сессий")}
+      ${stat(T.agents||0, "сабагентов")}
+      ${stat(fmtTok(T.out), "выходных токенов")}
+      ${stat(fmtDur(T.durationMs), "общее время")}
+      ${stat(fmtTok(T.contextPeak), "пиковый контекст")}
+      ${stat(fmtUsd(T.costUsd), "≈ стоимость")}
+    </div>${byModel?`<div class="bymodel">${byModel}</div>`:""}`);
+
+  // --- timeline (gantt) ---
+  h += card("Таймлайн · параллелизм сабагентов", renderGantt(subs));
+
+  // --- per-agent, grouped by phase, orchestrator first ---
+  let body = "";
+  orch.forEach(a => body += agentCard(a, tr.window));
+  const phases = [];
+  subs.forEach(a => { const p = a.phase || "—"; if(!phases.includes(p)) phases.push(p); });
+  phases.forEach(p => {
+    body += `<div class="phase-h">${esc(p)}</div>`;
+    subs.filter(a => (a.phase||"—") === p).forEach(a => body += agentCard(a, tr.window));
+  });
+  h += card("Сабагенты", body);
+
+  summary.innerHTML = h;
+}
+function stat(v, k){ return `<div class="stat"><div class="v">${esc(String(v))}</div><div class="k">${esc(k)}</div></div>`; }
+
+function renderGantt(subs){
+  const items = subs.map(a => ({ a, s: ep(a.startTs), e: ep(a.endTs) }))
+                    .filter(x => x.s != null);
+  if(!items.length) return `<p class="empty">Нет завершённых интервалов.</p>`;
+  items.forEach(x => { if(x.e == null || x.e < x.s) x.e = x.s + 1000; });
+  const t0 = Math.min(...items.map(x => x.s)), t1 = Math.max(...items.map(x => x.e));
+  const span = Math.max(1, t1 - t0);
+  items.sort((a,b) => a.s - b.s);
+  // greedy lane packing -> parallel agents land on separate lanes
+  const laneEnds = [];
+  items.forEach(x => {
+    let li = laneEnds.findIndex(end => end <= x.s);
+    if(li < 0){ li = laneEnds.length; laneEnds.push(x.e); } else laneEnds[li] = x.e;
+    x.lane = li;
+  });
+  let lanes = "";
+  for(let li = 0; li < laneEnds.length; li++){
+    let bars = "";
+    items.filter(x => x.lane === li).forEach(x => {
+      const left = 100*(x.s - t0)/span, w = Math.max(2, 100*(x.e - x.s)/span);
+      const c = roleColor(x.a.role);
+      const label = `${x.a.role}${x.a.workstream?" · "+x.a.workstream:""} · ${fmtDur(x.a.durationMs)}`;
+      bars += `<div class="bar ${x.a.ok===false?'err':''}" style="left:${left}%;width:${w}%;background:${c}" title="${esc(label)} · ${fmtTok(x.a.out)} ток">${esc(label)}</div>`;
+    });
+    lanes += `<div class="lane">${bars}</div>`;
+  }
+  return `<div class="gantt">${lanes}</div>
+    <div class="axis"><span>0с</span><span>${fmtDur(t1 - t0)}</span></div>`;
+}
+
+function agentCard(a, window){
+  const ctxPct = a.contextPct != null ? a.contextPct : null;
+  const hot = ctxPct != null && ctxPct >= 80;
+  const ctx = ctxPct == null ? "" : `
+    <div class="metric"><div class="k">контекст окна</div>
+      <div class="v">${fmtTok(a.peakContext)} <span class="muted">(${ctxPct}%)</span></div>
+      <div class="ctxbar"><div class="${hot?'hot':''}" style="width:${Math.min(100,ctxPct)}%"></div></div></div>`;
+  const tags = [
+    a.bg ? `<span class="tag bg">фон</span>` : "",
+    a.ok === false ? `<span class="tag fail">ошибка</span>` : "",
+    !a.hasUsage ? `<span class="tag">нет токенов</span>` : "",
+  ].join("");
+  return `<div class="agent ${a.kind==='orchestrator'?'orch':''} ${a.ok===false?'err':''}">
+    <div class="agent-head">
+      <span class="role" style="background:${roleColor(a.role)}">${esc(a.role||"—")}</span>
+      ${a.workstream?`<span class="ws">${esc(a.workstream)}</span>`:""}
+      ${a.model?`<span class="tag">${esc(a.model)}</span>`:""}
+      ${tags}
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="k">время</div><div class="v">${fmtDur(a.durationMs)}</div></div>
+      <div class="metric"><div class="k">выход</div><div class="v">${fmtTok(a.out)} ток</div></div>
+      <div class="metric"><div class="k">кэш-хит</div><div class="v">${fmtPct(a.cacheHitPct)}</div></div>
+      <div class="metric"><div class="k">≈ стоимость</div><div class="v">${fmtUsd(a.costUsd)}</div></div>
+      ${ctx}
+    </div>
+  </div>`;
+}
+
+// ----- documentation tab (knowledge tree + force-directed graph) -----
+let kbData = null, graphRAF = null, graphNodes = [], graphEdges = [], selNode = null;
+function stopGraph(){ if(graphRAF){ cancelAnimationFrame(graphRAF); graphRAF = null; } }
+
+async function docsTick(){
+  try {
+    kbData = await api("/knowledge?slug=" + encodeURIComponent(SLUG)) || {};
+    renderDocs();
+  } catch(e){ /* server may be restarting */ }
+}
+function renderDocs(){
+  const root = $("#docs");
+  if(!kbData || !kbData.exists){
+    root.innerHTML = `<p class="empty">База знаний ещё не создана. Она появится в <code>docs/knowledge/</code> по мере работы (фаза IMPLEMENT).</p>`;
+    return;
+  }
+  root.innerHTML = `<div class="docs-grid">
+    <div class="doc-tree">
+      <input class="search" id="doc-search" placeholder="Поиск по файлам…">
+      <div id="doc-tree-body"></div>
+    </div>
+    <div class="doc-main">
+      <div class="graph-card">
+        <div class="graph-legend">
+          <span class="lk"><i style="background:#8b5cf6"></i>документ</span>
+          <span class="lk"><i style="background:#10b981"></i>код</span>
+          <span class="lk"><i style="background:var(--accent)"></i>в этой задаче</span>
+        </div>
+        <svg class="graph" id="kgraph" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <div class="doc-viewer" id="doc-viewer"><p class="empty">Выберите документ в дереве или узел графа.</p></div>
+    </div>
+  </div>`;
+  $("#doc-tree-body").innerHTML = renderTree(kbData.tree, 0);
+  $("#doc-tree-body").querySelectorAll(".tnode.file").forEach(el => el.onclick = () => openDoc(el.dataset.path));
+  $("#doc-search").addEventListener("input", e => filterTree(e.target.value.toLowerCase()));
+  buildGraph(kbData.graph || {nodes:[],edges:[]});
+}
+function renderTree(node, depth){
+  if(!node) return "";
+  const gnodes = (kbData.graph && kbData.graph.nodes) || [];
+  if(node.type === "dir"){
+    const kids = (node.children||[]).map(c => renderTree(c, depth+1)).join("");
+    const head = depth === 0 ? "" : `<div class="tnode dir"><span>📁 ${esc(node.name)}</span></div>`;
+    return head + (depth===0 ? kids : `<div class="tchildren">${kids}</div>`);
+  }
+  const touched = (gnodes.find(n => n.id === node.path)||{}).touched;
+  return `<div class="tnode file ${touched?'touched':''}" data-path="${esc(node.path)}" title="${esc(node.path)}">
+    <span class="tdot" style="background:#8b5cf6"></span><span class="tlabel">${esc(node.name)}</span></div>`;
+}
+function filterTree(q){
+  $("#doc-tree-body").querySelectorAll(".tnode.file").forEach(el => {
+    el.style.display = !q || el.dataset.path.toLowerCase().includes(q) ? "" : "none";
+  });
+}
+async function openDoc(path){
+  selNode = path;
+  if(!graphRAF) drawGraph();
+  $("#doc-tree-body") && $("#doc-tree-body").querySelectorAll(".tnode.file").forEach(el => el.classList.toggle("active", el.dataset.path === path));
+  const v = $("#doc-viewer"); if(!v) return;
+  const head = `<div class="dv-head"><span class="dv-path">${esc(path)}</span></div>`;
+  if(!path.endsWith(".md")){ v.innerHTML = head + `<p class="empty">Это файл кода. Граф показывает, какие документы на него ссылаются.</p>`; return; }
+  v.innerHTML = `<p class="empty">Загрузка…</p>`;
+  const r = await api("/knowledge?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(path));
+  v.innerHTML = head + (r && r.content != null ? `<div class="md">${md(r.content)}</div>` : `<p class="empty">Не удалось загрузить файл.</p>`);
+}
+
+// --- force-directed layout (vanilla SVG, animated with cooling) ---
+const GW = 1000, GH = 620, NODE_COL = { doc:"#8b5cf6", code:"#10b981" };
+function buildGraph(g){
+  stopGraph();
+  const byId = {};
+  const list = g.nodes || [];
+  graphNodes = list.map((n,i) => {
+    const ang = (i / Math.max(1, list.length)) * Math.PI*2;
+    const o = { ...n, x: GW/2 + Math.cos(ang)*200 + (i%7)*3, y: GH/2 + Math.sin(ang)*200 + (i%5)*3, vx:0, vy:0, fx:null, fy:null };
+    byId[n.id] = o; return o;
+  });
+  graphEdges = (g.edges||[]).filter(e => byId[e.from] && byId[e.to]).map(e => ({ s: byId[e.from], t: byId[e.to] }));
+  const deg = {};
+  graphEdges.forEach(e => { deg[e.s.id]=(deg[e.s.id]||0)+1; deg[e.t.id]=(deg[e.t.id]||0)+1; });
+  graphNodes.forEach(n => n.r = 6 + Math.min(8, (deg[n.id]||0)*1.6));
+  const svg = $("#kgraph"); if(!svg) return;
+  if(!graphNodes.length){ svg.innerHTML = `<text x="500" y="310" text-anchor="middle" fill="#999">Нет связей для отображения</text>`; return; }
+  let alpha = 1;
+  function stepFrame(){
+    alpha *= 0.985;
+    for(let i=0;i<graphNodes.length;i++){
+      const a = graphNodes[i];
+      for(let j=i+1;j<graphNodes.length;j++){
+        const b = graphNodes[j];
+        let dx = a.x-b.x, dy = a.y-b.y, d2 = dx*dx+dy*dy || 0.01, d = Math.sqrt(d2), f = 1400/d2;
+        const ux = dx/d, uy = dy/d;
+        a.vx += ux*f; a.vy += uy*f; b.vx -= ux*f; b.vy -= uy*f;
+      }
+    }
+    graphEdges.forEach(e => {
+      let dx = e.t.x-e.s.x, dy = e.t.y-e.s.y, d = Math.sqrt(dx*dx+dy*dy)||0.01, f = (d-90)*0.02, ux=dx/d, uy=dy/d;
+      e.s.vx += ux*f; e.s.vy += uy*f; e.t.vx -= ux*f; e.t.vy -= uy*f;
+    });
+    graphNodes.forEach(n => {
+      n.vx += (GW/2 - n.x)*0.002; n.vy += (GH/2 - n.y)*0.002;
+      n.vx *= 0.85; n.vy *= 0.85;
+      if(n.fx!=null){ n.x = n.fx; n.y = n.fy; } else { n.x += n.vx*alpha*4; n.y += n.vy*alpha*4; }
+      n.x = Math.max(30, Math.min(GW-30, n.x)); n.y = Math.max(24, Math.min(GH-24, n.y));
+    });
+    drawGraph();
+    if(alpha > 0.03) graphRAF = requestAnimationFrame(stepFrame); else graphRAF = null;
+  }
+  stepFrame();
+}
+function drawGraph(){
+  const svg = $("#kgraph"); if(!svg) return;
+  let adj = null;
+  if(selNode){ adj = new Set([selNode]); graphEdges.forEach(e => { if(e.s.id===selNode||e.t.id===selNode){ adj.add(e.s.id); adj.add(e.t.id); } }); }
+  const edges = graphEdges.map(e => {
+    const hot = selNode && (e.s.id===selNode || e.t.id===selNode);
+    return `<line class="edge ${hot?'hot':''}" x1="${e.s.x.toFixed(1)}" y1="${e.s.y.toFixed(1)}" x2="${e.t.x.toFixed(1)}" y2="${e.t.y.toFixed(1)}"/>`;
+  }).join("");
+  const nodes = graphNodes.map(n => {
+    const dim = adj && !adj.has(n.id) ? "dim" : "";
+    const col = n.touched ? "var(--accent)" : (NODE_COL[n.type]||"#888");
+    const short = n.label.length>22 ? n.label.slice(0,20)+"…" : n.label;
+    return `<g class="node ${n.touched?'touched':''} ${n.id===selNode?'sel':''} ${dim}" data-id="${esc(n.id)}" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
+      <circle r="${n.r.toFixed(1)}" fill="${col}"></circle><text x="${(n.r+3).toFixed(1)}" y="4">${esc(short)}</text></g>`;
+  }).join("");
+  svg.innerHTML = `<g class="edges">${edges}</g><g class="nodes">${nodes}</g>`;
+  svg.querySelectorAll(".node").forEach(el => el.addEventListener("pointerdown", e => startDrag(e, el.dataset.id)));
+}
+let dragMoved = false;
+function svgPt(e){ const svg = $("#kgraph"), r = svg.getBoundingClientRect(); return { x:(e.clientX-r.left)/r.width*GW, y:(e.clientY-r.top)/r.height*GH }; }
+function startDrag(e, id){
+  e.preventDefault(); dragMoved = false;
+  const n = graphNodes.find(x => x.id===id); if(!n) return;
+  const move = ev => { const p = svgPt(ev); n.fx = p.x; n.fy = p.y; n.x = p.x; n.y = p.y; dragMoved = true; if(!graphRAF) drawGraph(); };
+  const up = () => {
+    document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+    n.fx = null; n.fy = null;
+    if(!dragMoved) openDoc(id);
+  };
+  document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+}
+
+// ----- chat (checkpoint steering) -----
+let chatOpen = false, chatMsgs = [], chatSeen = 0;
+function toggleChat(open){
+  chatOpen = open != null ? open : !chatOpen;
+  $("#chat-panel").hidden = !chatOpen;
+  if(chatOpen){
+    chatSeen = chatMsgs.length;
+    $("#chat-unread").hidden = true;
+    renderChat();
+    setTimeout(() => { const l = $("#chat-log"); l.scrollTop = l.scrollHeight; $("#chat-text").focus(); }, 0);
+  }
+}
+$("#btn-chat-toggle").onclick = () => toggleChat();
+$("#chat-close").onclick = () => toggleChat(false);
+
+async function chatTick(){
+  try {
+    const r = await api("/chat?slug=" + encodeURIComponent(SLUG));
+    const next = (r && r.messages) || [];
+    const changed = next.length !== chatMsgs.length;
+    chatMsgs = next;
+    if(changed) renderChat();
+    updateChatUnread();
+  } catch(e){ /* server may be restarting */ }
+}
+function updateChatUnread(){
+  const b = $("#chat-unread");
+  if(chatOpen){ chatSeen = chatMsgs.length; b.hidden = true; return; }
+  const unread = Math.max(0, chatMsgs.length - chatSeen);
+  if(unread > 0){ b.hidden = false; b.textContent = unread > 9 ? "9+" : unread; }
+  else b.hidden = true;
+}
+function renderChat(){
+  const log = $("#chat-log");
+  if(!chatMsgs.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  log.innerHTML = chatMsgs.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
+    <div class="who">${m.role==='agent'?'агент':'вы'}</div>
+    <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
+    ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
+  </div>`).join("");
+  if(atBottom || chatOpen) log.scrollTop = log.scrollHeight;
+}
+async function sendChat(){
+  const ta = $("#chat-text"), text = ta.value.trim();
+  if(!text) return;
+  ta.value = "";
+  await api("/chat", { method:"POST", body: JSON.stringify({ slug:SLUG, text, phase: (lastData&&lastData.phase)||"" }) });
+  await chatTick();
+  toast("Отправлено агенту");
+}
+$("#chat-send").onclick = sendChat;
+$("#chat-text").addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
+});
+
+// ----- polling loop -----
+async function tick(){
+  try {
+    const [data, replies] = await Promise.all([
+      api("/data?slug=" + encodeURIComponent(SLUG)),
+      api("/replies?slug=" + encodeURIComponent(SLUG)),
+    ]);
+    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, (replies.replies||[]).length]);
+    if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
+  } catch(e){ /* server may be restarting */ }
+}
+(async function init(){
+  await loadDraft();
+  await tick();
+  setInterval(tick, 3000);
+  chatTick();
+  setInterval(chatTick, 5000);
+})();
+</script>
+</body>
+</html>

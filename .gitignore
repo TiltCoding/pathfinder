@@ -1,0 +1,7 @@
+.workflow/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+.claude/settings.local.json
+.claude/launch.json

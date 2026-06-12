@@ -1,0 +1,122 @@
+# Feedback loop — companion server + batched checkpoints
+
+The human and you communicate through a small local server and the per-task dashboard. The human can
+write comments **any time**; you read them **only at checkpoints**, in batches. This keeps you from
+polling during active work and gives the human a calm "queue up edits, then send" experience.
+
+## Starting the server (once per project)
+
+The server is `${CLAUDE_PLUGIN_ROOT}/scripts/server.py` (stdlib only). Start it **in the background**
+from the project root so it survives across your turns:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/server.py" --root "$(pwd)" >/dev/null 2>&1
+```
+
+Run it with the Bash tool using `run_in_background: true`. It writes `.workflow/server.json` with the
+chosen `port` and `url` — read that file to learn the port (it auto-picks a free port near 8473). If
+`server.json` already exists and `GET /health` answers, reuse it instead of starting another.
+
+Then per task:
+1. Copy `${CLAUDE_PLUGIN_ROOT}/templates/dashboard.html` → `.workflow/tasks/<slug>/index.html`.
+2. Give the human the URL: `http://localhost:<port>/?slug=<slug>`.
+
+The dashboard renders from `dashboard.json` and `replies.json`, which **you** write (see
+`dashboard-guide.md`). The server persists the human's side: `draft.json` (accumulating),
+`submissions/<n>.json` (a sent batch), `signals.json` (e.g. `approve-plan`), `submit.flag`.
+
+## Signals the dashboard can raise
+
+`signals.json` is an append-only log; the buttons in the dashboard `POST /signal` to it and wake your
+`/wait`. Recognized signals:
+
+- **`approve-plan`** — the human approved the plan at the gate (freeze `plan.md`, advance to IMPLEMENT).
+- **`run-code-review`** / **`run-security-review`** — re-run that review skill over the current diff and
+  append a fresh entry to `reviews.json` (see VERIFY in `phases.md`). Safe to receive in any phase;
+  honor it at your next checkpoint.
+
+`reviews.json` shape (you write it; the **«Изменения»** tab renders it):
+
+```json
+{ "runs": [
+  { "id": "r1", "kind": "code-review", "status": "done", "ts": "...",
+    "summary": "Краткий итог.", "findings": [
+      { "severity": "high", "file": "src/x.py", "line": 42, "text": "…" } ] } ] }
+```
+
+## Parking at a checkpoint and consuming a batch
+
+When you reach a checkpoint (end of an iteration where you want human input, or the plan gate):
+
+1. Set `dashboard.json` status to `awaiting-batch` and write it. Tell the user in chat, briefly, that
+   the dashboard is ready and they can comment and click «Отправить агенту на доработку» (or «Утвердить
+   план» at the gate). Record your baselines in `state.json`: `lastSubmission = submit.flag.latest`
+   and `lastSignalCount = len(signals.json.signals)`.
+2. **Park on the long-poll, not a timer.** Read `url` from `.workflow/server.json` and start a
+   **background** `curl` (Bash tool, `run_in_background: true`) on the `/wait` endpoint:
+
+   ```bash
+   curl -sS --max-time 1830 \
+     "<url>/wait?slug=<slug>&sinceSubmission=<lastSubmission>&sinceSignal=<lastSignalCount>&timeout=1800" \
+     || true
+   ```
+
+   `/wait` blocks until a new submission or signal lands and then returns instantly, so the harness
+   re-invokes you **the moment the human clicks** — near-zero latency, no idle wake-ups. As a
+   **fallback only**, also set a long `ScheduleWakeup` (~1850s, just past the curl timeout) with the
+   same `/feature` prompt, in case the server or curl dies. If the human is clearly active in chat
+   instead, just proceed from chat input.
+   - On wake, read `.workflow/tasks/<slug>/submit.flag`. If `latest > lastSubmission`, read
+     `submissions/<latest>.json` and process it (below).
+   - Read `signals.json`. If an `approve-plan`, `run-code-review`, `run-security-review` (or other
+     relevant) signal arrived past `lastSignalCount`, act on it; update `lastSignalCount`.
+   - **Read `chat.jsonl`.** If there are `role:"human"` messages newer than `state.json.lastChatTs`,
+     handle them (see «Chat» below); update `lastChatTs`.
+   - If nothing new (a rare spurious return), re-park (repeat steps 1–2).
+3. **Processing a submission:** for each item (`kind: "comment"` with `blockId`+`selectedText`, or
+   `kind: "answer"` with `questionId`), apply the change to `plan.md`/`questions.md`/code as
+   appropriate. A comment's `blockId` is the anchor of the commented region: a plan-block id (`b1`…)
+   **or** a prose-section anchor (`summary` / `codebaseMap`); `selectedText` is the exact fragment the
+   human highlighted — use it to locate what they mean. Then append a reply to `replies.json` keyed by
+   the same `blockId`/`questionId` with a one- to two-sentence Russian note on what you did. Update `lastSubmission`, bump `iteration`,
+   rewrite `dashboard.json` (status back to `working`, then to `awaiting-batch` for the next round).
+
+`replies.json` shape:
+
+```json
+{ "replies": [
+  { "blockId": "b1", "text": "Переименовал функцию в export_to_csv, обновил блок 1.", "ts": "..." },
+  { "questionId": "q1", "text": "Принято: разделитель — запятая.", "ts": "..." }
+] }
+```
+
+## Chat — free-form steering at checkpoints
+
+Alongside the batched plan comments, the dashboard has a **chat panel** for free-form steering that
+isn't tied to a plan block — questions, nudges, scope changes, "also do X". It coexists with batches;
+it does **not** interrupt running coders. Handle it at checkpoints, the same cadence as everything else.
+
+- Storage: `.workflow/tasks/<slug>/chat.jsonl`, append-only, one JSON object per line
+  `{ "role": "human"|"agent", "text": "...", "ts": "...", "phase": "..." }`. A human message also raises
+  a `chat` signal, so your parked `/wait` returns immediately.
+- On wake (or at any IMPLEMENT checkpoint between work-streams), read messages with `ts >
+  state.json.lastChatTs`. For each: answer it by **appending your own `role:"agent"` line** to
+  `chat.jsonl` (the panel renders it), and if it asks for a change, fold it into the remaining
+  work-streams / `plan.md` just like a steering batch. Then set `lastChatTs` to the newest message ts.
+- Keep replies short and in Russian. If a request is large enough to reshape the plan, say so in chat
+  and reflect it in `dashboard.json` rather than silently diverging.
+- In headless/eval mode there is no chat; skip it.
+
+## Don't busy-wait
+
+The `/wait` long-poll is already the no-busy-wait path: you block on a background curl and are
+re-invoked only when there's a real event, so you burn zero turns while parked and pick up clicks
+near-instantly. Do **not** add a short-interval `ScheduleWakeup` to poll on top of it — keep only the
+long (~1850s) fallback. If you are waiting on a long background coder instead of the human, you will
+be re-invoked when it finishes — schedule only a long fallback in that case too.
+
+## Eval / headless mode
+
+With `--eval` / `AIPF_EVAL=1`: do not park for the human. If the fixture pre-seeded
+`submissions/*.json`, apply them in order; then treat the plan as approved and continue. This is what
+lets the workflow run unattended for benchmarking.

@@ -1,0 +1,33 @@
+{
+  "skill_name": "feature",
+  "notes": "Workflow-level evals. Each case runs /feature in headless mode (AIPF_EVAL=1) against a fixture project. The with-workflow run has the plugin enabled; the baseline is vanilla Claude on the same prompt. Grade with rubrics/ + the fixture's own test suite.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "py-service-add-csv-export",
+      "fixture": "fixtures/py-service",
+      "prompt": "Добавь в сервис отчётов экспорт в CSV: метод сервиса export_to_csv(report) и эндпоинт GET /reports/{id}/export.csv. Разделитель — запятая.",
+      "seed_submissions": ["fixtures/py-service/.aipf-seed/submissions/1.json"],
+      "expected_output": "Реализован экспорт CSV, проходят тесты фикстуры; обновлена база знаний (areas, task-log, INDEX).",
+      "assertions": [
+        { "name": "tests_green", "kind": "script", "text": "Тесты фикстуры зелёные после IMPLEMENT (python -m pytest)." },
+        { "name": "endpoint_exists", "kind": "script", "text": "В роутере есть маршрут export.csv." },
+        { "name": "plan_has_blocks", "kind": "llm", "text": "plan.md разбит на блоки с id и покрывает сервис + эндпоинт." },
+        { "name": "knowledge_updated", "kind": "script", "text": "docs/knowledge/INDEX.md и task-log.md обновлены, есть запись об области reports." }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "py-service-fix-bug",
+      "fixture": "fixtures/py-service",
+      "prompt": "Почини баг: при пустом списке записей отчёт падает с делением на ноль в средней величине. Должен возвращать 0.",
+      "seed_submissions": [],
+      "expected_output": "Баг исправлен, добавлен регрессионный тест, тесты зелёные.",
+      "assertions": [
+        { "name": "tests_green", "kind": "script", "text": "Тесты фикстуры зелёные." },
+        { "name": "regression_test_added", "kind": "script", "text": "Добавлен тест на пустой список." },
+        { "name": "minimal_diff", "kind": "llm", "text": "Изменение минимальное и по существу, без лишнего рефактора." }
+      ]
+    }
+  ]
+}

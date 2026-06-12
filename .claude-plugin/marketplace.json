@@ -1,0 +1,17 @@
+{
+  "name": "algolguru",
+  "owner": {
+    "name": "Gleb"
+  },
+  "metadata": {
+    "description": "Local marketplace for personal Claude Code plugins.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "ai-pathfinder",
+      "source": "./",
+      "description": "Long-running, multi-agent coding workflow with a live per-task HTML dashboard and a self-growing project knowledge base."
+    }
+  ]
+}

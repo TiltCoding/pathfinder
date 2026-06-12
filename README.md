@@ -1,0 +1,132 @@
+<img width="2172" height="724" alt="4b367714-ca19-4e9a-b733-c4a57fc52d4a" src="https://github.com/user-attachments/assets/25da8d33-51ac-4684-ad3b-84752f0cbbc6" />
+# ai-pathfinder
+
+A long-running, multi-agent coding workflow for large/existing projects, packaged as a Claude Code
+plugin. One command, `/feature`, drives a task from a rough idea to reviewed, implemented, and
+documented code — while keeping a human comfortably in the loop through a **live per-task HTML
+dashboard** and a single explicit approval gate (the plan).
+
+## What it does
+
+- **Autonomous exploration.** Spawns read-only `wf-explorer` sub-agents that map the relevant code
+  (reading the project knowledge base first), so planning is grounded.
+- **Human-friendly elaboration.** A per-task dashboard fills in as work proceeds. The human comments on
+  individual plan blocks (Google-Docs style), answers open questions, queues up edits **in batches**,
+  and clicks **«Отправить агенту на доработку»** — the agent picks the batch up at its next checkpoint
+  and replies right in the page. One hard gate: **«Утвердить план»**.
+- **Visual demos.** When a task warrants it, the planner generates 2–3 self-contained visual variants of
+  the solution — interface **mockups** for UI work, an architecture **diagram/infographic** for
+  backend/CLI — rendered inline in the dashboard (sandboxed) so the human can preview and **pick one**
+  before any code is written.
+- **Parallel implementation.** Spawns `wf-coder` sub-agents per work-stream, plus a `wf-documenter` that
+  grows a durable, agent-readable knowledge base in `docs/knowledge/` as code lands.
+- **Verification.** A `wf-reviewer` runs tests/linters/build and reviews the diff — and, for web UIs,
+  drives a real browser via the bundled **Playwright** MCP. In VERIFY the orchestrator also runs the
+  `/code-review` and `/security-review` skills as gates (re-runnable from the dashboard).
+- **A control-panel dashboard.** Beyond the plan, the dashboard shows a **«Изменения»** tab (the task's
+  git diff per file + the review findings), a **«Документация»** tab (the `docs/knowledge/` tree beside a
+  live force-directed graph of how docs and code files link together, with this task's files highlighted),
+  and a **chat panel** for free-form steering the agent picks up at checkpoints.
+- **A flywheel.** Each task enriches `docs/knowledge/`, so the next task's exploration is faster.
+- **Observability.** Bundled hooks trace each task as a span tree (sessions, phases, parallel
+  sub-agents) and optionally forward it to **Langfuse**.
+
+## Phases
+
+`INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → DONE` — resumable across sessions via
+`.workflow/tasks/<slug>/state.json`.
+
+## Layout
+
+```
+.claude-plugin/   plugin.json, marketplace.json
+.mcp.json         bundled MCP servers (playwright, context7)
+hooks/hooks.json  telemetry hooks wiring
+skills/feature/   the orchestrator skill + reference files
+agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter
+scripts/          server.py (feedback server) + telemetry_hook.py + _aipf.py (shared, stdlib)
+templates/        dashboard.html + Russian artifact & knowledge-base templates
+evals/            fixtures, scenarios, rubrics for measuring the workflow
+```
+
+## Install
+
+From GitHub (anyone):
+
+```
+/plugin marketplace add algolGuru/ai-pathfinder
+/plugin install ai-pathfinder@algolguru
+```
+
+Or from a local checkout during development:
+
+```
+/plugin marketplace add /path/to/ai-pathfinder
+/plugin install ai-pathfinder@algolguru
+```
+
+Then run `/feature <describe your task>` in any project. The plugin starts the companion server, opens a
+dashboard for the task, and walks the phases. Per-task scratch lives in `.workflow/` (gitignored); the
+knowledge base in `docs/knowledge/` is meant to be committed.
+
+## Conventions
+
+- Artifacts, the dashboard, and the knowledge base are written in **Russian**; the skill/agent
+  instructions are in **English** (more reliable triggering).
+- `${CLAUDE_PLUGIN_ROOT}` locates the server and templates at runtime.
+
+## Telemetry & MCP
+
+**Bundled MCP servers** (`.mcp.json`, launched via `npx` on demand):
+- **playwright** (`@playwright/mcp`) — the reviewer drives a real browser in VERIFY for web changes.
+  The browser launches lazily, only on the first browser call.
+- **context7** (`@upstash/context7-mcp`) — the explorer/planner fetch up-to-date library docs.
+  Works without a key (rate-limited); set `CONTEXT7_API_KEY` for higher limits.
+
+**Telemetry hooks** (`hooks/hooks.json` → `scripts/telemetry_hook.py`) append a span tree to
+`.workflow/tasks/<slug>/telemetry.jsonl`: a span per `/feature` session and per sub-agent (parallel
+sub-agents are siblings — the branching view), tagged with phase/iteration. The **trace id is the task
+slug**, so a task is one trace across sessions. Hooks only touch local disk (fast, never block tools).
+
+The dashboard's **«Трейсинг»** tab visualizes this per task: a session summary (sub-agents, output
+tokens, total time, peak context, ≈cost), a parallelism timeline (one lane per concurrent sub-agent),
+and a card per sub-agent with model, duration, tokens, context-window fill %, cache-hit %, and ≈cost.
+It is served by `GET /trace?slug=`, computed by joining the telemetry spans with per-sub-agent
+**transcript** usage on disk (`~/.claude/projects/.../subagents/agent-*.jsonl`) — only numbers are
+read, never prose. The same token/cost data also enriches the Langfuse generations.
+
+The companion server forwards new events to **Langfuse** in the background (cursor-based, at-least-once)
+when these env vars are set — otherwise it stays **local-only**:
+
+| Env var | Purpose |
+|---|---|
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key (forwarding off if unset) |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key (forwarding off if unset) |
+| `LANGFUSE_HOST` | Langfuse base URL (default `https://cloud.langfuse.com`) |
+| `CONTEXT7_API_KEY` | Optional Context7 key for higher doc-fetch limits |
+
+Disable forwarding explicitly with `server.py --no-forward`. **Note:** hook payloads carry no token
+data, so structure/timing/outcomes come from the hooks while per-sub-agent token & context numbers are
+recovered separately from the on-disk transcripts (see the «Трейсинг» tab above).
+
+## Dashboard tabs
+
+The per-task page is a control panel, served by the stdlib companion server (no build step, no CDN):
+
+- **Рабочий процесс** — the plan, questions, visual demos and work-streams; the human comments and
+  approves here.
+- **Изменения** — the task's changed files (working tree diffed against the `baseCommit` captured at
+  INTAKE) with `+/−` counts and per-file unified diffs (`GET /changes`), plus the **code-review /
+  security-review** runs (`reviews.json`) with ranked findings and buttons to re-run either skill.
+- **Документация** — the `docs/knowledge/` file tree beside a vanilla force-directed SVG graph
+  (`GET /knowledge`) of how docs link to each other and to code files; nodes this task touched are
+  highlighted, and clicking one opens the doc inline.
+- **Трейсинг** — the observability view (see below).
+- **💬 Чат** — a slide-in panel for free-form steering. Messages wake the agent via a `chat` signal and
+  are answered at the next checkpoint (it never interrupts a running coder).
+
+## Evaluations
+
+Workflow quality is measured by reusing the **skill-creator** eval toolchain against fixture projects
+(with-workflow vs vanilla baseline), so you can compare component variants with variance analysis. See
+`evals/run-eval.md`.

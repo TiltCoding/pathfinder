@@ -1,0 +1,8 @@
+{
+  "n": 1,
+  "ts": "2026-06-09T00:00:00",
+  "items": [
+    { "id": "s1", "kind": "answer", "questionId": "q1", "text": "запятая" },
+    { "id": "s2", "kind": "comment", "blockId": "b1", "selectedText": "export_to_csv", "text": "Имя метода export_to_csv — ок. Экранируй значения с запятыми и кавычками." }
+  ]
+}
