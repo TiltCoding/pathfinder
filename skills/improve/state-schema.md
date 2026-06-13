@@ -85,9 +85,8 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
   ],
   "selected": ["feat-1", "feat-3", "feat-4"],
   "dispatched": [
-    { "slug": "cache-changes-endpoint", "featId": "feat-1",
-      "worktreePath": "/Users/.../pathfinder-worktrees/cache-changes-endpoint", "branch": "cache-changes-endpoint",
-      "baseCommit": "8e53e98…", "dashboardUrl": "http://localhost:8473/?slug=cache-changes-endpoint" }
+    { "slug": "cache-changes-endpoint", "featId": "feat-1", "candId": "cand-1",
+      "briefPath": ".workflow/tasks/cache-changes-endpoint/brief.md", "status": "queued" }
   ]
 }
 ```
@@ -103,9 +102,11 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
   state holds the aggregate that drove the ranking.
 - **`selected`** — the feature ids the human picked at the SELECT GATE (`feat-K`). Filled when
   `approve-plan` arrives; the top-K candidates map `cand-K → feat-K` in ranked order.
-- **`dispatched`** — one entry per seeded feature run
-  (`{slug, featId, worktreePath, branch, baseCommit, dashboardUrl}`), appended as DISPATCH seeds each
-  worktree. This is what the DONE summary and the hub links are built from.
+- **`dispatched`** — one entry per **queued** feature
+  (`{slug, featId, candId, briefPath, status}`), appended as DISPATCH writes each item into
+  `.workflow/dispatch-queue.json` (the project-level queue is the source of truth for the drain; this
+  mirror is for the DONE summary). No `worktreePath` — there is no worktree in the default sequential
+  drain. See `dispatch-queue.md`.
 
 ## Related files (not part of `state.json`)
 

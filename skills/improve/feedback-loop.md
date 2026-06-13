@@ -37,7 +37,7 @@ The dashboard renders from `dashboard.json` and `replies.json`, which **you** wr
   pattern as `/feature`/`/new-product`, ADR-0007).
 
 (`/improve` has no VERIFY phase: it does not implement code, so there is no diff to review and no
-`reviews.json`. The dispatched `/feature` runs do their own review in their own worktrees.)
+`reviews.json`. The drained `/feature` runs do their own review in their own (fresh-context) sessions.)
 
 ## Parking at a checkpoint and consuming a batch
 

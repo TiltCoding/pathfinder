@@ -72,15 +72,15 @@ frontmatter) and reuses the workflow's reviewer/documenter:
 The thinker is deliberately kept on **fable** and fed only curated digests (never raw sources): all
 hand-offs go through the orchestrator, and sub-agents never spawn sub-agents.
 
-## `/improve` — discover improvements, then fan them out
+## `/improve` — discover improvements, then drain them sequentially
 
 A third command, `/improve`, is the sibling that **doesn't write code at all** — it is a *producer* of
 `/feature` runs. Point it at an existing app and it surveys the codebase with a **swarm** of read-only
 analysts (each from its own prism: UX/product, performance, reliability, tech-debt, DX, functionality
 gaps, accessibility & security), reaches **consensus** with a voting panel, lets the human **pick which
-improvements to do** on the dashboard, and then **seeds each chosen feature as a parallel `/feature` run**
-in its own git worktree — reusing the same companion server, dashboard, telemetry, and the parallel-runs
-hub.
+improvements to do** on the dashboard, and then **queues the chosen features and drains them one at a
+time through `/feature`** — each feature in a fresh context — reusing the same companion server,
+dashboard, telemetry, and the runs hub.
 
 Its stages are:
 
@@ -104,16 +104,19 @@ which candidate features to dispatch**. It reuses the dashboard's existing `choi
 «Утвердить план» signal with **zero edits to the server or HTML**: each top-K candidate is one card + one
 «Делаем/Пропускаем» choice; the human submits, then approves; no answer means "skip".
 
-**Dispatch is seed-and-handoff.** You can't auto-launch independent Claude Code sessions, so DISPATCH
-prepares the soil: for each picked feature it creates a git worktree (`scripts/worktree.py`), seeds a
-ready-to-resume `/feature` `state.json` (at EXPLORE) + brief + dashboard, and the run shows up in the
-**hub** (`/hub`). The human then `cd`s into each worktree and runs `/feature` there — it resumes straight
-into exploring, skipping intake.
+**Dispatch is queue-and-drain.** Rather than fanning out parallel worktrees you'd have to launch by
+hand, DISPATCH writes each picked feature's brief and appends it to a project-level queue
+(`.workflow/dispatch-queue.json`). The human then drains the queue through `/feature`: running `/feature`
+with no task pops the next pending item, runs the **full** workflow (explore → plan gate → implement →
+review gates → done) on it, marks it done, and prompts for the next. Between features you **`/clear` then
+`/feature`** (a genuinely fresh context per feature, the queue file carrying state across the clear) — or
+**`/loop /feature`** to walk away. Every run shows up in the **hub** (`/hub`) as it executes. Parallel
+git-worktree fan-out (`scripts/worktree.py`) is still there as an opt-in if you explicitly want it.
 
 **How it differs from `/feature` and `/new-product`:** `/feature` implements one already-defined task;
 `/new-product` builds a greenfield product from a PRD; `/improve` **discovers what's worth doing** across
-the whole app and **dispatches the winners** as `/feature` runs — it never edits code itself. It runs a
-single two-mode `wf-improver` sub-agent (scout + vote) and reuses the workflow's `wf-documenter`.
+the whole app and **queues the winners** for a sequential `/feature` drain — it never edits code itself.
+It runs a single two-mode `wf-improver` sub-agent (scout + vote) and reuses the workflow's `wf-documenter`.
 
 **The evolutionary build-loop (in brief).** Each BUILD phase runs a loop: `np-coder` first materializes
 **executable tests** from the thinker's spec (without seeing the implementation plan), and those tests

@@ -4,6 +4,23 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-13 — improve: DISPATCH → последовательная очередь `/feature` (v0.13.0)
+- **Что:** Переделана модель DISPATCH у `/improve`. Было — **посев каждой выбранной фичи в свой git
+  worktree + ручной запуск** человеком (seed-and-handoff). Стало — **очередь
+  `.workflow/dispatch-queue.json` + последовательный дренаж через `/feature`, каждая фича в свежем
+  контексте**. См. [ADR-0014](decisions/ADR-0014-improve-sequential-feature-queue.md).
+- **Зачем:** на реальном прогоне `improve-runtime` (8 пиков) выяснилось, что запускать 8 worktree
+  вручную невозможно, а «одна сессия делает все 8» раздувает контекст. Очередь + ре-инвок `/feature`
+  даёт полное качество `/feature` на каждой фиче при чистом контексте.
+- **Как:** `/improve` DISPATCH пишет только `brief.md` + `pending`-item в очередь (без worktree, без
+  per-feature state/dashboard, без запуска `/feature` из своей сессии). `/feature` получил **queue-mode**:
+  без явной задачи берёт младший `pending`, бриф уже готов (пропуск INTAKE), гонит полный workflow, на
+  DONE помечает `done` и просит `/clear` + `/feature` (или `/loop /feature`).
+- **Файлы:** `skills/improve/{SKILL,phases,consensus,state-schema}.md`, новый
+  `skills/improve/dispatch-queue.md` (контракт очереди), `skills/feature/{SKILL,phases}.md`,
+  `.claude-plugin/plugin.json` (0.12.0→0.13.0). Решение выбора `feat-K` и агрегация (ADR-0012/0013) —
+  без изменений. Параллельный worktree-фан-аут остаётся opt-in (ADR-0010).
+
 ## 2026-06-13 — improve-workflow
 - **Что:** Добавлена третья команда-оркестратор **`/improve`** — производитель feature-прогонов (не
   редактор кода). Стадии `INTAKE → SCOUT → CONSENSUS → PROPOSE/SELECT GATE → DISPATCH → DONE`: рой

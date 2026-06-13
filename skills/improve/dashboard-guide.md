@@ -119,8 +119,8 @@ clean, additive future render branch — do not implement it unless explicitly a
 A tab that diffs the working tree against `state.json.baseCommit` — served by `GET /changes?slug=<slug>`,
 computed on demand from git (falls back to `HEAD` if `baseCommit` is absent, reports `notGit` outside a
 repo). `/improve` itself edits no code, so its own «Изменения» tab is usually empty; the real diffs live
-in the **dispatched** `/feature` runs' own dashboards (each diffed against its worktree `baseCommit`).
-`/improve` has no VERIFY phase and writes no `reviews.json`.
+in the **drained** `/feature` runs' own dashboards (each diffed against its own `baseCommit`, taken from
+the dispatch queue). `/improve` has no VERIFY phase and writes no `reviews.json`.
 
 ## The chat panel (free-form steering)
 

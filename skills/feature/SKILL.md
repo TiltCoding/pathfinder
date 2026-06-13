@@ -56,13 +56,22 @@ several calls). Give each the task slug and workspace path so it writes artifact
 
 ## Start / resume procedure
 
-1. **Resolve the workspace.** Make a kebab-case `<slug>` from the task title. Workspace is
-   `.workflow/tasks/<slug>/`. If `state.json` already exists there, **resume**: read it and jump to
-   the phase/checkpoint it records instead of starting over. Otherwise create the workspace. Write
-   `.workflow/active.json` = `{ "slug": "<slug>", "updatedAt": "<iso>" }` so telemetry hooks can map
-   this session to the active task (overwrite it on every start/resume). If the human asked to run
-   this task **in parallel** with another in-flight one, stand it up in its own git worktree first and
-   also write a per-session pointer — see `parallel.md`.
+0. **Queue mode (a `/improve` drain).** If you were invoked with **no explicit task** and a
+   `.workflow/dispatch-queue.json` exists with at least one `pending` item, you are draining an
+   `/improve` queue. Pick the lowest-`n` `pending` item, set it `in-progress` (+`startedAt`), and adopt
+   its `slug` as the active task and its `briefPath` as the **given** brief — so you **skip INTAKE
+   elicitation** and go straight to EXPLORE. On the default branch, branch from the queue's
+   `baseCommit`. At DONE you mark the item `done` and tell the human to `/clear` + `/feature` for the
+   next. Full contract: **`../improve/dispatch-queue.md`**. (If there is no queue or the human named a
+   task, skip this and use step 1.)
+
+1. **Resolve the workspace.** Make a kebab-case `<slug>` from the task title (in queue mode, the slug is
+   the queue item's). Workspace is `.workflow/tasks/<slug>/`. If `state.json` already exists there,
+   **resume**: read it and jump to the phase/checkpoint it records instead of starting over. Otherwise
+   create the workspace. Write `.workflow/active.json` = `{ "slug": "<slug>", "updatedAt": "<iso>" }` so
+   telemetry hooks can map this session to the active task (overwrite it on every start/resume). If the
+   human asked to run this task **in parallel** with another in-flight one, stand it up in its own git
+   worktree first and also write a per-session pointer — see `parallel.md`.
 2. **Locate the plugin assets.** The server and templates live under the plugin root. Use
    `${CLAUDE_PLUGIN_ROOT}` when set: `${CLAUDE_PLUGIN_ROOT}/scripts/server.py` and
    `${CLAUDE_PLUGIN_ROOT}/templates/`. If unset, search for the `ai-pathfinder` plugin directory.

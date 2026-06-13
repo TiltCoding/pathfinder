@@ -8,6 +8,10 @@ workspace path. Keep the human's dashboard truthful at all times.
 
 Goal: capture the task and stand up the workspace.
 
+- **Queue mode (a `/improve` drain — see SKILL step 0):** if you popped an item from
+  `.workflow/dispatch-queue.json`, the **brief already exists** at the item's `briefPath` — read it,
+  do **not** re-elicit, and use the queue's `baseCommit`. Then go straight to EXPLORE. The rest of this
+  step is for a normal, human-initiated task.
 - Write `brief.md` from `templates/artifacts/brief.md`: title, goal, scope/non-scope, constraints,
   acceptance criteria, anything the user already specified. Ask the user only for blockers you truly
   cannot infer — keep it light; deeper questions come out of EXPLORE.
@@ -102,3 +106,8 @@ Goal: confirm the change actually works.
 - Write a final summary into `dashboard.json` (what changed, where, how it was verified, follow-ups)
   and set status appropriately. Set `phase: "DONE"` in `state.json`.
 - Tell the user what landed and point at the dashboard and the updated knowledge base.
+- **Queue mode:** if this run drained a `.workflow/dispatch-queue.json` item, mark that item `done`
+  (+`doneAt`) and bump the queue's `updatedAt`. Then tell the human how many items remain and the next
+  step: **`/clear` then `/feature`** to start the next pending item in a fresh context (or **`/loop
+  /feature`** to auto-continue). **Do not** start the next item in this same session — a clean context
+  per feature is the point. If it was the last item, say the queue is drained and point at `/hub`.

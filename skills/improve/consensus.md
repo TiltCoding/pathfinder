@@ -107,75 +107,48 @@ contract** — one `planBlocks[]` card and one `questions[kind:"choice"]` per ca
 order, free-form answers) lives in `dashboard-guide.md` §SELECT GATE; the stage flow is in `phases.md`
 §PROPOSE/SELECT GATE. The human's picked `feat-K`s land in `state.json.selected[]` and drive DISPATCH.
 
-## 6. DISPATCH — seed-and-handoff (the exact sequence)
+## 6. DISPATCH — queue-and-drain (the exact sequence)
 
-For each picked feature (`feat-K` answered «Делаем», or a free-form "делаем…"), seed a standalone
-`/feature` run in its own git worktree. You **cannot auto-launch** independent Claude Code sessions, so
-you prepare the worktree + the seed-set and **hand the launch to the human**. Per feature:
+For each picked feature (`feat-K` answered «Делаем», or a free-form "делаем…"), you **queue** it for a
+sequential `/feature` drain — you do **not** create a worktree and do **not** run `/feature` yourself.
+The full contract (queue schema, drainer behaviour, the two drive options) is in `dispatch-queue.md`;
+this is the writer-side sequence. Per feature, in ranked `feat-K` order:
 
 1. **Fresh slug.** Mint a unique kebab-case `<slug>` from the feature title. A slug collision means
-   reusing someone else's run — avoid it; pick a unique slug (e.g. add a discriminator).
+   reusing someone else's task dir — avoid it; pick a unique slug (e.g. add a discriminator).
 
-2. **Create the worktree** (reuses `scripts/worktree.py`, no edits to it):
+2. **Write the brief** to `.workflow/tasks/<slug>/brief.md` — from `templates/artifacts/brief.md`,
+   filled with the feature's goal / scope / acceptance from its candidate, **plus** the human's
+   free-form `answer.text` if they typed one for this `feat-K` (it refines the brief). This is the only
+   artifact you seed — the `/feature` run creates its own `state.json`/`dashboard.json`/`index.html`
+   when it picks the item up.
 
-   ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/worktree.py" add <slug>
-   ```
+3. **Append a queue item** to `.workflow/dispatch-queue.json` (create the file on the first feature with
+   `version/source/mode/createdAt/baseCommit`, where `baseCommit` = the `/improve` INTAKE `baseCommit`):
+   `{ n, featId, slug, title, candId, prism, briefPath, status:"pending", startedAt:null, doneAt:null }`.
+   Keep items in ranked order (`feat-1` → `n:1`). See `dispatch-queue.md` for the exact shape.
 
-   This creates the worktree at `../pathfinder-worktrees/<slug>/`, symlinks `<worktree>/.workflow →
-   <main>/.workflow` (shared store), and **mints a minimal `state.json`** with `worktreePath`/`branch`
-   (idempotent — safe to re-run on resume).
+Also append a `dispatched[]` entry to **this** task's `state.json` per feature:
+`{slug, featId, candId, briefPath, status:"queued"}` (no `worktreePath` — there is no worktree).
 
-3. **Capture `baseCommit` in the worktree** (not in main):
+### Then hand the drain to the human (do NOT run `/feature` yourself)
 
-   ```bash
-   git -C ../pathfinder-worktrees/<slug> rev-parse HEAD
-   ```
+Running `/feature` inside the `/improve` session would pollute this context with the feature's work,
+defeating the fresh-context goal. Instead, at DONE you tell the human the two drive options (also in
+`dispatch-queue.md` §drive options):
 
-4. **Read-modify-write `state.json`** over the minted minimal file (preserve `worktreePath`/`branch`
-   that `worktree.py` wrote — read it first, then merge): set `title` (RU), `phase: "EXPLORE"`,
-   `iteration: 0`, `checkpoint: "working"`, `createdAt`, `updatedAt`, and the `baseCommit` from step 3.
-   **Why EXPLORE/working:** the brief is a given (we wrote it), so the resumed `/feature` skips
-   INTAKE elicitation and goes straight to exploring; `working` (not `awaiting-batch`) keeps the resume
-   continuing the phase instead of waiting on a submission that will never come.
+- **Clean context (recommended):** run **`/feature`** to start (it pops queue item 1 and runs the full
+  workflow); when it finishes, **`/clear`** then **`/feature`** again for the next pending item.
+- **Hands-off:** **`/loop /feature`** — re-invokes `/feature`, which pops the next pending item each
+  time; the harness compacts context between iterations.
 
-5. **Seed the artifacts** in `<main>/.workflow/tasks/<slug>/` (which the symlink shares):
-   - `brief.md` — from `templates/artifacts/brief.md`, filled with the feature's goal / scope /
-     acceptance from its candidate, **plus** the human's free-form `answer.text` if they typed one for
-     this `feat-K` (it refines the brief).
-   - `dashboard.json` — minimal: `slug`, `title`, `phase: "EXPLORE"`, `status: "working"`,
-     `iteration: 0`, `summary` (from the brief), `updatedAt`. The hub reads title/status/progress from
-     here.
-   - `index.html` — a copy of `${CLAUDE_PLUGIN_ROOT}/templates/dashboard.html`, so `/?slug=<slug>` opens
-     a working dashboard immediately.
+### What you do NOT do
 
-6. **The hub picks it up automatically.** `_list_tasks` is store-driven (any `.workflow/tasks/<slug>/`
-   dir is listed) and `_hub_is_active` marks it active (`phase ∉ {DONE,ABORTED}` and a fresh
-   `updatedAt`). The server is one per project — reuse it, don't start another.
-
-7. **Hand off to the human.** Print the launch instruction for this feature: `cd
-   ../pathfinder-worktrees/<slug>` then `/feature` there (it resumes from the seeded `state.json`). The
-   session **must** be started **inside** the worktree, or telemetry attribution drifts (the hook's `cwd`
-   must resolve through the symlink — see `parallel.md`). This is a human step; say it explicitly.
-
-Append a `dispatched[]` entry to **this** task's `state.json` per feature: `{slug, featId, worktreePath,
-branch, baseCommit, dashboardUrl}`.
-
-### Do NOT seed these
-
-They are written by the launched session or appear as the feedback loop runs — seeding them is wrong:
-
-- `telemetry.jsonl` — written by the launched session's hooks.
-- `active/<session_id>.json` — written by the launched session (you don't know its `session_id`).
-- `submissions/`, `replies.json`, `signals.json`, `draft.json`, `submit.flag` — feedback-loop artifacts
-  that appear as the run progresses (the server tolerates their absence).
-
-### Order matters (avoid the race)
-
-`worktree.py add` writes **only** `worktreePath`/`branch`/`updatedAt` and preserves the rest, so the
-safe order is: (1) `add` → (2) `git -C … rev-parse HEAD` → (3) read-modify-write our `state.json` →
-(4) seed `brief.md`/`dashboard.json`/`index.html`. Don't write the state "whole" (without reading) after
-`add`, or you'll clobber `worktreePath`/`branch`.
+- **No worktree** (`worktree.py add`), **no per-feature `state.json`/`dashboard.json`/`index.html`** —
+  the `/feature` drainer creates its own workspace from the brief + queue item.
+- **Do not auto-launch `/feature`** from this session. The drain is a human/`/loop` step.
+- Parallel git-worktree fan-out is still available if the human explicitly asks for it (`parallel.md`),
+  but it is no longer the default dispatch path.
 
 ## 7. Default knobs & eval mode
 
@@ -183,6 +156,6 @@ safe order is: (1) `add` → (2) `git -C … rev-parse HEAD` → (3) read-modify
 - **Aggregation defaults:** `w_e = 0.5`, `w_r = 0.5`, confidence as a `conf/3` multiplier, drop
   `keep == 0`, tie-break by `keep` then `imp` then `−eff`.
 - **Headless / eval mode** (`AIPF_EVAL=1`): keep the fixed counts (7 scouts, 3 voters); auto-pick the
-  top-K (or apply any pre-seeded `submissions/`); auto-approve the gate; seed the chosen feature runs
-  with no human present. This guarantees a finite, unattended run that reaches DISPATCH and seeds ≥1
-  valid feature task.
+  top-K (or apply any pre-seeded `submissions/`); auto-approve the gate; write the dispatch queue with
+  no human present. This guarantees a finite, unattended run that reaches DISPATCH and queues ≥1 valid
+  feature item; a test driver then runs `/feature` repeatedly to drain the queue.

@@ -78,24 +78,24 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
 
 ## 5. DISPATCH (autonomous)
 
-Goal: seed each picked feature as a standalone `/feature` run in its own git worktree, then hand the
-launch to the human.
+Goal: queue each picked feature for a sequential `/feature` drain, then hand the drain to the human.
+No worktrees, no parallel fan-out — the picks are drained one at a time, each in a fresh context.
 
-- The exact seed sequence is in `consensus.md` §DISPATCH (the per-feature steps: fresh slug →
-  `worktree.py add` → `baseCommit` in the worktree → read-modify-write `state.json` at
-  `EXPLORE`/`working` → seed `brief.md`/`dashboard.json`/`index.html` → hub picks it up). It also lists
-  exactly what **not** to seed.
-- For each seeded feature, append a `dispatched[]` entry to this task's `state.json`
-  (`{slug, featId, worktreePath, branch, baseCommit, dashboardUrl}`).
-- Advance to DONE.
+- The exact writer-side sequence is in `consensus.md` §DISPATCH and the full contract in
+  `dispatch-queue.md` (per feature: fresh slug → write `brief.md` → append a `pending` item to
+  `.workflow/dispatch-queue.json`). You create **no** worktree and seed **no** per-feature
+  `state.json`/`dashboard.json`/`index.html` — the `/feature` drainer makes its own workspace.
+- For each queued feature, append a `dispatched[]` entry to this task's `state.json`
+  (`{slug, featId, candId, briefPath, status:"queued"}`).
+- **Do not run `/feature` yourself** (it would pollute this context). Advance to DONE.
 
 ## 6. DONE
 
-- Write a final summary into `dashboard.json`: a card per dispatched feature (slug / title / prism) with
-  a link to its own dashboard (`/?slug=<feat-slug>`), plus a link to the hub (`/hub`), plus the explicit
-  launch instruction per feature: `cd <worktreePath> && /feature`. Tell the human in chat the same:
-  these runs are seeded and waiting — open each worktree and start `/feature` there (it resumes from the
-  seeded `state.json`, skipping INTAKE).
+- Write a final summary into `dashboard.json`: a card per queued feature (slug / title / prism) in
+  ranked order, plus a link to the hub (`/hub`), plus the **drain instructions**: run **`/feature`** to
+  start the first item; when it finishes, **`/clear`** then **`/feature`** for the next (or **`/loop
+  /feature`** to auto-continue). Tell the human the same in chat: the queue is written, each `/feature`
+  run does one feature with a clean context and marks the queue item done. See `dispatch-queue.md`.
 - Spawn `wf-documenter` to grow `docs/knowledge/` (see `knowledge-guide.md`): the task-log entry, any
   ADR for a notable decision, and the index refresh. It is a peer step, not an afterthought.
 - Set `phase: "DONE"` in `state.json` and set the dashboard status appropriately. Point the human at the
