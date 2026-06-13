@@ -12,7 +12,10 @@
 - **Общие хелперы** (`scripts/_aipf.py`) — резолв задачи/контекста, атомарная дозапись, оффсетное чтение,
   парсинг транскриптов, сборка моделей `/trace` (тяжёлой) и `/trace/feed` (лёгкой).
 - **Сервер дашборда** (`scripts/server.py`) — stdlib-only HTTP: отдаёт модель трейса и живую ленту, а в
-  фоне форвардит телеметрию в Langfuse.
+  фоне форвардит телеметрию в Langfuse. Он же — **хаб всех задач**: `/hub.json` агрегирует весь общий
+  store, `/hub` отдаёт обзорную страницу (см. ниже).
+- **CLI worktree** (`scripts/worktree.py`) — stdlib-only хелпер: разворачивает параллельную задачу в
+  отдельном git worktree и сводит её артефакты в общий store симлинком (см. поток данных).
 - **Дашборд** (`templates/dashboard.html`) — статичный data-driven HTML без CDN; вкладка «Трейсинг»
   опрашивает ленту и лениво подгружает сообщения агента.
 
@@ -48,9 +51,35 @@
    форвардятся — см. `scripts/_aipf.py` (`events_to_langfuse_batch`). Поэтому добавление новых типов в поток
    безопасно. Подробнее — [integrations.md](integrations.md).
 
+## Общий store, worktree и хаб
+
+Один сервер на проект читает **один** общий store `<main>/.workflow/tasks/`. Параллельные `/feature`-
+задачи изолируются в git worktree (своя ветка/дерево), но их артефакты всё равно попадают в этот store
+через симлинк `<worktree>/.workflow → <main>/.workflow` (создаёт `scripts/worktree.py`). Так у store
+появляется **второй потребитель** рядом с дашбордом одной задачи:
+
+```
+                ../pathfinder-worktrees/<slug>/.workflow ─symlink─▶ <main>/.workflow/tasks/<slug>/
+                                                                              │
+        ┌──────────────────────────────────────────────────────────────────┴───────────┐
+        ▼ (per-task)                                                        ▼ (cross-task)
+   /?slug=<slug> дашборд                                              /hub.json + /hub (хаб)
+   /trace, /changes, /knowledge …                          _hub → _build_hub обходит _list_tasks()
+   (одна задача)                                            (все задачи: карточки + аналитика)
+```
+
+- **Хаб — кросс-задачный агрегат.** `_hub`/`_build_hub` (`scripts/server.py:706`/`:724`) обходят тот же
+  `_list_tasks()` (`scripts/server.py:277`), что и лендинг, и по каждой задаче собирают карточку из
+  `state.json`/`dashboard.json` + **один дешёвый проход** `telemetry.jsonl` (без транскриптов и
+  `build_trace`). Read-only, кэш+лок (как `/changes`), `telemetry.cursor`/Langfuse не трогает.
+- **Per-worktree diff.** Вкладка «Изменения» диффит **рабочее дерево задачи**: `_task_root(slug)`
+  (`scripts/server.py:550`) читает `state.worktreePath` и зовёт `git -C <worktree>`; без поля —
+  fallback на main. Подробнее — [areas/parallel-runs-hub.md](areas/parallel-runs-hub.md), ADR-0010.
+
 ## Точки входа
 
 - HTTP-сервер дашборда — `scripts/server.py` (роутинг `do_GET` со `scripts/server.py:160`).
+- CLI worktree — `scripts/worktree.py` (`main`/`build_parser`, подкоманды `add`/`list`/`remove`).
 - Диспетчер телеметрии (CLI/хук) — `scripts/telemetry_hook.py` (`main` с `scripts/telemetry_hook.py:182`).
 
 ## Сквозные механизмы
@@ -64,4 +93,4 @@
   `~/.claude/projects/<proj>/...`. Читаются только UTF-8. Локация и формат — в области
   [areas/telemetry-tracing.md](areas/telemetry-tracing.md).
 
-_updated: 2026-06-10_
+_updated: 2026-06-13_

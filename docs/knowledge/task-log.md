@@ -4,6 +4,41 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-13 — parallel-runs-hub
+- **Что:** Параллельные `/feature`-задачи в git worktree + хаб всех запусков.
+  - **CLI `scripts/worktree.py` (новый, b1).** Подкоманды `add`/`list`/`remove` (stdlib-only):
+    `add <slug>` создаёт worktree `../pathfinder-worktrees/<slug>/` на ветке `<slug>` от `main`,
+    симлинкует `<worktree>/.workflow → <main>/.workflow` (`_ensure_workflow_symlink`) и пишет
+    `worktreePath`/`branch` в `state.json` (`record_worktree_in_state` — чистая, тестируемая без git).
+    Идемпотентен (resume переиспользует worktree/ветку). `main_root` через
+    `git rev-parse --git-common-dir` работает и из worktree. `remove` чистит worktree+симлинк, но
+    **не** трогает `.workflow/tasks/<slug>/` (история остаётся).
+  - **Per-worktree diff (b6).** `_git(*args, cwd=None)` (`scripts/server.py:537`) и новый
+    `_task_root(slug)` (`:550`): вкладка «Изменения» диффит `git -C state.worktreePath` (валидируется),
+    fallback на main без поля. Прокинуто в `_build_changes`/`_changes_file`/`_base_commit`/`_is_noise`.
+  - **Хаб (b5/b7/b8/b9/b10).** `GET /hub.json` (`_hub`/`_build_hub`/`_hub_run`, `scripts/server.py:706`)
+    — кросс-задачный агрегат `{runs, analytics}` по `_list_tasks()`, кэш+лок+мягкая деградация,
+    read-only. `_hub_telemetry` — **один проход** `telemetry.jsonl` (без транскриптов/`build_trace`).
+    Критерий active/history `_hub_is_active` (q7): `phase ∉ {DONE,ABORTED}` И `updatedAt`<24ч
+    (`HUB_ACTIVE_WINDOW_SEC`/`HUB_TERMINAL_PHASES`). `GET /hub` (`HUB_PAGE`) — инлайн-HTML без CDN, три
+    секции Активные/История/Аналитика (вариант A), поллинг 3 c; ссылка на хаб в `INDEX_LANDING`.
+  - **Per-session `active.json` (b3).** `active_slug(root, session_id)` (`scripts/_aipf.py:94`) сначала
+    читает `.workflow/active/<session_id>.json` (`SESSION_ID_RE`, анти-traversal), затем `active.json`,
+    затем свежайший `state.json`. Без per-session файла — старое поведение.
+  - **Скилл/схема (b2/b4):** новый `skills/feature/parallel.md`, поля `worktreePath`/`branch` и
+    per-session файл описаны в `skills/feature/state-schema.md`.
+- **Зачем:** `.workflow/` gitignored → в worktree локален и пуст → хаб не видел бы чужие задачи.
+  Симлинк сводит артефакты всех worktree в ОДИН store, который читает единственный сервер; `worktreePath`
+  в state даёт серверу рабочее дерево для diff; per-session `active.json` чинит атрибуцию при общем
+  store. Аналитика событийная (без токенов): транскрипты дороги и физически отсутствуют в worktree.
+- **Ключевые решения:** симлинк (vs env vs реестр), `worktreePath` в state дозаписью, per-session
+  `active.json`, токены вне кросс-задачного агрегата, отдельная страница `/hub` (не вкладка) — ADR-0010.
+- **Дрейф доков:** заодно задокументировано недокументированное событие `phase` (пишет оркестратор, не
+  хук; форвардится в Langfuse веткой `phase`/`gate`) в `areas/telemetry-tracing.md`.
+- **План:** `.workflow/tasks/parallel-runs-hub/plan.md`
+- **ADR:** `decisions/ADR-0010-shared-store-symlink-worktree.md`
+- **Область:** `areas/parallel-runs-hub.md`
+
 ## 2026-06-13 — agent-trace-details
 - **Что:** Вкладка «Трейсинг» детализирована по агентам. Бэкенд (`scripts/telemetry_hook.py`,
   `scripts/_aipf.py`, `scripts/server.py`; новый `tests/test_telemetry_actions.py`):

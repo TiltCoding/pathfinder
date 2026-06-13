@@ -38,6 +38,8 @@ Read these reference files when you reach the relevant part — don't load them 
 - `dashboard-guide.md` — the `dashboard.json` render model and how to keep the page current.
 - `knowledge-guide.md` — structure and principles of `docs/knowledge/` (what the documenter writes).
 - `state-schema.md` — the `state.json` shape you read/write to resume.
+- `parallel.md` — running a task in its own git worktree, in parallel with another in-flight task
+  (read only when the human asks for that; the hub at `/hub` aggregates all runs).
 
 ## Sub-agents you orchestrate
 
@@ -58,7 +60,9 @@ several calls). Give each the task slug and workspace path so it writes artifact
    `.workflow/tasks/<slug>/`. If `state.json` already exists there, **resume**: read it and jump to
    the phase/checkpoint it records instead of starting over. Otherwise create the workspace. Write
    `.workflow/active.json` = `{ "slug": "<slug>", "updatedAt": "<iso>" }` so telemetry hooks can map
-   this session to the active task (overwrite it on every start/resume).
+   this session to the active task (overwrite it on every start/resume). If the human asked to run
+   this task **in parallel** with another in-flight one, stand it up in its own git worktree first and
+   also write a per-session pointer — see `parallel.md`.
 2. **Locate the plugin assets.** The server and templates live under the plugin root. Use
    `${CLAUDE_PLUGIN_ROOT}` when set: `${CLAUDE_PLUGIN_ROOT}/scripts/server.py` and
    `${CLAUDE_PLUGIN_ROOT}/templates/`. If unset, search for the `ai-pathfinder` plugin directory.

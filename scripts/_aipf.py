@@ -16,6 +16,7 @@ import urllib.error
 import uuid
 
 SLUG_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def now_iso():
@@ -93,9 +94,24 @@ def slug_from_workspace_path(text):
 def active_slug(root, session_id=None):
     """Best-effort: which task is this session working on?
 
+    0. `.workflow/active/<session_id>.json` — a per-session pointer the
+       orchestrator writes so parallel sessions (e.g. tasks running in separate
+       worktrees that share one store) don't overwrite each other's attribution.
+       Only consulted for a syntactically valid session_id (anti-traversal).
     1. `.workflow/active.json` written by the orchestrator (slug, session_id).
     2. Fallback: the most recently updated task `state.json`.
+
+    When no per-session file exists the behaviour is exactly as before — full
+    back-compat for the single-task case.
     """
+    # 0) per-session pointer (preferred when present and session_id is valid)
+    if session_id and SESSION_ID_RE.match(session_id):
+        per = read_json(os.path.join(workflow_base(root), "active",
+                                     session_id + ".json"), None)
+        if isinstance(per, dict):
+            slug = safe_slug(per.get("slug", ""))
+            if slug:
+                return slug
     active = read_json(os.path.join(workflow_base(root), "active.json"), None)
     if isinstance(active, dict):
         slug = safe_slug(active.get("slug", ""))

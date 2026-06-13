@@ -48,11 +48,21 @@
 | `session.start`  | `phase`, `iteration`, `summary` (source)                                               |
 | `session.end`    | `summary` (reason)                                                                      |
 | `turn.stop`      | `phase`, `iteration`                                                                    |
+| `phase`          | `phase`, `iteration`, `summary`; `session_id` обычно `null` (см. ниже)                  |
 | `subagent.start` | `role`, `spanId="span-"+toolUseId`, `toolUseId`, `bg`, `summary`(description), `phase`, `iteration` |
 | `subagent.end`   | `role`, `spanId`, `toolUseId`, `ok`, `summary`(tool_result, обрезка 500)               |
 | `file.touch`     | `tool`, `file` (file_path), `phase`, `iteration`                                       |
 | `tool.start`     | `tool`, `toolUseId`, `spanId="tool-"+toolUseId`, `arg` (обрезка 200), `kind`; для MCP ещё `server`, `mcpTool` |
 | `tool.end`       | `tool`, `toolUseId`, `spanId`, `ok` (по `tool_result.is_error`/`status`)               |
+
+**Событие `phase` (и `gate`) — пишет оркестратор, не хук.** В отличие от остального потока, эти строки
+дозаписывает **скилл-оркестратор** прямо в `telemetry.jsonl` при смене стадии (`build_event` его не
+порождает — `telemetry_hook.py` знает только `session.*`/`turn.stop`/`subagent.*`/`file.touch`/`tool.*`).
+Реальная форма: `{"ts":…, "event":"phase", "session_id":null, "phase":"DONE", "iteration":1, "summary":null}`
+(`session_id` обычно `null`, т.к. событие вне конкретной сессии). Форвардится в Langfuse **веткой
+`phase`/`gate`** в `events_to_langfuse_batch` (`scripts/_aipf.py:212`) как `event-create` с
+`name = "<kind>:<summary>"` и метаданными-тегами `phase`/`iteration`; `turn.stop` и неизвестные события
+форвардер намеренно пропускает.
 
 Ключевые детали `tool.*` (база — realtime-agent-tracing; MCP/`kind` — agent-trace-details):
 - **Связка start↔end** — по `spanId = "tool-" + tool_use_id`. У `Pre` и `Post` один `tool_use_id`

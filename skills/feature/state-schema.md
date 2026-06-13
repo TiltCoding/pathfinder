@@ -45,6 +45,13 @@ Field notes:
 - **`baseCommit`**: the git `HEAD` captured at INTAKE. The companion server diffs the working tree
   against it to populate the **«Изменения»** tab (`/changes`). Absent in non-git projects — the server
   then falls back to `HEAD`.
+- **`worktreePath`** (optional): the absolute path of the task's own git working tree, set only when
+  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **«Изменения»** tab
+  against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read
+  by the server. Absent for ordinary tasks — the server falls back to its `--root` working tree.
+- **`branch`** (optional): the git branch the task's worktree is checked out on. Set alongside
+  `worktreePath` by `scripts/worktree.py`; absent for ordinary tasks. Old tasks without either field
+  stay fully compatible.
 - **`lastChatTs`**: timestamp of the last `chat.jsonl` message you have already read/answered. On each
   checkpoint wake-up you reply to messages newer than this, then advance it (see `feedback-loop.md`).
 - **`subagents`**: lightweight record of what you spawned (especially background coders) so a resumed
@@ -59,6 +66,12 @@ before doing anything else; otherwise continue the current `phase` from where `w
 
 - **`.workflow/active.json`** — `{ slug, updatedAt }`, rewritten on every start/resume. Lets the
   telemetry hooks map a Claude Code session to the active task for session-level events.
+- **`.workflow/active/<session_id>.json`** — `{ slug, sessionId, updatedAt }`, a per-session pointer
+  the orchestrator additionally writes when running in parallel (see `parallel.md`). With a shared
+  store the single `active.json` is overwritten by concurrent sessions, so session-level events would
+  be attributed to the wrong task; the per-session file keys attribution by `session_id`. The hook's
+  `active_slug` prefers it when present and falls back to `active.json` (then the newest `state.json`)
+  otherwise, so single-task runs are unaffected.
 - **`.workflow/tasks/<slug>/telemetry.jsonl`** — append-only event log written by the hooks (and any
   `POST /telemetry` markers): one line per `session.start|session.end|turn.stop|subagent.start|
   subagent.end|file.touch`. The **trace id is the slug**, so a task is one Langfuse trace across

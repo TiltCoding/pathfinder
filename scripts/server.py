@@ -51,6 +51,11 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 DEFAULT_PORT = 8473
 PORT_SCAN = 25
 
+# A task is "active" on the hub when its phase is non-terminal AND it was
+# updated within this window; otherwise it falls into history (see _build_hub).
+HUB_ACTIVE_WINDOW_SEC = 24 * 3600
+HUB_TERMINAL_PHASES = {"DONE", "ABORTED"}
+
 # Files inside a task dir that the browser is allowed to GET.
 READABLE_FILES = {"index.html", "dashboard.json", "state.json", "replies.json",
                   "reviews.json"}
@@ -234,6 +239,11 @@ class Handler(BaseHTTPRequestHandler):
             ws = self.workspace
             data = ws.read_json(ws.task_file(slug, "draft.json"), {"items": []})
             return self._json(200, data)
+        if path == "/hub.json":           # cross-task aggregate (no slug)
+            return self._json(200, self._hub())
+        if path == "/hub":                # the hub page (no slug)
+            return self._send(200, HUB_PAGE.encode("utf-8"),
+                              "text/html; charset=utf-8")
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -524,23 +534,53 @@ class Handler(BaseHTTPRequestHandler):
     _changes_cache = {}           # slug -> {exp, data}
     _changes_lock = threading.Lock()
 
-    def _git(self, *args, timeout=10):
-        """Run a git command in the project root. Returns (rc, stdout, stderr)."""
+    def _git(self, *args, cwd=None, timeout=10):
+        """Run a git command in `cwd` (default: the project root). Returns
+        (rc, stdout, stderr). A task running in a git worktree records its own
+        working tree in state.worktreePath; passing it as `cwd` lets the
+        Изменения tab diff that tree instead of main (see _task_root)."""
         try:
-            p = subprocess.run(["git", "-C", self.workspace.root, *args],
+            p = subprocess.run(["git", "-C", cwd or self.workspace.root, *args],
                                capture_output=True, text=True, timeout=timeout,
                                encoding="utf-8", errors="replace")
             return p.returncode, p.stdout, p.stderr
         except (OSError, subprocess.SubprocessError) as e:
             return 1, "", str(e)
 
-    def _base_commit(self, slug):
-        """The ref the task's diff is measured from (state.baseCommit or HEAD)."""
+    def _task_root(self, slug):
+        """The working tree to diff for a task: state.worktreePath if it is set,
+        exists and is a git work tree, else the project root (fallback for
+        non-worktree tasks). Validated so a bogus path never breaks the page."""
+        try:
+            state = self.workspace.read_json(
+                self.workspace.task_file(slug, "state.json"), {})
+            wt = state.get("worktreePath")
+            if wt and isinstance(wt, str):
+                wt = os.path.abspath(wt)
+                if (os.path.isdir(wt)
+                        and self._git("rev-parse", "--is-inside-work-tree",
+                                      cwd=wt)[0] == 0):
+                    return wt
+        except Exception:
+            pass
+        return self.workspace.root
+
+    def _base_commit(self, slug, cwd=None):
+        """The ref the task's diff is measured from (state.baseCommit or HEAD).
+        `cwd` is the task's working tree (_task_root); a worktree may not have
+        the recorded base commit, so the cat-file check runs in it too."""
         state = self.workspace.read_json(
             self.workspace.task_file(slug, "state.json"), {})
         base = state.get("baseCommit") or "HEAD"
+        # defense-in-depth: a base starting with '-' would be read by git as an
+        # option, not a commit-ish (argument injection) — reject it to HEAD
+        # before it reaches cat-file / diff. baseCommit is agent-written, so this
+        # is belt-and-suspenders, but the diff sinks below take it positionally.
+        if base.startswith("-"):
+            base = "HEAD"
         # if the recorded base is no longer a valid commit, fall back to HEAD
-        if base != "HEAD" and self._git("cat-file", "-e", base + "^{commit}")[0] != 0:
+        if base != "HEAD" and self._git("cat-file", "-e", base + "^{commit}",
+                                        cwd=cwd)[0] != 0:
             base = "HEAD"
         return base
 
@@ -561,14 +601,16 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def _build_changes(self, slug):
-        if self._git("rev-parse", "--is-inside-work-tree")[0] != 0:
+        # diff the task's own working tree (its worktree if recorded, else main)
+        root = self._task_root(slug)
+        if self._git("rev-parse", "--is-inside-work-tree", cwd=root)[0] != 0:
             return {"base": None, "files": [], "notGit": True}
-        base = self._base_commit(slug)
+        base = self._base_commit(slug, cwd=root)
         files = {}
         # tracked changes with line counts (working tree vs base)
         # quotePath=false gives raw UTF-8 paths (no C-quoting of cyrillic)
         rc, out, _ = self._git("-c", "core.quotePath=false",
-                               "diff", "--numstat", base)
+                               "diff", "--numstat", base, cwd=root)
         if rc == 0:
             for line in out.splitlines():
                 parts = line.split("\t")
@@ -590,7 +632,8 @@ class Handler(BaseHTTPRequestHandler):
         # quotePath=false → raw UTF-8 paths; -uall expands untracked dirs
         # (docs/) into real files instead of a single "?? docs/" line.
         rc, out, _ = self._git("-c", "core.quotePath=false",
-                               "status", "--porcelain", "--untracked-files=all")
+                               "status", "--porcelain", "--untracked-files=all",
+                               cwd=root)
         if rc == 0:
             for line in out.splitlines():
                 if len(line) < 4:
@@ -615,49 +658,244 @@ class Handler(BaseHTTPRequestHandler):
                 # the frontend uses this for the "tracked only / all" toggle.
                 entry["untracked"] = status == "added"
                 if status == "added" and entry["added"] is None:
-                    entry["added"] = self._count_lines(rest)
+                    entry["added"] = self._count_lines(rest, root)
                     entry["removed"] = 0
         # drop stray noise: empty (0-byte) untracked files like "-" or accidental
         # fragments. Tracked changes and non-empty untracked files are kept.
         kept = [f for f in files.values()
-                if not self._is_noise(f["path"], f["status"])]
+                if not self._is_noise(f["path"], f["status"], root)]
         return {"base": base, "files": sorted(kept, key=lambda f: f["path"]),
                 "notGit": False}
 
-    def _is_noise(self, relpath, status):
+    def _is_noise(self, relpath, status, root=None):
         """A stray untracked file worth hiding: an empty (0-byte) new file.
-        Conservative — if we cannot stat it, we do NOT treat it as noise."""
+        Conservative — if we cannot stat it, we do NOT treat it as noise.
+        `root` is the task's working tree (defaults to the project root)."""
         if status != "added":
             return False
         try:
             return os.path.getsize(
-                os.path.join(self.workspace.root, relpath)) == 0
+                os.path.join(root or self.workspace.root, relpath)) == 0
         except OSError:
             return False
 
-    def _count_lines(self, relpath):
+    def _count_lines(self, relpath, root=None):
         try:
-            with open(os.path.join(self.workspace.root, relpath),
+            with open(os.path.join(root or self.workspace.root, relpath),
                       "r", encoding="utf-8", errors="replace") as f:
                 return sum(1 for _ in f)
         except OSError:
             return None
 
     def _changes_file(self, slug, relpath):
-        """Unified diff of one file vs the task base. Read-only, traversal-guarded."""
+        """Unified diff of one file vs the task base. Read-only, traversal-guarded.
+        Diffs inside the task's own working tree (worktree if recorded, else main)."""
         if not relpath:
             return {"error": "missing file"}
-        root = os.path.realpath(self.workspace.root)
+        root = os.path.realpath(self._task_root(slug))
         target = os.path.realpath(os.path.join(root, relpath))
         if os.path.commonpath([target, root]) != root:
             return {"error": "not found"}
-        base = self._base_commit(slug)
-        rc, out, _ = self._git("diff", base, "--", relpath)
+        base = self._base_commit(slug, cwd=root)
+        rc, out, _ = self._git("diff", base, "--", relpath, cwd=root)
         if rc == 0 and out.strip():
             return {"file": relpath, "diff": out}
         # untracked / new file: diff against an empty blob
-        _, out, _ = self._git("diff", "--no-index", "--", os.devnull, relpath)
+        _, out, _ = self._git("diff", "--no-index", "--", os.devnull, relpath,
+                              cwd=root)
         return {"file": relpath, "diff": out}
+
+    # ---- hub aggregate (all runs across the shared store) ---------------
+    _hub_cache = {}               # singleton -> {exp, data}
+    _hub_lock = threading.Lock()
+
+    def _hub(self):
+        """Aggregate every task in the shared store into a single render model
+        for the hub page. Cached behind a lock with a short TTL like _changes,
+        since it walks all tasks; degrades to an empty model on any error so the
+        page never 500s. Read-only — never touches telemetry.cursor / Langfuse."""
+        now = time.time()
+        with Handler._hub_lock:
+            cached = Handler._hub_cache.get("hub")
+            if cached and now < cached["exp"]:
+                return cached["data"]
+        try:
+            data = self._build_hub()
+        except Exception as e:  # never break the page
+            data = {"runs": [], "analytics": {}, "error": str(e)}
+        with Handler._hub_lock:
+            # TTL >= the hub page's 3s poll interval, so each poll lands in the
+            # cache instead of re-walking every task's telemetry.jsonl.
+            Handler._hub_cache["hub"] = {"exp": now + 3.0, "data": data}
+        return data
+
+    def _build_hub(self):
+        """Walk _list_tasks(), build a run card per task from state.json /
+        dashboard.json plus one light pass over telemetry.jsonl (event counters
+        only — no transcripts, no build_trace), classify active vs history, and
+        compute cheap cross-task analytics. Everything per-task is wrapped so one
+        bad task cannot sink the whole aggregate."""
+        now = time.time()
+        runs = []
+        for slug in self._list_tasks():
+            try:
+                runs.append(self._hub_run(slug, now))
+            except Exception:
+                continue  # skip a broken task, keep the rest
+        return {"runs": runs, "analytics": self._hub_analytics(runs)}
+
+    def _hub_run(self, slug, now):
+        """Build one run card. Fields are sourced from state.json (authoritative
+        for phase/iteration/timestamps) and dashboard.json (render model: title,
+        status, progress), with a light telemetry pass for activity counters."""
+        ws = self.workspace
+        state = ws.read_json(ws.task_file(slug, "state.json"), {})
+        dash = ws.read_json(ws.task_file(slug, "dashboard.json"), {})
+
+        # phase: state.json is authoritative (ADR-0010 / areas/parallel-runs-hub);
+        # dashboard.json may lag and leave a finished task looking "active".
+        phase = state.get("phase") or dash.get("phase")
+        # status: dashboard.json `status` first, else map the state checkpoint
+        status = dash.get("status") or state.get("checkpoint")
+        progress = dash.get("progress") or {}
+        done = progress.get("done")
+        total = progress.get("total")
+
+        created = state.get("createdAt") or dash.get("createdAt")
+        updated = state.get("updatedAt") or dash.get("updatedAt")
+        active = self._hub_is_active(phase, updated, now)
+
+        tele = self._hub_telemetry(slug)
+
+        return {
+            "slug": slug,
+            "title": dash.get("title") or state.get("title") or slug,
+            "phase": phase,
+            "status": status,
+            "iteration": state.get("iteration"),
+            "progress": {"done": done, "total": total},
+            "createdAt": created,
+            "updatedAt": updated,
+            "worktreePath": state.get("worktreePath"),
+            "branch": state.get("branch"),
+            "active": active,
+            "subagents": tele["subagents"],
+            "sessions": tele["sessions"],
+            "events": tele["events"],
+            "activity": tele["activity"],
+            "firstTs": tele["firstTs"],
+            "lastTs": tele["lastTs"],
+            "durationMs": self._hub_duration_ms(created, updated),
+        }
+
+    def _hub_is_active(self, phase, updated, now):
+        """A task is active when its phase is not terminal AND it was updated
+        within HUB_ACTIVE_WINDOW_SEC; otherwise it belongs to history (q7)."""
+        if phase in HUB_TERMINAL_PHASES:
+            return False
+        e = _aipf._ts_to_epoch(updated)
+        if e is None:
+            return True  # no timestamp → treat as active (don't hide live runs)
+        return (now - e) < HUB_ACTIVE_WINDOW_SEC
+
+    def _hub_duration_ms(self, created, updated):
+        """Wall-clock run length from createdAt to updatedAt, in ms (or None)."""
+        c = _aipf._ts_to_epoch(created)
+        u = _aipf._ts_to_epoch(updated)
+        if c is None or u is None or u < c:
+            return None
+        return int(round((u - c) * 1000))
+
+    def _hub_telemetry(self, slug):
+        """One cheap pass over a task's telemetry.jsonl: count events, distinct
+        sessions, subagent.start markers, and activity (tool.* + file.touch), and
+        record first/last ts. No transcripts, no build_trace — graceful on a
+        missing or corrupt file (returns zeros)."""
+        tpath = self.workspace.task_file(slug, "telemetry.jsonl")
+        events = 0
+        activity = 0
+        subagents = 0
+        sessions = set()
+        first_ts = last_ts = None
+        for line in _aipf._iter_lines(tpath):
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            events += 1
+            name = ev.get("event") or ""
+            if name == "subagent.start":
+                subagents += 1
+            if name.startswith("tool.") or name == "file.touch":
+                activity += 1
+            sid = ev.get("session_id")
+            if sid:
+                sessions.add(sid)
+            ts = ev.get("ts")
+            if ts:
+                if first_ts is None:
+                    first_ts = ts
+                last_ts = ts
+        return {"events": events, "activity": activity, "subagents": subagents,
+                "sessions": len(sessions), "firstTs": first_ts, "lastTs": last_ts}
+
+    @staticmethod
+    def _as_int(x, default=0):
+        """Coerce a run-card field to int, tolerating str/None/garbage. Keeps a
+        single bad state.json field (e.g. iteration:"two") from sinking the whole
+        /hub.json aggregate when the arithmetic below sums across all tasks."""
+        if isinstance(x, bool):
+            return default
+        if isinstance(x, (int, float)):
+            return int(x)
+        try:
+            return int(str(x).strip())
+        except (TypeError, ValueError):
+            return default
+
+    def _hub_analytics(self, runs):
+        """Cross-task analytics over the assembled run cards (event-derived only,
+        no tokens/cost). Counts, phase distribution, summed/median wall-clock
+        duration, summed iterations, sub-agents, sessions, and activity.
+
+        Defensive: every arithmetic aggregate coerces its field through _as_int,
+        and the whole body is wrapped so one corrupt run card degrades the
+        analytics block to {} instead of failing the entire hub."""
+        try:
+            total = len(runs)
+            active = sum(1 for r in runs if r.get("active"))
+            done = sum(1 for r in runs if r.get("phase") == "DONE")
+            phases = {}
+            for r in runs:
+                p = r.get("phase") or "—"
+                phases[p] = phases.get(p, 0) + 1
+            durations = [self._as_int(r.get("durationMs")) for r in runs
+                         if r.get("durationMs") is not None]
+            return {
+                "total": total,
+                "active": active,
+                "done": done,
+                "phases": phases,
+                "totalDurationMs": sum(durations) if durations else 0,
+                "medianDurationMs": self._median(durations),
+                "iterations": sum(self._as_int(r.get("iteration")) for r in runs),
+                "subagents": sum(self._as_int(r.get("subagents")) for r in runs),
+                "sessions": sum(self._as_int(r.get("sessions")) for r in runs),
+                "activity": sum(self._as_int(r.get("activity")) for r in runs),
+            }
+        except Exception:  # never break the page
+            return {}
+
+    @staticmethod
+    def _median(values):
+        if not values:
+            return None
+        s = sorted(values)
+        n = len(s)
+        mid = n // 2
+        if n % 2:
+            return s[mid]
+        return int(round((s[mid - 1] + s[mid]) / 2))
 
     # ---- knowledge base (tree + link graph) ----------------------------
     _knowledge_cache = {}         # slug -> {exp, data}
@@ -979,8 +1217,247 @@ INDEX_LANDING = """<!doctype html><meta charset=utf-8>
 <h1>ai-pathfinder companion</h1>
 <p>Сервер запущен. Открывайте дашборд задачи по ссылке вида
 <code>/?slug=&lt;task-slug&gt;</code> — её печатает агент при старте задачи.</p>
+<p style="font-size:16px"><a href="/hub" style="font-weight:600">Открыть хаб всех запусков → /hub</a></p>
 <!--TASKS-->
 </body>"""
+
+
+# The hub page: self-contained (inline <style>+<script>, no CDN). It is an
+# evolution of the landing page that fetches /hub.json and renders three
+# sections per the approved layout (variant A): Активные cards, История table,
+# Аналитика counters+bars. It polls every 3s, diffs on a serialized snapshot
+# (like the dashboard's tick()), and swallows errors silently. Visual language
+# mirrors templates/dashboard.html (root tokens, phase/status/run-status badges).
+HUB_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai-pathfinder — хаб запусков</title>
+<style>
+  :root {
+    --bg:#f4f5f7; --panel:#ffffff; --ink:#1f2430; --muted:#677084;
+    --line:#e3e6ec; --accent:#4f46e5; --accent-soft:#eceefe;
+    --ok:#15803d; --warn:#b45309; --chip:#eef1f5;
+    --reply-bg:#e7f6ed; --reply-line:#bfe6cd;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 6px 20px rgba(16,24,40,.08);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding-bottom:64px; }
+  a { color:var(--accent); }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px; }
+  header.top { position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:14px 20px; }
+  .top-inner { max-width:1180px; margin:0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1.title { font-size:18px; margin:0; font-weight:650; flex:1 1 280px; }
+  .sub { color:var(--muted); font-size:13px; }
+  .badge { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:var(--chip); white-space:nowrap; }
+  .badge.phase { background:var(--accent-soft); color:var(--accent); }
+  .status { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; }
+  .status.working { background:var(--accent-soft); color:var(--accent); }
+  .status.awaiting { background:#fdf1dd; color:var(--warn); }
+  .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .status.working .dot { animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
+  .progress > div { height:100%; background:var(--accent); transition:width .4s; }
+  .run-status { font-size:11px; font-weight:600; padding:2px 9px; border-radius:999px; }
+  .run-status.running { background:var(--accent-soft); color:var(--accent); }
+  .run-status.done { background:var(--reply-bg); color:var(--ok); }
+  .run-status.failed { background:#fdecec; color:#dc2626; }
+
+  section.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:16px 0; box-shadow:var(--shadow); }
+  section.card > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 14px; display:flex; align-items:center; gap:10px; }
+  section.card > h2 .count { background:var(--chip); color:var(--ink); border-radius:999px; padding:1px 9px; font-size:12px; }
+  .empty { color:var(--muted); font-size:13px; }
+
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; }
+  .runcard { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--bg); display:flex; flex-direction:column; gap:8px; }
+  .runcard .head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .runcard .slug { font-weight:650; font-size:15px; }
+  .runcard .desc { color:var(--muted); font-size:13px; }
+  .runcard .meta { display:flex; gap:8px; flex-wrap:wrap; font:12px ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--muted); }
+  .runcard .meta .git { background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--ink); }
+  .runcard .open { align-self:flex-start; color:var(--accent); font-size:13px; text-decoration:none; font-weight:600; }
+  .runcard .open:hover { text-decoration:underline; }
+
+  table.hist { width:100%; border-collapse:collapse; font-size:13px; }
+  table.hist th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; padding:6px 10px; border-bottom:1px solid var(--line); }
+  table.hist td { padding:8px 10px; border-bottom:1px solid var(--line); }
+  table.hist tr:hover td { background:var(--accent-soft); }
+  table.hist a { color:var(--accent); text-decoration:none; font-weight:600; }
+  table.hist .mono { font:12px ui-monospace, monospace; color:var(--muted); }
+
+  .stats { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
+  .stat { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--bg); }
+  .stat .n { font-size:26px; font-weight:700; }
+  .stat .l { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+  .phasebars { margin-top:6px; display:flex; flex-direction:column; gap:6px; }
+  .phasebar { display:flex; align-items:center; gap:10px; font-size:13px; }
+  .phasebar .name { width:120px; color:var(--muted); }
+  .phasebar .bar { flex:1; height:8px; background:var(--line); border-radius:999px; overflow:hidden; }
+  .phasebar .bar > div { height:100%; background:var(--accent); }
+  .phasebar .v { width:28px; text-align:right; color:var(--ink); }
+</style>
+</head>
+<body>
+<header class="top"><div class="top-inner">
+  <h1 class="title">ai-pathfinder — хаб запусков</h1>
+  <span class="sub" id="updated">загрузка…</span>
+</div></header>
+
+<div class="wrap" id="root">
+  <section class="card"><div class="empty">загрузка…</div></section>
+</div>
+
+<script>
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+// terminal outcome -> run-status class (history table / phase tints)
+function runStatusClass(phase){
+  if(phase === "DONE") return "done";
+  if(phase === "ABORTED") return "failed";
+  return "running";
+}
+
+// status badge for active cards (mirrors dashboard.html .status.working/.awaiting)
+function statusBadge(status){
+  const s = String(status||"");
+  if(s === "awaiting-batch" || s === "awaiting")
+    return '<span class="status awaiting"><span class="dot"></span>ждёт батч</span>';
+  return '<span class="status working"><span class="dot"></span>в работе</span>';
+}
+
+function fmtDur(ms){
+  if(ms==null) return "—";
+  const s=Math.round(ms/1000);
+  if(s<60) return s+"с";
+  const m=Math.floor(s/60);
+  if(m<60){ const r=s%60; return r?`${m}м ${r}с`:`${m}м`; }
+  const h=Math.floor(m/60), rm=m%60; return rm?`${h}ч ${rm}м`:`${h}ч`;
+}
+
+const MONTHS=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+function fmtDate(ts){
+  if(!ts) return "—";
+  const d=new Date(String(ts).replace(" ","T"));
+  if(isNaN(d)) return esc(ts);
+  const pad=n=>String(n).padStart(2,"0");
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function progressPct(p){
+  if(!p || !p.total) return 0;
+  return Math.max(0, Math.min(100, Math.round((p.done||0)/p.total*100)));
+}
+
+function runCard(r){
+  const pct = progressPct(r.progress);
+  const branch = r.branch ? `<span class="git">⎇ ${esc(r.branch)}</span>` : "";
+  const wt = r.worktreePath ? `<span>${esc(r.worktreePath)}</span>` : "";
+  const meta = (branch||wt) ? `<div class="meta">${branch}${wt}</div>` : "";
+  return `<div class="runcard">
+    <div class="head">
+      <span class="slug">${esc(r.slug)}</span>
+      ${r.phase ? `<span class="badge phase">${esc(r.phase)}</span>` : ""}
+      ${statusBadge(r.status)}
+    </div>
+    ${r.title ? `<div class="desc">${esc(r.title)}</div>` : ""}
+    <div class="progress"><div style="width:${pct}%"></div></div>
+    ${meta}
+    <a class="open" href="/?slug=${encodeURIComponent(r.slug)}">открыть дашборд →</a>
+  </div>`;
+}
+
+function histRow(r){
+  return `<tr>
+    <td>${esc(r.slug)}</td>
+    <td><span class="run-status ${runStatusClass(r.phase)}">${esc(r.phase||"—")}</span></td>
+    <td class="mono">${r.iteration==null?"—":esc(r.iteration)}</td>
+    <td class="mono">${fmtDur(r.durationMs)}</td>
+    <td class="mono">${r.subagents==null?"—":esc(r.subagents)}</td>
+    <td class="mono">${r.sessions==null?"—":esc(r.sessions)}</td>
+    <td class="mono">${fmtDate(r.updatedAt)}</td>
+    <td><a href="/?slug=${encodeURIComponent(r.slug)}">открыть</a></td>
+  </tr>`;
+}
+
+function phaseBars(phases){
+  const entries = Object.entries(phases||{});
+  if(!entries.length) return "";
+  const max = Math.max.apply(null, entries.map(e=>e[1]));
+  return entries.map(([name,v])=>{
+    const w = max ? Math.round(v/max*100) : 0;
+    return `<div class="phasebar"><span class="name">${esc(name)}</span>`+
+      `<span class="bar"><div style="width:${w}%"></div></span>`+
+      `<span class="v">${esc(v)}</span></div>`;
+  }).join("");
+}
+
+function render(data){
+  const runs = data.runs || [];
+  const active = runs.filter(r=>r.active);
+  const history = runs.filter(r=>!r.active);
+  const a = data.analytics || {};
+
+  const activeHtml = active.length
+    ? `<div class="cards">${active.map(runCard).join("")}</div>`
+    : `<div class="empty">нет активных запусков</div>`;
+
+  const histHtml = history.length
+    ? `<table class="hist"><thead><tr>
+        <th>Задача</th><th>Фаза</th><th>Итер.</th><th>Длит.</th>
+        <th>Под-агенты</th><th>Сессии</th><th>Обновлено</th><th></th>
+      </tr></thead><tbody>${history.map(histRow).join("")}</tbody></table>`
+    : `<div class="empty">история пуста</div>`;
+
+  const stats = [
+    [a.total, "всего задач"],
+    [a.active, "активных"],
+    [a.done, "завершено"],
+    [a.subagents, "под-агентов"],
+    [a.sessions, "сессий"],
+    [fmtDur(a.medianDurationMs), "медиана длит."],
+  ].map(([n,l])=>`<div class="stat"><div class="n">${n==null?"—":esc(n)}</div>`+
+    `<div class="l">${esc(l)}</div></div>`).join("");
+
+  document.getElementById("root").innerHTML = `
+    <section class="card">
+      <h2>Активные запуски <span class="count">${active.length}</span></h2>
+      ${activeHtml}
+    </section>
+    <section class="card">
+      <h2>История <span class="count">${history.length}</span></h2>
+      ${histHtml}
+    </section>
+    <section class="card">
+      <h2>Обобщённая аналитика</h2>
+      <div class="stats">${stats}</div>
+      <div class="phasebars" style="margin-top:16px">${phaseBars(a.phases)}</div>
+      <p class="sub" style="margin-top:14px">Токены и стоимость не входят в кросс-задачный
+      агрегат (дорого и недоступно из worktree) — открываются лениво на дашборде задачи.</p>
+    </section>`;
+  document.getElementById("updated").textContent =
+    "обновлено " + fmtDate(new Date().toISOString()) + " · автообновление";
+}
+
+let last = "";
+async function tick(){
+  try {
+    const res = await fetch("/hub.json");
+    const data = await res.json();
+    const stamp = JSON.stringify(data);
+    if(stamp !== last){ last = stamp; render(data); }
+  } catch (e) { /* server may be restarting — swallow and retry next tick */ }
+}
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>"""
 
 
 class TelemetryForwarder(threading.Thread):

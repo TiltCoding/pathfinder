@@ -16,6 +16,8 @@ Goal: capture the task and stand up the workspace.
   work against the starting point.
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
+- If the task is being launched **in parallel** with another in-flight one, stand it up in its own
+  git worktree at this point (see `parallel.md`) — that records `worktreePath`/`branch` in `state.json`.
 - Advance to EXPLORE.
 
 ## 2. EXPLORE (autonomous)

@@ -1,4 +1,5 @@
 .workflow/
+.workflow
 node_modules/
 __pycache__/
 *.pyc
