@@ -1236,15 +1236,15 @@ HUB_PAGE = r"""<!doctype html>
 <title>ai-pathfinder — хаб запусков</title>
 <script>
   // theme bootstrap — runs before <style>/paint so there is no flash (FOUC).
-  // Same contract as the dashboard: localStorage['theme'] holds the preference
-  // ('light'|'dark'|'system', default 'system'); documentElement carries the
-  // resolved data-theme ('light'|'dark', never 'system').
+  // Same contract as the dashboard: two modes. localStorage['theme'] = 'light'|'dark'
+  // (explicit choice); absent (or legacy 'system') = follow the OS. documentElement
+  // carries the resolved data-theme ('light'|'dark').
   (function(){
     try {
-      var pref = localStorage.getItem("theme") || "system";
-      var resolved = pref === "system"
-        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-        : pref;
+      var s = localStorage.getItem("theme");
+      var resolved = (s === "light" || s === "dark")
+        ? s
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       document.documentElement.setAttribute("data-theme", resolved);
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "light");
@@ -1286,10 +1286,11 @@ HUB_PAGE = r"""<!doctype html>
   .status.awaiting { background:var(--awaiting-soft); color:var(--warn); }
   .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
   .status.working .dot { animation:pulse 1.2s ease-in-out infinite; }
-  /* segmented theme toggle (mirrors templates/dashboard.html .seg) */
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px; }
-  .seg button { appearance:none; border:none; background:var(--panel); color:var(--muted); padding:5px 11px; cursor:pointer; }
-  .seg button.on { background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  /* theme toggle — icon button (☀️/🌙), shares localStorage['theme'] with the dashboard */
+  .theme-btn { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; min-width:38px;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px;
+    padding:7px 10px; font-size:15px; line-height:1; cursor:pointer; }
+  .theme-btn:hover { border-color:var(--accent); }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
   .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
   .progress > div { height:100%; background:var(--accent); transition:width .4s; }
@@ -1336,11 +1337,7 @@ HUB_PAGE = r"""<!doctype html>
 <header class="top"><div class="top-inner">
   <h1 class="title">ai-pathfinder — хаб запусков</h1>
   <span class="sub" id="updated">загрузка…</span>
-  <div class="seg" id="themeSeg">
-    <button data-mode="light">Светлая</button>
-    <button data-mode="dark">Тёмная</button>
-    <button data-mode="system">Системная</button>
-  </div>
+  <button class="theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему"><span id="theme-icon">☀️</span></button>
 </div></header>
 
 <div class="wrap" id="root">
@@ -1351,26 +1348,27 @@ HUB_PAGE = r"""<!doctype html>
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 
-// --- theme toggle (shares localStorage['theme'] with the dashboard) ---------
-// Bootstrap in <head> already set data-theme before paint; here we wire the
-// segmented control, persist the preference, and follow the OS in 'system' mode.
+// --- theme toggle: two modes (light/dark), icon button; shares localStorage['theme']
+// with the dashboard. Bootstrap in <head> already set data-theme before paint; here we
+// wire the button, persist the explicit choice, and follow the OS until one is made.
 const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
-let themePref = localStorage.getItem("theme") || "system";
-function resolveTheme(p){ return p === "system" ? (themeMql.matches ? "dark" : "light") : p; }
+function storedTheme(){ var s = localStorage.getItem("theme"); return (s === "light" || s === "dark") ? s : null; }
+function resolveTheme(){ return storedTheme() || (themeMql.matches ? "dark" : "light"); }
 function applyTheme(){
-  document.documentElement.setAttribute("data-theme", resolveTheme(themePref));
-  document.querySelectorAll("#themeSeg button").forEach(b => {
-    b.classList.toggle("on", b.dataset.mode === themePref);
-  });
+  var t = resolveTheme();
+  document.documentElement.setAttribute("data-theme", t);
+  var icon = document.getElementById("theme-icon");
+  if(icon) icon.textContent = t === "dark" ? "🌙" : "☀️";
+  var btn = document.getElementById("theme-btn");
+  if(btn) btn.title = t === "dark" ? "Тёмная тема — переключить на светлую" : "Светлая тема — переключить на тёмную";
 }
-document.querySelectorAll("#themeSeg button").forEach(b => {
-  b.addEventListener("click", () => {
-    themePref = b.dataset.mode;
-    localStorage.setItem("theme", themePref);
-    applyTheme();
-  });
+var themeBtn = document.getElementById("theme-btn");
+if(themeBtn) themeBtn.addEventListener("click", function(){
+  var cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  localStorage.setItem("theme", cur === "dark" ? "light" : "dark");
+  applyTheme();
 });
-themeMql.addEventListener("change", () => { if(themePref === "system") applyTheme(); });
+themeMql.addEventListener("change", function(){ if(!storedTheme()) applyTheme(); });
 applyTheme();
 
 // terminal outcome -> run-status class (history table / phase tints)

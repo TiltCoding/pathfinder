@@ -6,13 +6,14 @@
 <title>ai-pathfinder — задача</title>
 <script>
   /* Тема: применяем ДО первой отрисовки (без вспышки/FOUC). Резолв продублирован —
-     head-скрипт не видит функций из <body>. Ключ 'theme': 'light'|'dark'|'system'. */
+     head-скрипт не видит функций из <body>. Два режима: ключ 'theme' = 'light'|'dark'
+     (отсутствует = следуем системе). Переключатель — иконка-кнопка. */
   (function () {
     try {
-      var pref = localStorage.getItem("theme") || "system";
-      var resolved = pref === "system"
-        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-        : pref;
+      var s = localStorage.getItem("theme");
+      var resolved = (s === "light" || s === "dark")
+        ? s
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       document.documentElement.setAttribute("data-theme", resolved);
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "light");
@@ -344,11 +345,11 @@
   .seg button { appearance: none; border: none; background: var(--panel); color: var(--muted); padding: 4px 10px; cursor: pointer; }
   .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
-  /* переключатель темы в шапке — переиспользует .seg; группируется справа рядом с «Чат» */
-  .seg.theme-seg { margin-left: auto; flex: none; }
-  .seg.theme-seg button:hover { color: var(--accent); }
-  /* на узкой шапке прячем подписи, оставляя только иконки ☀️🌙🖥 */
-  @media (max-width: 820px) { .seg.theme-seg .seg-lbl { display: none; } }
+  /* переключатель темы в шапке — иконка-кнопка .ghost (☀️/🌙); прижата вправо рядом с «Чат» */
+  .theme-btn { margin-left: auto; flex: none; min-width: 40px; display: inline-flex;
+               align-items: center; justify-content: center; font-size: 15px; line-height: 1;
+               padding: 8px 11px; }
+  .theme-btn:hover { border-color: var(--accent); }
 
   .changes-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 820px) { .changes-grid { grid-template-columns: 1fr; } }
@@ -457,11 +458,9 @@
     <span class="badge phase" id="phase">—</span>
     <span class="badge" id="iter"></span>
     <span class="status working" id="status"><span class="dot"></span><span id="status-text">…</span></span>
-    <div class="seg theme-seg" id="theme-seg" role="group" aria-label="Тема">
-      <button data-theme-mode="light" title="Светлая тема">☀️<span class="seg-lbl"> Светлая</span></button>
-      <button data-theme-mode="dark" title="Тёмная тема">🌙<span class="seg-lbl"> Тёмная</span></button>
-      <button data-theme-mode="system" title="Как в системе">🖥<span class="seg-lbl"> Системная</span></button>
-    </div>
+    <button class="ghost theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему">
+      <span id="theme-icon">☀️</span>
+    </button>
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
   <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
@@ -527,36 +526,34 @@ let lastData = null, lastReplies = null;
 
 function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-// --- тема: переключение + сохранение + системный listener ---
-// Предпочтение в localStorage['theme'] ('light'|'dark'|'system'); на documentElement
-// ставим разрешённый data-theme (никогда 'system'). Резолв продублирован в head-bootstrap
-// (без FOUC). Состояние живёт на documentElement и контроле в шапке — вне #trace-summary
-// (sig-гард, ADR-0011), тик /trace его не затирает.
+// --- тема: два режима (Светлая/Тёмная), переключатель — иконка-кнопка ---
+// Ключ localStorage['theme'] = 'light'|'dark' (явный выбор). Отсутствует (или legacy
+// 'system') = следуем системе. На documentElement — разрешённый data-theme. Резолв
+// продублирован в head-bootstrap (без FOUC). Состояние живёт на documentElement и
+// контроле в шапке — вне #trace-summary (sig-гард, ADR-0011), тик /trace его не затирает.
 const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
-function themePref(){ return localStorage.getItem("theme") || "system"; }
-function resolveTheme(pref){
-  return pref === "system" ? (themeMql.matches ? "dark" : "light") : pref;
-}
-function applyTheme(pref){
-  document.documentElement.setAttribute("data-theme", resolveTheme(pref));
-  document.querySelectorAll("#theme-seg button").forEach(b => {
-    b.classList.toggle("on", b.dataset.themeMode === pref);
-  });
+function storedTheme(){ const s = localStorage.getItem("theme"); return (s === "light" || s === "dark") ? s : null; }
+function resolveTheme(){ return storedTheme() || (themeMql.matches ? "dark" : "light"); }
+function applyTheme(){
+  const t = resolveTheme();
+  document.documentElement.setAttribute("data-theme", t);
+  const icon = $("#theme-icon");
+  if(icon) icon.textContent = t === "dark" ? "🌙" : "☀️";
+  const btn = $("#theme-btn");
+  if(btn) btn.title = t === "dark" ? "Тёмная тема — переключить на светлую" : "Светлая тема — переключить на тёмную";
 }
 (function initTheme(){
-  const seg = $("#theme-seg");
-  if(seg){
-    seg.querySelectorAll("button").forEach(b => {
-      b.addEventListener("click", () => {
-        const pref = b.dataset.themeMode;
-        localStorage.setItem("theme", pref);
-        applyTheme(pref);
-      });
+  const btn = $("#theme-btn");
+  if(btn){
+    btn.addEventListener("click", () => {
+      const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      localStorage.setItem("theme", cur === "dark" ? "light" : "dark");
+      applyTheme();
     });
   }
-  // системный режим: переприменяем тему только когда предпочтение — 'system'
-  themeMql.addEventListener("change", () => { if(themePref() === "system") applyTheme("system"); });
-  applyTheme(themePref());
+  // пока выбор не сделан явно — следуем системной теме вживую
+  themeMql.addEventListener("change", () => { if(!storedTheme()) applyTheme(); });
+  applyTheme();
 })();
 
 // --- markdown -> html (GFM: headings h1-h4, ul/ol, table, blockquote, hr, code, bold, italic, links) ---
