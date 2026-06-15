@@ -770,6 +770,7 @@ class Handler(BaseHTTPRequestHandler):
         return {
             "slug": slug,
             "title": dash.get("title") or state.get("title") or slug,
+            "kind": state.get("kind"),  # e.g. "ask"; None for /feature, /improve
             "phase": phase,
             "status": status,
             "iteration": state.get("iteration"),
@@ -1281,6 +1282,7 @@ HUB_PAGE = r"""<!doctype html>
   .sub { color:var(--muted); font-size:13px; }
   .badge { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:var(--chip); white-space:nowrap; }
   .badge.phase { background:var(--accent-soft); color:var(--accent); }
+  .badge.kind { background:var(--chip); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
   .status { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; }
   .status.working { background:var(--accent-soft); color:var(--accent); }
   .status.awaiting { background:var(--awaiting-soft); color:var(--warn); }
@@ -1417,6 +1419,7 @@ function runCard(r){
   return `<div class="runcard">
     <div class="head">
       <span class="slug">${esc(r.slug)}</span>
+      ${r.kind ? `<span class="badge kind">${esc(r.kind)}</span>` : ""}
       ${r.phase ? `<span class="badge phase">${esc(r.phase)}</span>` : ""}
       ${statusBadge(r.status)}
     </div>
@@ -1428,8 +1431,9 @@ function runCard(r){
 }
 
 function histRow(r){
+  const kind = r.kind ? ` <span class="badge kind">${esc(r.kind)}</span>` : "";
   return `<tr>
-    <td>${esc(r.slug)}</td>
+    <td>${esc(r.slug)}${kind}</td>
     <td><span class="run-status ${runStatusClass(r.phase)}">${esc(r.phase||"—")}</span></td>
     <td class="mono">${r.iteration==null?"—":esc(r.iteration)}</td>
     <td class="mono">${fmtDur(r.durationMs)}</td>

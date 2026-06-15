@@ -118,6 +118,45 @@ git-worktree fan-out (`scripts/worktree.py`) is still there as an opt-in if you 
 the whole app and **queues the winners** for a sequential `/feature` drain — it never edits code itself.
 It runs a single two-mode `wf-improver` sub-agent (scout + vote) and reuses the workflow's `wf-documenter`.
 
+## `/ask` — read-only Q&A with a visual answer and a chat
+
+A fourth command, `/ask`, is a lightweight **read-only question-and-answer** mode: ask it how something
+works, why a decision was made, or where a behaviour lives, and it answers **without touching project
+code at all**. The orchestrator splits the question into facets, spawns a small swarm of read-only
+`ask-researcher` sub-agents (each reads `docs/knowledge/INDEX.md` first, then the code, and returns a
+structured digest), consolidates their findings, and then **synthesizes the answer itself**: a text
+write-up, an **infographic** of the key facts/numbers, and a **process diagram** of how it reached the
+answer — all rendered inline in the dashboard (sandboxed). It then keeps a **chat** open so you can ask
+follow-up questions, and the run shows up in the **hub** (`/hub`) as an *ask* task (badge included).
+
+Its stages are:
+
+`INTAKE → RESEARCH → SYNTHESIZE → ANSWER → DONE`
+
+— resumable via the same `.workflow/tasks/<slug>/state.json`. There is **no plan gate** and **no
+IMPLEMENT/VERIFY** — it is pure read-only Q&A.
+
+- **INTAKE** records the question (as a question, not a spec) in `brief.md`, seeds `state.json`
+  (`phase:"INTAKE"`, `kind:"ask"`, `baseCommit`), starts the companion server, and opens a dashboard.
+- **RESEARCH** is a **mini-swarm**: the orchestrator decomposes the question into facets (knowledge
+  base/docs, server code, dashboard/front-end, tests) and spawns several `ask-researcher` sub-agents in
+  parallel (usually 2–4; 1–2 for a narrow question), then **consolidates** their digests into one
+  summary. Unlike `/improve`, there is **no voting and no queue** — just gather and merge.
+- **SYNTHESIZE** has the orchestrator **itself** (it has Write) produce the text answer (`summary` +
+  optional `planBlocks`), the `infographic.html`, and the `process.svg`, and wire them into the
+  dashboard's `demo` block as two self-contained mockups.
+- **ANSWER** is a **non-terminal** chat loop: the orchestrator parks on `/wait`, listens for the `chat`
+  signal, and answers follow-ups (a simple clarification inline, a substantive new question via a fresh
+  mini-swarm). Keeping a non-terminal phase keeps the task **active** in the hub during the chat.
+- **DONE** happens **automatically after ~24 h of chat silence** (matching the hub's active window) or on
+  an explicit human request — moving the task into the hub's **History**.
+
+**How it differs from the others:** `/feature`/`/new-product`/`/improve` all change the repo (write code,
+or seed/queue feature runs); `/ask` **only reads** — it answers a question with a visual write-up and a
+chat, and edits nothing. Use `/feature` to actually make a change, `/improve` for a prioritized backlog
+of improvements, `/new-product` for greenfield. `/ask` runs its own read-only `ask-researcher` sub-agent
+(no pinned model, like the `wf-*` roster) and reuses the workflow's `wf-documenter` on DONE.
+
 **The evolutionary build-loop (in brief).** Each BUILD phase runs a loop: `np-coder` first materializes
 **executable tests** from the thinker's spec (without seeing the implementation plan), and those tests
 are **frozen** (paths + hashes in state). Then each iteration: implement → run the frozen tests →
@@ -142,7 +181,8 @@ hooks/hooks.json  telemetry hooks wiring
 skills/feature/   the /feature orchestrator skill + reference files
 skills/new-product/  the /new-product orchestrator skill + reference files
 skills/improve/   the /improve orchestrator skill + reference files (swarm → consensus → feature fan-out)
-agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, wf-improver, np-* (thinker, researcher, coder, judge)
+skills/ask/       the /ask orchestrator skill + reference files (read-only Q&A → visual answer → chat)
+agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, wf-improver, ask-researcher, np-* (thinker, researcher, coder, judge)
 scripts/          server.py (feedback server) + telemetry_hook.py + _aipf.py (shared, stdlib)
 templates/        dashboard.html + Russian artifact & knowledge-base templates
 evals/            fixtures, scenarios, rubrics for measuring the workflow

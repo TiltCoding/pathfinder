@@ -4,6 +4,53 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-15 — ask-command (v0.15.0)
+- **Что:** Добавлена четвёртая команда-оркестратор **`/ask`** — лёгкий **read-only** режим
+  «вопрос-ответ». По вопросу человека оркестратор спавнит мини-рой read-only `ask-researcher` (по граням),
+  консолидирует дайджесты, **сам синтезирует** текстовый ответ + инфографику + схему процесса (через
+  штатный `demo`/`mockups`-механизм) и держит **чат** для дальнейших вопросов. Стадии
+  `INTAKE → RESEARCH → SYNTHESIZE → ANSWER → DONE`: **нет** гейта плана, **нет** IMPLEMENT/VERIFY; ничего
+  в коде проекта не правит.
+  - **Скилл `skills/ask/`** (ws1): `SKILL.md` (frontmatter с `description`, разведённым от
+    `/feature`/`/improve`/`/new-product`; «You are the orchestrator of a read-only Q&A workflow — you
+    never edit project code»; таблица под-агентов `ask-researcher`/`wf-documenter`; start/resume;
+    operating rules; телеметрия), доменный `phases.md` (машина стадий + контракт `demo`-визуализаций +
+    авто-DONE). Переносимые урезанные копии из `skills/improve/`: `dashboard-guide.md` (без §SELECT GATE),
+    `feedback-loop.md` (центр — секция **Chat**, гейта/`approve-plan` нет), `state-schema.md` (+ask-поля),
+    `knowledge-guide.md` (как есть). **Не копируются** `consensus.md`/`dispatch-queue.md`/`loop.md`/
+    `parallel.md` — рой `/ask` без голосования/очереди.
+  - **Под-агент `agents/ask-researcher.md`** (ws1): read-only (`tools: Read, Grep, Glob, Bash`, без
+    Write/Edit; **без `model:`** — дефолт сессии, как `wf-*`). Покрывает **одну грань** вопроса, читает
+    `INDEX.md` первым, возвращает **структурированный дайджест** под синтез (`## Ответ`/`## Опорные
+    источники`/`## Шаги рассуждения`/`## Числа/связи`/`## Уверенность/пробелы`), пишет `research/<n>.md`.
+    Не рисует HTML/SVG и никого не спавнит. Свой файл (а не реюз `wf-explorer`) — нужны машинно-парсимые
+    секции (числа для инфографики, шаги для схемы).
+  - **Визуализации + чат** (ws2): инфографика `mockups/infographic.html` + схема `mockups/process.svg`
+    подаются `demo`-механизмом (`GET /mockup` в sandbox-iframe) — **0 правок сервера/HTML**; имена под
+    `MOCKUP_RE`, файлы без CDN. Чат-петля `ANSWER` через `chat.jsonl` + сигнал `chat` + long-poll `/wait`;
+    новый содержательный вопрос → новый мини-рой; авто-DONE ~24 ч.
+  - **Хаб-метка `kind` + доки + версия** (ws3): ~4 строки в `scripts/server.py` (`_hub_run` прокидывает
+    `state.get("kind")`; `runCard`/`histRow` рисуют бейдж типа; опц. CSS `.badge.kind`) — append-only поле,
+    HTML дашборда не тронут. Тест `tests/test_ask.py` (`kind:"ask"` → `run["kind"]=="ask"`; без `kind` →
+    отсутствует) + mockups-роут (`MOCKUP_RE`, Content-Type). README (раздел `/ask` + Layout),
+    `plugin.json` (0.14.1 → **0.15.0**, keyword `ask`, расширён `description`).
+- **Зачем:** четвёртый сценарий плагина — «как устроено / почему / где» с **визуальным** ответом и чатом,
+  ничего не меняя в репозитории. MVP стоит на существующих контрактах: текст=`summary`/`planBlocks`,
+  визуализации=`demo`/`mockups`, чат=`chat.jsonl`, попадание в хаб — автоматически. Единственная осознанная
+  правка кода — бейдж `kind` в хабе (бриф требует «отличать ask от feature/improve»).
+- **Ключевые решения:**
+  - **`/ask` поверх существующего контракта** — 0 правок сервера/HTML кроме append-only бейджа `kind`;
+    мини-рой read-only ресёрчеров по граням с консолидацией оркестратором (расширяет паттерн роя `/improve`,
+    но **без голосования/очереди**); синтез/рисование — у оркестратора (инвариант ADR-0006 «субагенты не
+    спавнят субагентов»); нетерминальная `ANSWER` + авто-DONE ~24 ч — **ADR-0016** (связь с
+    ADR-0008/0013/0010/0012/0014).
+- **Утверждённые параметры (зафиксированы):** хаб — Вариант B (`kind` + бейдж, q1); карточка визуализаций —
+  реюз `demo` as-is (q2); синтезирует и рисует оркестратор (q3); мини-рой по граням с консолидацией (q4);
+  инфографика HTML + схема SVG (q5); имя команды `/ask` (q6); `ask-researcher` без `model:` (q8).
+- **План:** `.workflow/tasks/ask-command/plan.md`
+- **ADR:** `decisions/ADR-0016-ask-readonly-qa-over-existing-contract.md`
+- **Область:** `areas/orchestrator-skills.md` (расширена секцией про `/ask`)
+
 ## 2026-06-15 — dashboard-light-dark-theme (v0.14.0)
 - **Что:** Дашборд (`templates/dashboard.html`) и хаб (`HUB_PAGE` в `scripts/server.py`) получили
   **пользовательское переключение темы** между двумя режимами Светлая / Тёмная (иконка-кнопка ☀️/🌙;
