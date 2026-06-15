@@ -4,11 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ai-pathfinder — задача</title>
+<script>
+  /* Тема: применяем ДО первой отрисовки (без вспышки/FOUC). Резолв продублирован —
+     head-скрипт не видит функций из <body>. Ключ 'theme': 'light'|'dark'|'system'. */
+  (function () {
+    try {
+      var pref = localStorage.getItem("theme") || "system";
+      var resolved = pref === "system"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : pref;
+      document.documentElement.setAttribute("data-theme", resolved);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "light");
+    }
+  })();
+</script>
 <style>
-  :root {
+  :root[data-theme="light"] {
     --bg: #fbfbfa; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280;
     --line: #e5e7eb; --accent: #4f46e5; --accent-soft: #eef2ff;
-    --ok: #16a34a; --warn: #d97706; --chip: #f3f4f6;
+    --ok: #16a34a; --warn: #d97706; --warn-soft: #fff7ed; --chip: #f3f4f6;
+    --err: #ef4444; --err-soft: #fef2f2;
     --reply-bg: #f0fdf4; --reply-line: #bbf7d0;
     --sel: #fef9c3; --shadow: 0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
     --grid: rgba(0,0,0,.06);
@@ -19,17 +35,18 @@
     --ph-verify: rgba(245,158,11,.14);    --ph-verify-line: #f59e0b;
     --ph-none: rgba(100,116,139,.08);     --ph-none-line: #94a3b8;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1115; --panel: #181b21; --ink: #e6e8eb; --muted: #9aa3af;
-      --line: #2a2f37; --accent: #818cf8; --accent-soft: #1e2230;
-      --chip: #232830; --reply-bg: #132019; --reply-line: #1f4d31;
-      --sel: #3b3a1f; --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-      --grid: rgba(255,255,255,.07);
-      --ph-explore: rgba(14,165,233,.18);  --ph-elaborate: rgba(139,92,246,.18);
-      --ph-implement: rgba(16,185,129,.18); --ph-verify: rgba(245,158,11,.18);
-      --ph-none: rgba(148,163,184,.12);
-    }
+  :root[data-theme="dark"] {
+    --bg: #0f1115; --panel: #181b21; --ink: #e6e8eb; --muted: #9aa3af;
+    --line: #2a2f37; --accent: #818cf8; --accent-soft: #1e2230;
+    --ok: #16a34a; --warn: #d97706; --warn-soft: #2a2113; --chip: #232830; --reply-bg: #132019; --reply-line: #1f4d31;
+    --err: #f87171; --err-soft: #2a1414;
+    --sel: #3b3a1f; --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    --grid: rgba(255,255,255,.07);
+    --ph-explore: rgba(14,165,233,.18);  --ph-explore-line: #0ea5e9;
+    --ph-elaborate: rgba(139,92,246,.18); --ph-elaborate-line: #8b5cf6;
+    --ph-implement: rgba(16,185,129,.18); --ph-implement-line: #10b981;
+    --ph-verify: rgba(245,158,11,.18);    --ph-verify-line: #f59e0b;
+    --ph-none: rgba(148,163,184,.12);     --ph-none-line: #94a3b8;
   }
   * { box-sizing: border-box; }
   body {
@@ -50,8 +67,7 @@
   .badge.phase { background: var(--accent-soft); color: var(--accent); }
   .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
   .status.working { background: var(--accent-soft); color: var(--accent); }
-  .status.awaiting { background: #fff7ed; color: var(--warn); }
-  @media (prefers-color-scheme: dark) { .status.awaiting { background: #2a2113; } }
+  .status.awaiting { background: var(--warn-soft); color: var(--warn); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
   .status.working .dot { animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
@@ -179,7 +195,7 @@
   .g-legend .lchip { background: none; padding: 0; font-weight: 400; color: var(--muted); }
   .g-legend .ldot { width: 10px; height: 10px; border-radius: 3px; }
   .g-legend .ldot.run { background: repeating-linear-gradient(45deg, var(--muted) 0 3px, transparent 3px 6px); }
-  .g-legend .ldot.err { background: transparent; outline: 2px solid #ef4444; outline-offset: -2px; }
+  .g-legend .ldot.err { background: transparent; outline: 2px solid var(--err); outline-offset: -2px; }
   .g-legend .lbar { width: 16px; height: 10px; border-radius: 2px; border: 1px solid var(--line); flex: none; }
   .legtitle { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-right: 2px; }
   .sub { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
@@ -205,7 +221,7 @@
   .det-lane { position: relative; height: 28px; border-bottom: 1px dashed var(--line); }
   .det-bar { position: absolute; top: 4px; height: 20px; border-radius: 5px; display: flex; align-items: center; gap: 5px; padding: 0 7px; font-size: 11px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.18); border-left: 3px solid rgba(0,0,0,.28); cursor: pointer; min-width: 4px; }
   .det-bar:hover { filter: brightness(1.08); box-shadow: 0 0 0 2px var(--accent); z-index: 3; }
-  .det-bar.err { outline: 2px solid #ef4444; outline-offset: -2px; }
+  .det-bar.err { outline: 2px solid var(--err); outline-offset: -2px; }
   .det-bar.running { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.28) 0 6px, transparent 6px 12px); }
   .det-bar .du { opacity: .85; font: 10px ui-monospace, monospace; }
   .det-dot { position: absolute; top: 9px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--panel); cursor: pointer; z-index: 2; }
@@ -219,15 +235,14 @@
 
   .phase-h { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 4px; font-weight: 700; }
   .agent { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
-  .agent.err { border-color: #ef4444; }
+  .agent.err { border-color: var(--err); }
   .agent.orch { background: var(--accent-soft); }
   .agent-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .role { font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; color: #fff; }
   .agent-head .ws { border: none; padding: 0; font-size: 13px; color: var(--muted); }
   .tag { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
   .tag.bg { background: var(--accent-soft); color: var(--accent); }
-  .tag.fail { background: #fef2f2; color: #ef4444; }
-  @media (prefers-color-scheme: dark) { .tag.fail { background: #2a1414; } }
+  .tag.fail { background: var(--err-soft); color: var(--err); }
   .metrics { display: flex; flex-wrap: wrap; gap: 12px 22px; margin-top: 10px; }
   .metric .k { font-size: 11px; color: var(--muted); } .metric .v { font-weight: 650; }
   .ctxbar { height: 7px; background: var(--line); border-radius: 999px; overflow: hidden; width: 150px; margin-top: 4px; }
@@ -254,7 +269,7 @@
   .feed-row { position: relative; padding: 5px 0 5px 28px; }
   .feed-row::before { content: ""; position: absolute; left: 15px; top: 8px; width: 9px; height: 9px; border-radius: 50%; background: var(--line); border: 2px solid var(--panel); }
   .feed-row.running::before { background: var(--accent); }
-  .feed-row.err::before { background: #ef4444; }
+  .feed-row.err::before { background: var(--err); }
   .feed-line { display: flex; align-items: baseline; gap: 7px; }
   .feed-t { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); min-width: 46px; }
   .feed-tool { font: 11px ui-monospace, monospace; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: var(--bg); color: var(--ink); }
@@ -275,7 +290,7 @@
   .feed-row.bash::before { background: var(--t-bash); }
   .feed-row.tool::before { background: var(--t-tool); }
   .feed-row.mcp.running::before, .feed-row.bash.running::before, .feed-row.tool.running::before { background: var(--accent); }
-  .feed-row.err::before { background: #ef4444; }
+  .feed-row.err::before { background: var(--err); }
   .feed-tool.mcp { color: var(--t-mcp); } .feed-tool.bash { color: var(--t-bash); } .feed-tool.tool { color: var(--t-tool); }
 
   /* trace tab: expandable post-mortem agent card (description + actions + messages) */
@@ -300,7 +315,7 @@
   .act-row.tool::before { background: var(--t-tool); } .act-row.bash::before { background: var(--t-bash); }
   .act-row.mcp::before { background: var(--t-mcp); } .act-row.hook::before { background: var(--t-hook); }
   .act-row.subtask::before { background: var(--t-subtask); }
-  .act-row.running::before { background: var(--accent); } .act-row.err::before { box-shadow: 0 0 0 2px #ef4444; }
+  .act-row.running::before { background: var(--accent); } .act-row.err::before { box-shadow: 0 0 0 2px var(--err); }
   .act-type { font: 10px ui-monospace, monospace; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 1px 7px; border-radius: 5px; color: #fff; flex: none; }
   .act-row.tool .act-type { background: var(--t-tool); } .act-row.bash .act-type { background: var(--t-bash); }
   .act-row.mcp .act-type { background: var(--t-mcp); } .act-row.hook .act-type { background: var(--t-hook); }
@@ -313,23 +328,27 @@
 
   /* changes tab: compact file tree (left) + diff with line-number gutter (right) — design v2 */
   /* warm "github-light" token palette for diff syntax highlighting */
-  :root {
+  :root[data-theme="light"] {
     --syn-kw: #cf222e; --syn-str: #0a3069; --syn-com: #6e7781;
     --syn-num: #0550ae; --syn-fn: #8250df; --syn-punct: #57606a;
     --gutter: #f6f8fa;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --syn-kw: #ff7b72; --syn-str: #a5d6ff; --syn-com: #8b949e;
-      --syn-num: #79c0ff; --syn-fn: #d2a8ff; --syn-punct: #89929b;
-      --gutter: #13161b;
-    }
+  :root[data-theme="dark"] {
+    --syn-kw: #ff7b72; --syn-str: #a5d6ff; --syn-com: #8b949e;
+    --syn-num: #79c0ff; --syn-fn: #d2a8ff; --syn-punct: #89929b;
+    --gutter: #13161b;
   }
   .changes-head { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; flex-wrap: wrap; }
   .changes-head .base { font: 12px ui-monospace, monospace; color: var(--muted); }
   .seg { margin-left: auto; display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 12px; }
   .seg button { appearance: none; border: none; background: var(--panel); color: var(--muted); padding: 4px 10px; cursor: pointer; }
   .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  /* переключатель темы в шапке — переиспользует .seg; группируется справа рядом с «Чат» */
+  .seg.theme-seg { margin-left: auto; flex: none; }
+  .seg.theme-seg button:hover { color: var(--accent); }
+  /* на узкой шапке прячем подписи, оставляя только иконки ☀️🌙🖥 */
+  @media (max-width: 820px) { .seg.theme-seg .seg-lbl { display: none; } }
 
   .changes-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 820px) { .changes-grid { grid-template-columns: 1fr; } }
@@ -346,9 +365,9 @@
   .filetree .tchildren { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 4px; }
   .filetree .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
   .dot.added { background: var(--ok); } .dot.modified { background: var(--accent); }
-  .dot.deleted { background: #ef4444; } .dot.renamed { background: var(--warn); }
+  .dot.deleted { background: var(--err); } .dot.renamed { background: var(--warn); }
   .filetree .mini { font-size: 10px; color: var(--muted); flex: none; }
-  .filetree .mini .add { color: var(--ok); } .filetree .mini .del { color: #ef4444; }
+  .filetree .mini .add { color: var(--ok); } .filetree .mini .del { color: var(--err); }
 
   /* diff with line-number gutter + sign column */
   .diff { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: auto; max-height: 74vh; }
@@ -358,7 +377,7 @@
   .diff .dl .sg { text-align: center; user-select: none; }
   .diff .dl .code { padding-right: 12px; white-space: pre-wrap; word-break: break-word; }
   .diff .dl.add { background: rgba(22,163,74,.10); } .diff .dl.add .sg { color: var(--ok); }
-  .diff .dl.del { background: rgba(239,68,68,.10); } .diff .dl.del .sg { color: #ef4444; }
+  .diff .dl.del { background: rgba(239,68,68,.10); } .diff .dl.del .sg { color: var(--err); }
   .diff .dl.hunk { display: block; padding: 2px 12px; color: var(--accent); background: var(--accent-soft); }
   .diff .dl.meta { display: block; padding: 1px 12px; color: var(--muted); }
   .diff .tok-kw { color: var(--syn-kw); } .diff .tok-str { color: var(--syn-str); }
@@ -371,14 +390,13 @@
   .run-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
   .run-kind { font-weight: 650; }
   .sev { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; color: #fff; }
-  .sev.high { background: #ef4444; } .sev.med { background: var(--warn); } .sev.low { background: var(--muted); }
+  .sev.high { background: var(--err); } .sev.med { background: var(--warn); } .sev.low { background: var(--muted); }
   .finding { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
   .finding .floc { font: 11px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
   .run-status { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
   .run-status.running { background: var(--accent-soft); color: var(--accent); }
   .run-status.done { background: var(--reply-bg); color: var(--ok); }
-  .run-status.failed { background: #fef2f2; color: #ef4444; }
-  @media (prefers-color-scheme: dark) { .run-status.failed { background: #2a1414; } }
+  .run-status.failed { background: var(--err-soft); color: var(--err); }
 
   /* chat panel */
   .chat-toggle { position: relative; padding: 7px 12px; }
@@ -439,6 +457,11 @@
     <span class="badge phase" id="phase">—</span>
     <span class="badge" id="iter"></span>
     <span class="status working" id="status"><span class="dot"></span><span id="status-text">…</span></span>
+    <div class="seg theme-seg" id="theme-seg" role="group" aria-label="Тема">
+      <button data-theme-mode="light" title="Светлая тема">☀️<span class="seg-lbl"> Светлая</span></button>
+      <button data-theme-mode="dark" title="Тёмная тема">🌙<span class="seg-lbl"> Тёмная</span></button>
+      <button data-theme-mode="system" title="Как в системе">🖥<span class="seg-lbl"> Системная</span></button>
+    </div>
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
   <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
@@ -503,6 +526,38 @@ let lastDataStamp = "";
 let lastData = null, lastReplies = null;
 
 function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// --- тема: переключение + сохранение + системный listener ---
+// Предпочтение в localStorage['theme'] ('light'|'dark'|'system'); на documentElement
+// ставим разрешённый data-theme (никогда 'system'). Резолв продублирован в head-bootstrap
+// (без FOUC). Состояние живёт на documentElement и контроле в шапке — вне #trace-summary
+// (sig-гард, ADR-0011), тик /trace его не затирает.
+const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
+function themePref(){ return localStorage.getItem("theme") || "system"; }
+function resolveTheme(pref){
+  return pref === "system" ? (themeMql.matches ? "dark" : "light") : pref;
+}
+function applyTheme(pref){
+  document.documentElement.setAttribute("data-theme", resolveTheme(pref));
+  document.querySelectorAll("#theme-seg button").forEach(b => {
+    b.classList.toggle("on", b.dataset.themeMode === pref);
+  });
+}
+(function initTheme(){
+  const seg = $("#theme-seg");
+  if(seg){
+    seg.querySelectorAll("button").forEach(b => {
+      b.addEventListener("click", () => {
+        const pref = b.dataset.themeMode;
+        localStorage.setItem("theme", pref);
+        applyTheme(pref);
+      });
+    });
+  }
+  // системный режим: переприменяем тему только когда предпочтение — 'system'
+  themeMql.addEventListener("change", () => { if(themePref() === "system") applyTheme("system"); });
+  applyTheme(themePref());
+})();
 
 // --- markdown -> html (GFM: headings h1-h4, ul/ol, table, blockquote, hr, code, bold, italic, links) ---
 function md(src){
@@ -2110,7 +2165,7 @@ function buildGraph(g){
   graphEdges.forEach(e => { deg[e.s.id]=(deg[e.s.id]||0)+1; deg[e.t.id]=(deg[e.t.id]||0)+1; });
   graphNodes.forEach(n => n.r = 6 + Math.min(8, (deg[n.id]||0)*1.6));
   const svg = $("#kgraph"); if(!svg) return;
-  if(!graphNodes.length){ svg.innerHTML = `<text x="500" y="310" text-anchor="middle" fill="#999">Нет связей для отображения</text>`; return; }
+  if(!graphNodes.length){ svg.innerHTML = `<text x="500" y="310" text-anchor="middle" fill="var(--muted)">Нет связей для отображения</text>`; return; }
   let alpha = 1;
   function stepFrame(){
     alpha *= 0.985;
@@ -2148,7 +2203,7 @@ function drawGraph(){
   }).join("");
   const nodes = graphNodes.map(n => {
     const dim = adj && !adj.has(n.id) ? "dim" : "";
-    const col = n.touched ? "var(--accent)" : (NODE_COL[n.type]||"#888");
+    const col = n.touched ? "var(--accent)" : (NODE_COL[n.type]||"var(--muted)");
     const short = n.label.length>22 ? n.label.slice(0,20)+"…" : n.label;
     return `<g class="node ${n.touched?'touched':''} ${n.id===selNode?'sel':''} ${dim}" data-id="${esc(n.id)}" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
       <circle r="${n.r.toFixed(1)}" fill="${col}"></circle><text x="${(n.r+3).toFixed(1)}" y="4">${esc(short)}</text></g>`;

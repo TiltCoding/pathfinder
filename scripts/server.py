@@ -1234,13 +1234,39 @@ HUB_PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ai-pathfinder — хаб запусков</title>
+<script>
+  // theme bootstrap — runs before <style>/paint so there is no flash (FOUC).
+  // Same contract as the dashboard: localStorage['theme'] holds the preference
+  // ('light'|'dark'|'system', default 'system'); documentElement carries the
+  // resolved data-theme ('light'|'dark', never 'system').
+  (function(){
+    try {
+      var pref = localStorage.getItem("theme") || "system";
+      var resolved = pref === "system"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : pref;
+      document.documentElement.setAttribute("data-theme", resolved);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "light");
+    }
+  })();
+</script>
 <style>
-  :root {
-    --bg:#f4f5f7; --panel:#ffffff; --ink:#1f2430; --muted:#677084;
-    --line:#e3e6ec; --accent:#4f46e5; --accent-soft:#eceefe;
-    --ok:#15803d; --warn:#b45309; --chip:#eef1f5;
-    --reply-bg:#e7f6ed; --reply-line:#bfe6cd;
-    --shadow:0 1px 2px rgba(16,24,40,.06), 0 6px 20px rgba(16,24,40,.08);
+  :root[data-theme="light"] {
+    --bg:#fbfbfa; --panel:#ffffff; --ink:#1f2328; --muted:#6b7280;
+    --line:#e5e7eb; --accent:#4f46e5; --accent-soft:#eef2ff;
+    --ok:#16a34a; --warn:#d97706; --chip:#f3f4f6;
+    --reply-bg:#f0fdf4; --reply-line:#bbf7d0;
+    --shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+    --err:#ef4444; --err-soft:#fef2f2; --awaiting-soft:#fff7ed;
+  }
+  :root[data-theme="dark"] {
+    --bg:#0f1115; --panel:#181b21; --ink:#e6e8eb; --muted:#9aa3af;
+    --line:#2a2f37; --accent:#818cf8; --accent-soft:#1e2230;
+    --ok:#16a34a; --warn:#d97706; --chip:#232830;
+    --reply-bg:#132019; --reply-line:#1f4d31;
+    --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    --err:#f87171; --err-soft:#2a1414; --awaiting-soft:#2a2113;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
@@ -1257,16 +1283,20 @@ HUB_PAGE = r"""<!doctype html>
   .badge.phase { background:var(--accent-soft); color:var(--accent); }
   .status { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; }
   .status.working { background:var(--accent-soft); color:var(--accent); }
-  .status.awaiting { background:#fdf1dd; color:var(--warn); }
+  .status.awaiting { background:var(--awaiting-soft); color:var(--warn); }
   .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
   .status.working .dot { animation:pulse 1.2s ease-in-out infinite; }
+  /* segmented theme toggle (mirrors templates/dashboard.html .seg) */
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px; }
+  .seg button { appearance:none; border:none; background:var(--panel); color:var(--muted); padding:5px 11px; cursor:pointer; }
+  .seg button.on { background:var(--accent-soft); color:var(--accent); font-weight:600; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
   .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
   .progress > div { height:100%; background:var(--accent); transition:width .4s; }
   .run-status { font-size:11px; font-weight:600; padding:2px 9px; border-radius:999px; }
   .run-status.running { background:var(--accent-soft); color:var(--accent); }
   .run-status.done { background:var(--reply-bg); color:var(--ok); }
-  .run-status.failed { background:#fdecec; color:#dc2626; }
+  .run-status.failed { background:var(--err-soft); color:var(--err); }
 
   section.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:16px 0; box-shadow:var(--shadow); }
   section.card > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 14px; display:flex; align-items:center; gap:10px; }
@@ -1306,6 +1336,11 @@ HUB_PAGE = r"""<!doctype html>
 <header class="top"><div class="top-inner">
   <h1 class="title">ai-pathfinder — хаб запусков</h1>
   <span class="sub" id="updated">загрузка…</span>
+  <div class="seg" id="themeSeg">
+    <button data-mode="light">Светлая</button>
+    <button data-mode="dark">Тёмная</button>
+    <button data-mode="system">Системная</button>
+  </div>
 </div></header>
 
 <div class="wrap" id="root">
@@ -1315,6 +1350,28 @@ HUB_PAGE = r"""<!doctype html>
 <script>
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+// --- theme toggle (shares localStorage['theme'] with the dashboard) ---------
+// Bootstrap in <head> already set data-theme before paint; here we wire the
+// segmented control, persist the preference, and follow the OS in 'system' mode.
+const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
+let themePref = localStorage.getItem("theme") || "system";
+function resolveTheme(p){ return p === "system" ? (themeMql.matches ? "dark" : "light") : p; }
+function applyTheme(){
+  document.documentElement.setAttribute("data-theme", resolveTheme(themePref));
+  document.querySelectorAll("#themeSeg button").forEach(b => {
+    b.classList.toggle("on", b.dataset.mode === themePref);
+  });
+}
+document.querySelectorAll("#themeSeg button").forEach(b => {
+  b.addEventListener("click", () => {
+    themePref = b.dataset.mode;
+    localStorage.setItem("theme", themePref);
+    applyTheme();
+  });
+});
+themeMql.addEventListener("change", () => { if(themePref === "system") applyTheme(); });
+applyTheme();
 
 // terminal outcome -> run-status class (history table / phase tints)
 function runStatusClass(phase){
