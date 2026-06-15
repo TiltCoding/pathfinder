@@ -253,6 +253,14 @@ def post_ingestion(config, batch, timeout=10):
 
 CONTEXT_WINDOW = 200000  # token window assumed for the "context fill" bar
 
+# Slack (seconds) around a task's telemetry activity window when deciding whether
+# a sub-agent/orchestrator transcript belongs to this run. Transcripts are matched
+# to a task by session-id glob; a session can leak a lone marker (e.g. an old
+# session's SessionEnd, routed here by active_slug) into an unrelated task's
+# telemetry, which would otherwise pull that session's days-old transcripts onto
+# this timeline. One hour cleanly separates same-run skew from a stale prior run.
+TRACE_STALE_TOL = 3600
+
 # Rough USD per 1M tokens (input, output, cache-write, cache-read). Approximate
 # and easy to edit; matched by substring of the model id. Unknown model -> None.
 PRICING = {
@@ -308,6 +316,24 @@ def _ts_to_epoch(ts):
         return datetime.datetime.fromisoformat(s).timestamp()
     except ValueError:
         return None
+
+
+def _overlaps_window(first_ts, last_ts, lo, hi):
+    """Does a transcript's [first..last] time range overlap the task window?
+
+    Used to discard stale transcripts from a different run that share a session id
+    with this task only by accident (see TRACE_STALE_TOL). An unbounded window
+    (lo is None — task has no telemetry timestamps) or an undatable transcript
+    keeps the transcript, preserving the pre-existing behaviour."""
+    if lo is None:
+        return True
+    s = _ts_to_epoch(first_ts)
+    e = _ts_to_epoch(last_ts)
+    if s is None and e is None:
+        return True
+    s = s if s is not None else e
+    e = e if e is not None else s
+    return e >= lo and s <= hi
 
 
 def estimate_cost(model, fresh_in, out, cache_read, cache_create):
@@ -737,31 +763,52 @@ def build_trace(root, slug, window=CONTEXT_WINDOW, projects_dir=None):
     agents = []
     sessions = []
 
+    # Task activity window from this task's telemetry timestamps. Transcripts are
+    # matched to a task by session-id glob (find_subagent_files / find_main_
+    # transcript); a session that only leaked a stray marker into this task — its
+    # real work, and its transcripts, belonging to an unrelated run on another
+    # day — would otherwise drag the whole timeline back. Keep only transcripts
+    # whose time range overlaps the window (± TRACE_STALE_TOL).
+    tele_epochs = [e for ev in events
+                   for e in (_ts_to_epoch(ev.get("ts")),
+                             _ts_to_epoch(ev.get("startTs")),
+                             _ts_to_epoch(ev.get("endTs")))
+                   if e]
+    win_lo = (min(tele_epochs) - TRACE_STALE_TOL) if tele_epochs else None
+    win_hi = (max(tele_epochs) + TRACE_STALE_TOL) if tele_epochs else None
+
     for sid in session_ids:
         sess_spans = [s for s in spans if s.get("session_id") == sid]
-        # parse sub-agent transcripts for this session
+        # parse sub-agent transcripts for this session (dropping stale ones)
         parsed = []
         for fp in find_subagent_files(sid, projects_dir):
             u = parse_transcript_usage(fp)
+            if not _overlaps_window(u.get("firstTs"), u.get("lastTs"), win_lo, win_hi):
+                continue
             u["_fe"] = _ts_to_epoch(u["firstTs"])
             parsed.append(u)
         matched = _join_spans_transcripts(sess_spans, parsed, sid)
         agents.extend(matched)
 
         # orchestrator (main session) transcript as its own row
+        main_added = False
         main = find_main_transcript(sid, projects_dir)
         if main:
             mu = parse_transcript_usage(main)
-            # The orchestrator has no task description of its own (q5=A): give it
-            # a deterministic auto-caption so the front-end can show a label.
-            agents.append(_agent_record(
-                spanId="orch-" + sid, role="оркестратор", session_id=sid,
-                kind="orchestrator", usage=mu, window=window,
-                summary="оркестратор сессии"))
+            if _overlaps_window(mu.get("firstTs"), mu.get("lastTs"), win_lo, win_hi):
+                # The orchestrator has no task description of its own (q5=A): give
+                # it a deterministic auto-caption so the front-end can show a label.
+                agents.append(_agent_record(
+                    spanId="orch-" + sid, role="оркестратор", session_id=sid,
+                    kind="orchestrator", usage=mu, window=window,
+                    summary="оркестратор сессии"))
+                main_added = True
 
-        sess_epochs = [e for s in sess_spans
-                       for e in (_ts_to_epoch(s.get("startTs")), _ts_to_epoch(s.get("endTs")))
-                       if e]
+        # Skip sessions that contributed nothing to this task (e.g. a foreign
+        # session whose only event here was a stray marker) so they neither
+        # inflate the session count nor add an empty row.
+        if not (sess_spans or matched or main_added):
+            continue
         sessions.append({
             "sessionId": sid,
             "startTs": min((s.get("startTs") for s in sess_spans if s.get("startTs")), default=None),
