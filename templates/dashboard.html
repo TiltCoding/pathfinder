@@ -159,6 +159,8 @@
   .ws .done { background: var(--reply-bg); color: var(--ok); }
 
   .actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.06); }
+  /* «ваш ход»: контекстная подсветка actionbar при awaiting (токены из обеих тем, ADR-0015) */
+  .actionbar.awaiting { background: var(--warn-soft); border-top-color: var(--warn); }
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
   .queue { font-size: 13px; color: var(--muted); flex: 1; }
   .queue b { color: var(--ink); }
@@ -523,8 +525,15 @@ const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
+let prevStatus = null;          // прошлый data.status — детект перехода working→awaiting
+let baseTitle = document.title; // статичный <title>; восстанавливается при снятии бейджа
 
 function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// Бейдж «ждёт» в заголовке вкладки (виден в фоне). Снимается возвратом title к baseTitle.
+function setTitleBadge(on){
+  document.title = on ? ("● ждёт — " + (lastData && lastData.title ? lastData.title : "задача")) : baseTitle;
+}
 
 // --- тема: два режима (Светлая/Тёмная), переключатель — иконка-кнопка ---
 // Ключ localStorage['theme'] = 'light'|'dark' (явный выбор). Отсутствует (или legacy
@@ -776,8 +785,22 @@ function render(data, replies){
   $("#phase").textContent = data.phase || "—";
   $("#iter").textContent = data.iteration ? ("итерация " + data.iteration) : "";
   const st = $("#status"), stt = $("#status-text");
-  if((data.status||"working") === "awaiting-batch"){ st.className="status awaiting"; stt.textContent="ждёт ваши правки"; }
-  else { st.className="status working"; stt.textContent="агент работает"; }
+  // детект перехода в awaiting — только по фронту (анти-спам: первый render задаёт базовый статус
+  // без сигнала, поэтому уже-awaiting задача при открытии вкладки не уведомляет даже свёрнутой)
+  const enter = prevStatus !== null && prevStatus !== "awaiting-batch" && data.status === "awaiting-batch";
+  prevStatus = data.status;
+  if((data.status||"working") === "awaiting-batch"){
+    st.className="status awaiting"; stt.textContent="ждёт ваши правки";
+    // фоновой сигнал: браузер-уведомление при переходе + бейдж в заголовке вкладки (грейсфул)
+    if(enter && document.hidden && "Notification" in window && Notification.permission === "granted"){
+      try { new Notification("Задача ждёт ответа", {body: data.title || "Откройте дашборд"}); } catch(e){}
+    }
+    setTitleBadge(true);
+  } else {
+    st.className="status working"; stt.textContent="агент работает";
+    setTitleBadge(false);
+  }
+  $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
   const pr = data.progress || {done:0,total:0};
   $("#progress-bar").style.width = (pr.total ? Math.round(100*pr.done/pr.total) : 0) + "%";
 
@@ -1051,11 +1074,13 @@ async function saveVariantComment(variantId, value, ta){
 
 // action bar
 $("#btn-submit").onclick = async () => {
+  if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(!draftItems.length) return;
   const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
   if(r.ok){ draftItems = []; rerender(); toast("Отправлено агенту ✓ Пачка #" + r.submission); }
 };
 $("#btn-approve").onclick = async () => {
+  if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
   toast("План утверждён ✓");
 };
@@ -2290,6 +2315,8 @@ async function tick(){
   } catch(e){ /* server may be restarting */ }
 }
 (async function init(){
+  // возврат фокуса на вкладку снимает title-бейдж «ждёт»
+  document.addEventListener("visibilitychange", () => { if(!document.hidden) setTitleBadge(false); });
   await loadDraft();
   await tick();
   setInterval(tick, 3000);

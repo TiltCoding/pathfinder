@@ -322,6 +322,184 @@ class BuildHubContractTest(unittest.TestCase):
         self.assertIsNone(hub["analytics"]["medianDurationMs"])
 
 
+class AwaitingFlagTest(unittest.TestCase):
+    """`_hub_run` append-only `awaiting` flag (b1, OR-formula): True when the
+    task is parked at a batch gate — `state.checkpoint == "awaiting-batch"` OR
+    `dashboard.json.status == "awaiting-batch"`. The flag is purely cosmetic and
+    must NOT leak into the active/history split (`_hub_is_active` is untouched)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(self._cleanup)
+        self.ws = server.Workspace(self.root)
+        os.makedirs(self.ws.tasks, exist_ok=True)
+        # reset the singleton hub cache so each test sees fresh data
+        server.Handler._hub_cache.clear()
+        self.handler = _make_handler(self.ws)
+
+    def _cleanup(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+        server.Handler._hub_cache.clear()
+
+    def _task(self, slug, state=None, dash=None):
+        if state is not None:
+            _write_json(self.ws.task_file(slug, "state.json"), state)
+        if dash is not None:
+            _write_json(self.ws.task_file(slug, "dashboard.json"), dash)
+
+    def _run(self, slug):
+        """The single run card for `slug` straight out of `_build_hub`."""
+        return next(r for r in self.handler._build_hub()["runs"]
+                    if r["slug"] == slug)
+
+    def test_checkpoint_awaiting_sets_flag_and_keeps_active(self):
+        # state.checkpoint == awaiting-batch on a non-terminal phase with a fresh
+        # updatedAt -> awaiting True AND active True (flag does not break active).
+        self._task(
+            "task-gate",
+            state={"slug": "task-gate", "phase": "IMPLEMENT",
+                   "checkpoint": "awaiting-batch",
+                   "updatedAt": _now_iso_utc()},
+            dash={"title": "Ждёт ответа"},
+        )
+        run = self._run("task-gate")
+        self.assertTrue(run["awaiting"])
+        self.assertTrue(run["active"])     # invariant: flag not mixed into active
+
+    def test_working_checkpoint_no_flag(self):
+        # checkpoint == working and no awaiting status in the dashboard -> False.
+        self._task(
+            "task-working",
+            state={"slug": "task-working", "phase": "IMPLEMENT",
+                   "checkpoint": "working",
+                   "updatedAt": _now_iso_utc()},
+            dash={"title": "В работе", "status": "working"},
+        )
+        run = self._run("task-working")
+        self.assertFalse(run["awaiting"])
+        self.assertTrue(run["active"])
+
+    def test_dashboard_status_awaiting_sets_flag(self):
+        # OR-branch (q1=A): dashboard.json.status == awaiting-batch with no
+        # awaiting checkpoint in state still raises the flag.
+        self._task(
+            "task-dash-gate",
+            state={"slug": "task-dash-gate", "phase": "PLAN",
+                   "updatedAt": _now_iso_utc()},   # no `checkpoint` key at all
+            dash={"title": "Гейт из дашборда", "status": "awaiting-batch"},
+        )
+        run = self._run("task-dash-gate")
+        self.assertTrue(run["awaiting"])
+        self.assertTrue(run["active"])
+
+    def test_terminal_awaiting_is_cosmetic_not_active(self):
+        # A terminal (DONE) task that still carries awaiting-batch -> the flag is
+        # True (cosmetic) but the run is NOT active (it lives in history). This
+        # nails the invariant that awaiting never sneaks a finished task back
+        # into the active list.
+        self._task(
+            "task-done-gate",
+            state={"slug": "task-done-gate", "phase": "DONE",
+                   "checkpoint": "awaiting-batch",
+                   "updatedAt": _now_iso_utc()},
+            dash={"title": "Завершённая с флагом", "status": "awaiting-batch"},
+        )
+        run = self._run("task-done-gate")
+        self.assertTrue(run["awaiting"])
+        self.assertFalse(run["active"])    # terminal -> history despite the flag
+
+
+class QueueEndpointTest(unittest.TestCase):
+    """`Handler._queue`: passthrough read of the project-level `/improve`
+    dispatch queue (`<workspace.base>/dispatch-queue.json`, contract:
+    skills/improve/dispatch-queue.md) with a graceful empty default — the
+    endpoint must never 500 on a missing or corrupt file (ADR-0014 / b4)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.ws = server.Workspace(self.root)
+        os.makedirs(self.ws.tasks, exist_ok=True)
+        self.handler = _make_handler(self.ws)
+
+    def _queue_path(self):
+        # The shared store lives at <workspace.base> (= <root>/.workflow), not a
+        # worktree copy (ADR-0010): that is where _queue reads from.
+        return os.path.join(self.ws.base, "dispatch-queue.json")
+
+    def test_populated_queue_passthrough(self):
+        # Fixture mirrors the real .workflow/dispatch-queue.json contract:
+        # top-level metadata + items[] spanning every status, with `failed` and
+        # `skipped` explicitly present (they are the core value of the feature).
+        fixture = {
+            "version": 1,
+            "source": "improve-overall",
+            "mode": "sequential-feature",
+            "createdAt": "2026-06-15T15:13:00",
+            "updatedAt": "2026-06-16T10:51:17",
+            "baseCommit": "67d305ca1c750a38ce4f4b364b5c9b076aa0c5dc",
+            "items": [
+                {"n": 1, "featId": "feat-1", "slug": "task-done",
+                 "title": "Готовая фича", "candId": "cand-1", "prism": "DX",
+                 "status": "done"},
+                {"n": 2, "featId": "feat-2", "slug": "task-progress",
+                 "title": "В работе", "candId": "cand-2", "prism": "UX",
+                 "status": "in-progress"},
+                {"n": 3, "featId": "feat-3", "slug": "task-pending",
+                 "title": "В очереди", "candId": "cand-3", "prism": "надёжность",
+                 "status": "pending"},
+                {"n": 4, "featId": "feat-4", "slug": "task-failed",
+                 "title": "Упавшая фича", "candId": "cand-4", "prism": "перф",
+                 "status": "failed"},
+                {"n": 5, "featId": "feat-5", "slug": "task-skipped",
+                 "title": "Пропущенная фича", "candId": "cand-5", "prism": "DX",
+                 "status": "skipped"},
+            ],
+        }
+        _write_json(self._queue_path(), fixture)
+
+        out = self.handler._queue()
+
+        # passthrough: top-level keys come through verbatim.
+        self.assertIn("version", out)
+        self.assertEqual(out["version"], 1)
+        self.assertIn("items", out)
+        self.assertEqual(len(out["items"]), 5)
+
+        # every status is preserved, including failed/skipped.
+        statuses = [i["status"] for i in out["items"]]
+        self.assertEqual(
+            statuses,
+            ["done", "in-progress", "pending", "failed", "skipped"],
+        )
+        self.assertIn("failed", statuses)
+        self.assertIn("skipped", statuses)
+
+        # the per-item render fields the UI relies on survive the passthrough.
+        first = out["items"][0]
+        for key in ("n", "slug", "title", "status"):
+            self.assertIn(key, first)
+        self.assertEqual(first["n"], 1)
+        self.assertEqual(first["slug"], "task-done")
+        self.assertEqual(first["title"], "Готовая фича")
+        self.assertEqual(first["status"], "done")
+
+    def test_missing_file_is_graceful(self):
+        # Nothing written to <workspace.base> -> {"items": []}, never raises.
+        out = self.handler._queue()
+        self.assertEqual(out, {"items": []})
+
+    def test_corrupt_json_is_graceful(self):
+        # A malformed file must degrade to the empty default, not 500
+        # (read_json swallows JSONDecodeError).
+        path = self._queue_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("{ this is not valid json\n")
+        out = self.handler._queue()
+        self.assertEqual(out, {"items": []})
+
+
 class TaskRootFallbackTest(unittest.TestCase):
     """`Handler._task_root`: a missing/bogus worktreePath falls back to root."""
 

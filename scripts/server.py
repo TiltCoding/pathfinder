@@ -262,6 +262,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/hub":                # the hub page (no slug)
             return self._send(200, HUB_PAGE.encode("utf-8"),
                               "text/html; charset=utf-8")
+        if path == "/queue.json":         # /improve dispatch queue (no slug)
+            return self._json(200, self._queue())
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -747,6 +749,18 @@ class Handler(BaseHTTPRequestHandler):
             Handler._hub_cache["hub"] = {"exp": now + 3.0, "data": data}
         return data
 
+    def _queue(self):
+        """Read the project-level `/improve` dispatch queue (contract:
+        skills/improve/dispatch-queue.md) and return it verbatim (passthrough).
+        The file lives in the shared store (workspace.base, not a worktree copy —
+        ADR-0010), so the server always reaches the canonical queue. Graceful: a
+        missing or corrupt file yields {"items": []} (read_json catches
+        FileNotFoundError / JSONDecodeError), so the endpoint never 500s. Kept
+        out of the _hub cache on purpose — the file is tiny and the brief asks
+        not to weigh /hub.json down. done/total are computed client-side."""
+        path = os.path.join(self.workspace.base, "dispatch-queue.json")
+        return self.workspace.read_json(path, {"items": []})
+
     def _build_hub(self):
         """Walk _list_tasks(), build a run card per task from state.json /
         dashboard.json plus one light pass over telemetry.jsonl (event counters
@@ -791,6 +805,8 @@ class Handler(BaseHTTPRequestHandler):
             "kind": state.get("kind"),  # e.g. "ask"; None for /feature, /improve
             "phase": phase,
             "status": status,
+            "awaiting": (state.get("checkpoint") == "awaiting-batch")
+            or (dash.get("status") == "awaiting-batch"),
             "iteration": state.get("iteration"),
             "progress": {"done": done, "total": total},
             "createdAt": created,
@@ -1318,14 +1334,39 @@ HUB_PAGE = r"""<!doctype html>
   .run-status.running { background:var(--accent-soft); color:var(--accent); }
   .run-status.done { background:var(--reply-bg); color:var(--ok); }
   .run-status.failed { background:var(--err-soft); color:var(--err); }
+  /* extra queue statuses, built from existing tokens (no new palette — ADR-0015) */
+  .run-status.pending { background:var(--chip); color:var(--muted); }
+  .run-status.skipped { background:var(--awaiting-soft); color:var(--warn); }
 
   section.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:16px 0; box-shadow:var(--shadow); }
   section.card > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 14px; display:flex; align-items:center; gap:10px; }
   section.card > h2 .count { background:var(--chip); color:var(--ink); border-radius:999px; padding:1px 9px; font-size:12px; }
   .empty { color:var(--muted); font-size:13px; }
 
+  /* hub search + filter toolbar (static node #filter-bar — lives between header
+     and #root, never rewritten by render(), so input focus survives the poll).
+     Tokens reused from the shared palette (both :root[data-theme]); no new colours. */
+  #filter-bar { max-width:1180px; margin:16px auto 0; padding:0 20px; }
+  .fpanel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); padding:14px 16px; display:flex; flex-direction:column; gap:11px; }
+  #f-search { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line);
+    border-radius:9px; padding:9px 13px; font-size:14px; }
+  #f-search:focus { outline:none; border-color:var(--accent); }
+  .frow { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .frow .glabel { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; width:42px; flex:none; }
+  .chip { font-size:12px; font-weight:600; padding:4px 11px; border-radius:999px; cursor:pointer;
+    background:var(--chip); color:var(--muted); border:1px solid transparent; user-select:none; }
+  .chip:hover { border-color:var(--accent); }
+  .chip.on { background:var(--accent-soft); color:var(--accent); }
+  #f-count { display:none; align-items:center; gap:10px; font-size:12px; color:var(--accent);
+    background:var(--accent-soft); border-radius:8px; padding:6px 11px; align-self:flex-start; }
+  #f-count.on { display:inline-flex; }
+  #f-count b { font-weight:700; }
+  #f-reset { color:var(--muted); cursor:pointer; text-decoration:underline; font-weight:600; }
+
   .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; }
   .runcard { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--bg); display:flex; flex-direction:column; gap:8px; }
+  .runcard.awaiting { border-color:var(--warn); background:var(--awaiting-soft); }
   .runcard .head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .runcard .slug { font-weight:650; font-size:15px; }
   .runcard .desc { color:var(--muted); font-size:13px; }
@@ -1351,6 +1392,36 @@ HUB_PAGE = r"""<!doctype html>
   .phasebar .bar { flex:1; height:8px; background:var(--line); border-radius:999px; overflow:hidden; }
   .phasebar .bar > div { height:100%; background:var(--accent); }
   .phasebar .v { width:28px; text-align:right; color:var(--ink); }
+
+  /* /improve dispatch queue — neutral table section (between active & history) */
+  /* #queue-root and #root-tail continue the #root column: drop their vertical
+     padding so the card margins stay even (each .card already has margin:16px 0). */
+  #queue-root, #root-tail { padding-top:0; padding-bottom:0; }
+  #queue-root:empty { display:none; }
+  .q-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+  .q-head .meta { color:var(--muted); font-size:13px; }
+  .q-head .progress { flex:1; min-width:160px; max-width:320px; margin-top:0; }
+  .q-actions { margin-left:auto; display:flex; gap:8px; }
+  button.copy { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:7px 12px; font-weight:600; font-size:13px; cursor:pointer; }
+  button.copy:hover { border-color:var(--accent); }
+  button.copy.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  code.cmd { font:12px ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--ink); }
+  table.queue { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  table.queue th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; padding:6px 10px; border-bottom:1px solid var(--line); }
+  table.queue td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  table.queue tr:hover td { background:var(--accent-soft); }
+  table.queue .n { font:12px ui-monospace, monospace; color:var(--muted); width:28px; }
+  table.queue .ttl { font-weight:600; }
+  table.queue .prism { color:var(--muted); font:12px ui-monospace, monospace; }
+  table.queue a { color:var(--accent); text-decoration:none; font-weight:600; }
+  table.queue tr.failed td { background:var(--err-soft); }
+  table.queue tr.skipped td { background:var(--awaiting-soft); }
+  table.queue tr.failed:hover td { background:var(--err-soft); }
+  table.queue tr.skipped:hover td { background:var(--awaiting-soft); }
+
+  /* toast — ported from templates/dashboard.html */
+  .toast { position:fixed; bottom:84px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:30; }
+  .toast.show { opacity:1; }
 </style>
 </head>
 <body>
@@ -1360,9 +1431,23 @@ HUB_PAGE = r"""<!doctype html>
   <button class="theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему"><span id="theme-icon">☀️</span></button>
 </div></header>
 
+<!-- static filter toolbar — sits OUTSIDE #root/#queue-root/#root-tail so render()'s
+     innerHTML rewrites never touch it (input focus/caret survive the 3s poll). -->
+<div id="filter-bar">
+  <div class="fpanel">
+    <input id="f-search" type="text" placeholder="Поиск по названию или slug…" autocomplete="off">
+    <div class="frow"><span class="glabel">фаза</span><span id="f-phase" class="frow" style="gap:7px"></span></div>
+    <div class="frow"><span class="glabel">тип</span><span id="f-kind" class="frow" style="gap:7px"></span></div>
+    <span id="f-count">найдено <b id="f-n">0</b> из <span id="f-m">0</span> · фильтр активен <span id="f-reset">сбросить</span></span>
+  </div>
+</div>
+
 <div class="wrap" id="root">
   <section class="card"><div class="empty">загрузка…</div></section>
 </div>
+<div class="wrap" id="queue-root"></div>
+<div class="wrap" id="root-tail"></div>
+<div class="toast" id="toast"></div>
 
 <script>
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
@@ -1402,7 +1487,7 @@ function runStatusClass(phase){
 function statusBadge(status){
   const s = String(status||"");
   if(s === "awaiting-batch" || s === "awaiting")
-    return '<span class="status awaiting"><span class="dot"></span>ждёт батч</span>';
+    return '<span class="status awaiting"><span class="dot"></span>⏳ ждёт ответа</span>';
   return '<span class="status working"><span class="dot"></span>в работе</span>';
 }
 
@@ -1434,7 +1519,7 @@ function runCard(r){
   const branch = r.branch ? `<span class="git">⎇ ${esc(r.branch)}</span>` : "";
   const wt = r.worktreePath ? `<span>${esc(r.worktreePath)}</span>` : "";
   const meta = (branch||wt) ? `<div class="meta">${branch}${wt}</div>` : "";
-  return `<div class="runcard">
+  return `<div class="runcard${r.awaiting ? " awaiting" : ""}">
     <div class="head">
       <span class="slug">${esc(r.slug)}</span>
       ${r.kind ? `<span class="badge kind">${esc(r.kind)}</span>` : ""}
@@ -1474,22 +1559,54 @@ function phaseBars(phases){
   }).join("");
 }
 
+// --- client-side search + chip filters (no server changes) ---
+// State lives in module vars so a chip click can re-filter the cached lastData
+// without a new fetch. The toolbar (#filter-bar) is a static node render() never
+// rewrites, so input focus/caret survive the poll (the bug from feature 3).
+const KIND_FEAT = "feature/improve"; // synthetic kind for runs with kind===null (/feature, /improve)
+let q = "";
+let activePhases = new Set();
+let activeKinds = new Set();
+let lastData = null;
+let lastChipKey = ""; // serialised phase/kind sets — chips redraw only when this changes
+
+function filterActive(){ return !!(q.trim() || activePhases.size || activeKinds.size); }
+
+function matches(r){
+  const text = (String(r.title||"") + " " + String(r.slug||"")).toLowerCase()
+    .includes(q.trim().toLowerCase());
+  const byPhase = !activePhases.size || activePhases.has(r.phase);
+  const byKind = !activeKinds.size || activeKinds.has(r.kind || KIND_FEAT);
+  return text && byPhase && byKind;
+}
+
 function render(data){
   const runs = data.runs || [];
-  const active = runs.filter(r=>r.active);
-  const history = runs.filter(r=>!r.active);
+  const shown = runs.filter(matches);
+  const active = shown.filter(r=>r.active);
+  active.sort((a,b)=>(b.awaiting?1:0)-(a.awaiting?1:0));
+  const history = shown.filter(r=>!r.active);
   const a = data.analytics || {};
+
+  buildChips(runs);
+  updateCount(shown.length, runs.length);
+
+  // empty text depends on whether a filter is active: "ничего не найдено" when the
+  // user filtered everything out, else the default section-empty message.
+  const filtered = filterActive();
+  const activeEmpty = filtered ? "ничего не найдено" : "нет активных запусков";
+  const histEmpty = filtered ? "ничего не найдено" : "история пуста";
 
   const activeHtml = active.length
     ? `<div class="cards">${active.map(runCard).join("")}</div>`
-    : `<div class="empty">нет активных запусков</div>`;
+    : `<div class="empty">${activeEmpty}</div>`;
 
   const histHtml = history.length
     ? `<table class="hist"><thead><tr>
         <th>Задача</th><th>Фаза</th><th>Итер.</th><th>Длит.</th>
         <th>Под-агенты</th><th>Сессии</th><th>Обновлено</th><th></th>
       </tr></thead><tbody>${history.map(histRow).join("")}</tbody></table>`
-    : `<div class="empty">история пуста</div>`;
+    : `<div class="empty">${histEmpty}</div>`;
 
   const stats = [
     [a.total, "всего задач"],
@@ -1501,11 +1618,16 @@ function render(data){
   ].map(([n,l])=>`<div class="stat"><div class="n">${n==null?"—":esc(n)}</div>`+
     `<div class="l">${esc(l)}</div></div>`).join("");
 
+  // #root holds active runs; #queue-root (filled by tickQueue) sits between;
+  // #root-tail holds history + analytics. Splitting keeps the queue section
+  // visually between "Активные" and "История" while #root is overwritten every
+  // /hub.json diff without ever touching the independent #queue-root node.
   document.getElementById("root").innerHTML = `
     <section class="card">
       <h2>Активные запуски <span class="count">${active.length}</span></h2>
       ${activeHtml}
-    </section>
+    </section>`;
+  document.getElementById("root-tail").innerHTML = `
     <section class="card">
       <h2>История <span class="count">${history.length}</span></h2>
       ${histHtml}
@@ -1521,17 +1643,215 @@ function render(data){
     "обновлено " + fmtDate(new Date().toISOString()) + " · автообновление";
 }
 
+// Build phase/kind chips dynamically from the data (the kind list is {ask,null}
+// today, so a hardcoded list would be wrong — q1=A). null kind → synthetic
+// KIND_FEAT chip (q2=A). Redraw only when the set of values changes (lastChipKey)
+// so the toolbar DOM isn't churned every poll; #f-search is never rewritten.
+function chipHtml(value, on){
+  return `<span class="chip${on ? " on" : ""}" data-v="${esc(value)}">${esc(value)}</span>`;
+}
+function buildChips(runs){
+  const phases = [...new Set(runs.map(r=>r.phase).filter(Boolean))].sort();
+  const kinds = [...new Set(runs.map(r=>r.kind || KIND_FEAT))].sort();
+  const key = JSON.stringify([phases, kinds]);
+  if(key === lastChipKey) {
+    // value sets unchanged — only refresh the .on state (cheap, no input nearby)
+    syncChipState();
+    return;
+  }
+  lastChipKey = key;
+  const phaseEl = document.getElementById("f-phase");
+  const kindEl = document.getElementById("f-kind");
+  if(phaseEl) phaseEl.innerHTML = phases.map(p=>chipHtml(p, activePhases.has(p))).join("");
+  if(kindEl) kindEl.innerHTML = kinds.map(k=>chipHtml(k, activeKinds.has(k))).join("");
+}
+function syncChipState(){
+  document.querySelectorAll("#f-phase .chip").forEach(el=>
+    el.classList.toggle("on", activePhases.has(el.dataset.v)));
+  document.querySelectorAll("#f-kind .chip").forEach(el=>
+    el.classList.toggle("on", activeKinds.has(el.dataset.v)));
+}
+function updateCount(n, m){
+  const box = document.getElementById("f-count");
+  if(!box) return;
+  if(filterActive()){
+    document.getElementById("f-n").textContent = n;
+    document.getElementById("f-m").textContent = m;
+    box.classList.add("on");
+  } else {
+    box.classList.remove("on");
+  }
+}
+
+// persist filter state (q3=A) — mirror of the localStorage['theme'] pattern.
+function persistFilter(){
+  try {
+    localStorage.setItem("hubFilter", JSON.stringify({
+      q, phases:[...activePhases], kinds:[...activeKinds] }));
+  } catch (e) { /* storage unavailable — non-fatal */ }
+}
+function restoreFilter(){
+  try {
+    const s = JSON.parse(localStorage.getItem("hubFilter") || "null");
+    if(!s) return;
+    q = typeof s.q === "string" ? s.q : "";
+    activePhases = new Set(Array.isArray(s.phases) ? s.phases : []);
+    activeKinds = new Set(Array.isArray(s.kinds) ? s.kinds : []);
+    const search = document.getElementById("f-search");
+    if(search) search.value = q;
+  } catch (e) { /* corrupt/absent — start with empty filter */ }
+}
+
+function reFilter(){ if(lastData) render(lastData); persistFilter(); }
+function toggleChip(set, value){
+  if(set.has(value)) set.delete(value); else set.add(value);
+}
+
+// wire toolbar handlers once: search input + delegated chip clicks + reset.
+function initFilter(){
+  restoreFilter();
+  const search = document.getElementById("f-search");
+  if(search) search.addEventListener("input", function(){ q = this.value; reFilter(); });
+  const phaseEl = document.getElementById("f-phase");
+  if(phaseEl) phaseEl.addEventListener("click", function(e){
+    const chip = e.target.closest(".chip"); if(!chip) return;
+    toggleChip(activePhases, chip.dataset.v); syncChipState(); reFilter();
+  });
+  const kindEl = document.getElementById("f-kind");
+  if(kindEl) kindEl.addEventListener("click", function(e){
+    const chip = e.target.closest(".chip"); if(!chip) return;
+    toggleChip(activeKinds, chip.dataset.v); syncChipState(); reFilter();
+  });
+  const reset = document.getElementById("f-reset");
+  if(reset) reset.addEventListener("click", function(){
+    q = ""; activePhases.clear(); activeKinds.clear();
+    if(search) search.value = "";
+    syncChipState(); reFilter();
+  });
+}
+initFilter();
+
 let last = "";
 async function tick(){
   try {
     const res = await fetch("/hub.json");
     const data = await res.json();
+    lastData = data; // cache so chip/search clicks can re-filter without a fetch
     const stamp = JSON.stringify(data);
     if(stamp !== last){ last = stamp; render(data); }
   } catch (e) { /* server may be restarting — swallow and retry next tick */ }
 }
 tick();
 setInterval(tick, 3000);
+
+// --- toast (ported from templates/dashboard.html) ---
+function toast(msg){
+  const t = document.getElementById("toast");
+  if(!t) return;
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+// copy the drain command to the clipboard, with an execCommand fallback for
+// non-secure contexts (navigator.clipboard needs a secure origin).
+const DRAIN_CMD = "/loop /feature";
+function copyDrainCmd(){
+  const done = () => toast("Команда скопирована");
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(DRAIN_CMD).then(done).catch(() => fallbackCopy(DRAIN_CMD) && done());
+    return;
+  }
+  if(fallbackCopy(DRAIN_CMD)) done();
+}
+function fallbackCopy(text){
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch (e) { return false; }
+}
+
+// --- /improve dispatch queue section (independent poll, own diff) ---
+// status -> CSS class on .run-status (in-progress maps to the running style)
+function queueStatusClass(status){
+  const s = String(status||"");
+  if(s === "done") return "done";
+  if(s === "failed") return "failed";
+  if(s === "skipped") return "skipped";
+  if(s === "pending") return "pending";
+  return "running"; // in-progress and anything unknown
+}
+const QSTATUS_RU = { done:"done", "in-progress":"в работе", pending:"в очереди",
+  skipped:"пропущено", failed:"сбой" };
+function queueStatusLabel(status){
+  const s = String(status||"");
+  return QSTATUS_RU[s] || s || "—";
+}
+function queueRow(it){
+  const cls = queueStatusClass(it.status);
+  const trCls = (cls === "failed" || cls === "skipped") ? ` class="${cls}"` : "";
+  const prism = it.prism ? esc(it.prism) : (it.candId ? esc(it.candId) : "—");
+  const link = it.slug
+    ? `<a href="/?slug=${encodeURIComponent(it.slug)}">открыть</a>`
+    : "";
+  return `<tr${trCls}>
+    <td class="n">${it.n==null?"":esc(it.n)}</td>
+    <td class="ttl">${esc(it.title)}</td>
+    <td class="prism">${prism}</td>
+    <td><span class="run-status ${cls}">${esc(queueStatusLabel(it.status))}</span></td>
+    <td>${link}</td>
+  </tr>`;
+}
+function renderQueue(data){
+  const root = document.getElementById("queue-root");
+  if(!root) return;
+  const items = (data && data.items) || [];
+  if(!items.length){ root.innerHTML = ""; return; } // graceful: hide when empty
+  const total = items.length;
+  const done = items.filter(i => i.status === "done").length;
+  const failed = items.filter(i => i.status === "failed").length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  const src = data.source
+    ? `источник <code class="cmd">${esc(data.source)}</code> · ` : "";
+  const failMeta = failed ? ` · ${failed} ${failed===1?"сбой":"сбоев"}` : "";
+  const meta = `${src}осталось ${total - done}${failMeta}`;
+  root.innerHTML = `
+    <section class="card">
+      <h2>Очередь /improve <span class="count">${done} / ${total}</span></h2>
+      <div class="q-head">
+        <div class="progress"><div style="width:${pct}%"></div></div>
+        <span class="meta">${meta}</span>
+        <div class="q-actions">
+          <button class="copy primary" id="queue-copy">📋 Копировать команду дренажа</button>
+        </div>
+      </div>
+      <table class="queue">
+        <thead><tr><th>#</th><th>Фича</th><th>Призма</th><th>Статус</th><th></th></tr></thead>
+        <tbody>${items.map(queueRow).join("")}</tbody>
+      </table>
+    </section>`;
+  const btn = document.getElementById("queue-copy");
+  if(btn) btn.addEventListener("click", copyDrainCmd);
+}
+
+let lastQueue = "";
+async function tickQueue(){
+  try {
+    const res = await fetch("/queue.json");
+    const data = await res.json();
+    const stamp = JSON.stringify(data);
+    if(stamp !== lastQueue){ lastQueue = stamp; renderQueue(data); }
+  } catch (e) { /* swallow — independent of /hub.json, retry next tick */ }
+}
+tickQueue();
+setInterval(tickQueue, 3000);
 </script>
 </body>
 </html>"""
