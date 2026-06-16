@@ -63,6 +63,17 @@ READABLE_FILES = {"index.html", "dashboard.json", "state.json", "replies.json",
 # Visual-demo mockup files (self-contained HTML/SVG) served from <task>/mockups/.
 MOCKUP_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\.(html|svg)$")
 
+# Security headers for /mockup only — the one path that runs untrusted active
+# content (agent mockups in a sandbox="allow-scripts" iframe). Defence-in-depth
+# on top of the iframe sandbox + traversal guards. The CSP allows *inline*
+# (script/style + data: images/fonts) so the existing inline-<script> mockups
+# keep working, but blocks the *network/external* (default-src 'none' ⇒ no
+# connect/fetch/ws/external src), base and form-action.
+MOCKUP_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+              "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
+MOCKUP_SEC_HEADERS = {"X-Content-Type-Options": "nosniff",
+                      "Content-Security-Policy": MOCKUP_CSP}
+
 
 def safe_slug(slug):
     if not slug or not SLUG_RE.match(slug):
@@ -136,11 +147,15 @@ class Handler(BaseHTTPRequestHandler):
             return c
 
     # ---- helpers -------------------------------------------------------
-    def _send(self, code, body=b"", content_type="application/json; charset=utf-8"):
+    def _send(self, code, body=b"", content_type="application/json; charset=utf-8",
+              extra_headers=None):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if extra_headers:
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -315,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                  else "text/html; charset=utf-8")
         with open(path, "rb") as f:
             data = f.read()
-        return self._send(200, data, ctype)
+        return self._send(200, data, ctype, extra_headers=MOCKUP_SEC_HEADERS)
 
     # ---- trace (computed, not a file) ----------------------------------
     def _trace(self, slug):
