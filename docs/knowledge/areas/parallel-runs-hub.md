@@ -118,7 +118,8 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 не 500). Карточка `runs[]` (`_hub_run`):
 
 ```
-{ slug, title, phase, status, iteration,
+{ slug, title, kind, phase, status, iteration,
+  awaiting,                       // bool — задача ждёт ответа человека (см. ниже)
   progress:{done,total},
   createdAt, updatedAt,
   worktreePath, branch,           // null для обычных (не-worktree) задач
@@ -126,6 +127,13 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   subagents, sessions, events, activity,   // счётчики из одного прохода телеметрии
   firstTs, lastTs, durationMs }
 ```
+
+**Поле `awaiting`** (`_hub_run`, `scripts/server.py:793`) — задача ждёт ответа человека (висит на
+батч-гейте). OR-формула из двух источников: `state.checkpoint == "awaiting-batch"` **или**
+`dashboard.status == "awaiting-batch"` (читаем оба — какой из артефактов опередил другой, тот и
+сработает). Добавлено **дозаписью** (инвариант «только добавление»). Поле **косметическое** — влияет
+только на отображение, **НЕ** на критерий active/history: `_hub_is_active` (`:782`) не тронут, поэтому
+терминальная задача, оставшаяся в `awaiting`, всё равно уезжает в «Историю» по своему `phase`/окну.
 
 `analytics` (`_hub_analytics`, **только событийная, БЕЗ токенов/cost**):
 
@@ -143,6 +151,14 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 
 1. **Активные запуски** — карточки (`runCard`) из `runs.filter(r=>r.active)`: slug/title, бейдж фазы,
    статус, прогресс, ветка/worktree, ссылка `/?slug=<slug>` (открыть дашборд задачи).
+   - **Бейдж awaiting.** `statusBadge` (`scripts/server.py:1440`) рисует для `awaiting-batch` бейдж
+     **«⏳ ждёт ответа»** (раньше — «ждёт батч»), иначе «в работе». Зеркалит `.status.awaiting`
+     дашборда.
+   - **Подъём awaiting-карточек.** В `render()` (`:1518`) активные сортируются так, что задачи с
+     `r.awaiting` всплывают наверх (`active.sort((a,b)=>(b.awaiting?1:0)-(a.awaiting?1:0))`) — то, что
+     ждёт человека, видно первым.
+   - **Опциональная подсветка карточки.** `runCard` вешает класс `.runcard.awaiting` (`:1475`) при
+     `r.awaiting` → мягкая рамка/фон из `--awaiting-soft`/`--warn` (`:1333`). Косметика.
 2. **История** — таблица (`histRow`) из `runs.filter(r=>!r.active)`: фаза/итерации/длительность/
    под-агенты/сессии/обновлено + ссылка на дашборд.
 3. **Обобщённая аналитика** — счётчики (`stats`) + бары распределения по фазам (`phaseBars`); явная
@@ -150,6 +166,44 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 
 Деление active/history делается **на клиенте по полю `run.active`** (флаг считает сервер в `_hub_run`).
 Поллинг каждые 3 c, дифф по `JSON.stringify(data)` (не перерисовывать впустую).
+
+**Раскладка `render()` разбита на два узла** (`scripts/server.py:1543`/`:1548`): `#root` —
+секция «Активные запуски», `#root-tail` — «История» + «Обобщённая аналитика». Между ними в разметке
+сидит **третий, независимый** контейнер `#queue-root` (`scripts/server.py:1398`), который `render()`
+**не трогает вообще** — его наполняет отдельный поллинг очереди (см. ниже). Так секция очереди
+размещена визуально между «Активными» и «Историей», но дифф `/hub.json` не затирает её узел.
+
+### `GET /queue.json` — очередь дренажа `/improve` (read-only passthrough, без slug)
+
+Отдаёт содержимое `<workspace.base>/dispatch-queue.json` **дословно** (passthrough), контракт файла —
+`skills/improve/dispatch-queue.md` (`mode:"sequential-feature"`, ADR-0014). Реализация —
+`Handler._queue()` (`scripts/server.py:737`): `workspace.read_json(path, {"items": []})`.
+
+- **Путь — через общий store (`workspace.base`, ADR-0010), не worktree-копию** — сервер всегда читает
+  каноническую очередь main-репо, а не локальный снимок какого-то worktree.
+- **Грейсфул:** нет файла / битый JSON → `{"items": []}` (`read_json` глотает
+  `FileNotFoundError`/`JSONDecodeError`), эндпоинт **никогда не 500**.
+- **Намеренно отдельный эндпоинт, мимо кэша `_hub`.** Очередь крошечная, но её **не** подмешивают в
+  горячий `/hub.json`, чтобы не утяжелять его проход телеметрии и кэш (TTL 3 c). `done/total` и проценты
+  считаются на клиенте (`renderQueue`).
+
+Форма item (по контракту `dispatch-queue.md`, бэкенд агностичен к содержимому): `n`, `title`, `slug`,
+`prism`/`candId`, `status ∈ {pending, in-progress, done, skipped, failed}` (+опц. `source` на верхнем
+уровне). Сервер ничего не валидирует — отдаёт как есть.
+
+#### Секция «Очередь /improve» в хабе
+
+В `HUB_PAGE` — независимый под-узел `#queue-root` со своим поллингом `tickQueue()`/`renderQueue()`
+(`scripts/server.py:1674`/`:1641`): свой `fetch('/queue.json')`, свой дифф по `JSON.stringify` (`lastQueue`),
+свой `setInterval(3000)` — **полностью отвязан** от `tick()`/`render()` хаба. Если `items` пуст — узел
+прячется (`renderQueue` пишет пустой `innerHTML`, плюс `#queue-root:empty { display:none }`), так что на
+обычном дашборде без активной очереди секции нет.
+
+Что показывает (табличный стиль): заголовок с прогрессом `done / total` + бар + мета `осталось N`;
+подсветка строк `failed`/`skipped` (классы статусов собраны из существующих токенов обоих `:root`,
+см. ADR-0015); ссылка `/?slug=<slug>` на дашборд фичи; **одна кнопка «Копировать команду дренажа»**
+(`copyDrainCmd`, команда `DRAIN_CMD = "/loop /feature"`) через `navigator.clipboard` с
+`execCommand`-fallback для небезопасного origin; toast подтверждения портирован из `dashboard.html`.
 
 ## Критерий active vs history (q7)
 
@@ -165,7 +219,16 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   `self.workspace.root` (как раньше); без per-session `active/<sid>.json` — старое поведение
   `active_slug`. Поля добавлены **только дозаписью** (инвариант «только добавление», conventions.md).
 - **Хаб read-only.** `_hub`/`_build_hub`/`_hub_telemetry` не пишут ничего, `telemetry.cursor` и
-  Langfuse не затрагивают — те же гарантии, что у `/changes` и трейс-эндпоинтов.
+  Langfuse не затрагивают — те же гарантии, что у `/changes` и трейс-эндпоинтов. `_queue` — тоже
+  чистое чтение (passthrough `dispatch-queue.json`).
+- **`/queue.json` мимо кэша `_hub`.** Очередь читается **отдельным** эндпоинтом, а не подмешивается в
+  `/hub.json`, чтобы не утяжелять горячий проход телеметрии хаба. Секция очереди в `HUB_PAGE` —
+  **независимый узел `#queue-root` со своим поллингом**, который `render()` не касается → дифф
+  `/hub.json` не затирает очередь, а дифф `/queue.json` не дёргает карточки запусков.
+- **`awaiting` — косметический флаг, не критерий active/history.** Бейдж/подъём/подсветка карточки
+  завязаны на `run.awaiting` (OR `state.checkpoint`/`dashboard.status`), но деление active↔history
+  по-прежнему делает только `_hub_is_active` по `phase`/окну. Терминальная awaiting-задача остаётся в
+  «Истории» — флаг не удерживает её в активных.
 - **Хаб не зовёт `build_trace`.** Аналитика и счётчики строятся одним проходом `telemetry.jsonl` без
   транскриптов: транскрипты дороги и **физически отсутствуют в worktree** (живут в `~/.claude/...`).
   Поэтому токенов/cost в кросс-задачном агрегате нет (см. ADR-0010).
@@ -210,7 +273,12 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   и `_hub_is_active` (`scripts/server.py:782`), а не фильтр на фронте.
 - **Новая подкоманда `worktree.py`:** добавить парсер в `build_parser` (`scripts/worktree.py:321`) +
   `cmd_*`; держать stdlib-only и идемпотентность, git-вызовы — через `_git` (никогда не падает).
+- **Новое поле/действие в секции очереди:** правится `renderQueue`/`queueRow` в `HUB_PAGE`
+  (`scripts/server.py:1641`/`:1626`); поле item — это просто ключ из `dispatch-queue.json`, сервер его
+  отдаёт passthrough (валидация и форма — на стороне контракта `skills/improve/dispatch-queue.md`). **Не**
+  подмешивать очередь в `/hub.json` и **не** наполнять `#queue-root` из `render()` — оставить независимый
+  поллинг `tickQueue`, иначе дифф `/hub.json` затрёт секцию.
 
-_updated: 2026-06-13_
+_updated: 2026-06-16 (awaiting-human-signal: косметический флаг awaiting + бейдж/подъём карточки)_
 </content>
 </invoke>

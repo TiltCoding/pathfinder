@@ -32,4 +32,12 @@
 - `telemetry.enriched.json` — set `spanId`, для которых usage уже отправлен в Langfuse.
 - `state.json` / `active.json` — фаза/итерация и активная задача (резолв контекста хуком).
 
-_updated: 2026-06-10_
+## Файлы-артефакты воркспейса (`.workflow/`)
+
+- `server.json` — координаты живого сервера дашборда: `{port, pid, url, ts}`, пишется `main` на старте
+  (`scripts/server.py:1615`). Контракт reuse: переиспользовать сервер **только** если `GET /health`
+  (self-report `{ok, pid, port}`, `scripts/server.py:181`) отвечает И его `pid`/`port` совпадают с этим
+  файлом; иначе файл считается stale (мёртвый pid / чужой порт) и перезаписывается на старте нового
+  сервера. См. architecture.md «Startup-контракт сервера».
+
+_updated: 2026-06-16_

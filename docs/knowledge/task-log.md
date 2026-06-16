@@ -4,6 +4,269 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
+- **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
+  `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`
+  получил append-only параметр `extra_headers=None` (`:152`); константы `MOCKUP_CSP`/`MOCKUP_SEC_HEADERS`
+  (`:72`); `_serve_mockup` (`:338`) отдаёт их. sandbox-iframe и realpath+commonpath traversal-гарды НЕ тронуты.
+- **CSP (q1=A, совместимый):** `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';
+  img-src data:; font-src data:; base-uri 'none'; form-action 'none'` — режет всю сеть/внешние ресурсы
+  (эксфильтрация), но разрешает инлайн. Строгий профиль брифа (без script-src) сломал бы 8 существующих
+  mockup'ов с инлайн-`<script>`; sandbox их и так исполняет — главная угроза сетевая, её закрывает default-src.
+- **Тест:** `tests/test_mockup_security.py` (4) — /mockup несёт nosniff+CSP, обычный ответ нет, 404 нет.
+- **Проверка:** py_compile + 123→127 зелёные + независимый smoke (curl -i показал оба заголовка). Источник:
+  cand-26 (доступность+безопасность, score 1.00). ADR нет.
+- **Итог прогона `/improve` (improve-overall):** все 8 фич очереди дренированы и зелёные (44→127 тестов,
+  +83 теста по ходу). Дренаж шёл через `/loop /feature`, по фиче в свежем контексте.
+
+## 2026-06-16 — hub-search-filters (фича 7/8 очереди `/improve`)
+- **Что:** Клиентский поиск + чипы-фильтры по `phase`/`kind` в хабе `/hub`. Только инлайн JS/CSS в строке
+  `HUB_PAGE` (`scripts/server.py`), **0 правок серверной логики** — поля уже в `/hub.json`.
+- **Ключевое (урок фичи 3):** тулбар — отдельный устойчивый `#filter-bar` МЕЖДУ `</header>` и `#root`, вне
+  перерисовываемых `render()` узлов; состояние фильтра в модульных JS-переменных (`q`,
+  `activePhases`/`activeKinds` Set, `lastData`), `render()` фильтрует через `matches(r)` ДО деления
+  active/history (аналитику не фильтруем). Иначе `<input>` терял бы фокус на каждом 3-с тике.
+- **Чипы динамические** из `data.runs` (q1=A); `kind===null` (/feature·/improve) → синтетический чип
+  «feature/improve» (q2=A, KIND_FEAT); раскладка v2 (панель-карточка со сбросом «найдено N из M»);
+  персист в `localStorage['hubFilter']` (q3=A); пустой результат → `.empty` «ничего не найдено».
+- **Проверка:** py_compile + node --check (оба `<script>`) + 123 теста зелёные; **живой браузер**
+  (temp-сервер): чипы динамические (ANSWER/DONE/IMPLEMENT/PROPOSE + ask/feature-improve), поиск «hub»
+  сузил 4→1, баннер «найдено N из M · сбросить». Источник: cand-21 (DX/UX, score 1.33). ADR нет.
+
+## 2026-06-16 — readme-development-section (фича 6/8 очереди `/improve`)
+- **Что:** Задокументировано «как запускать» — раздел `## Development` в `README.md` (после `## Install`):
+  команда тестов `python3 -m unittest discover -s tests`, локальный запуск сервера
+  `python3 scripts/server.py --root "$(pwd)"` (порт/URL из `.workflow/server.json`, `/health` отдаёт
+  `{ok,ts,pid,port}`, флаги `--port`/`--no-browser`/`--no-forward`), заметка про хуки/Langfuse-env.
+- **Единообразие:** все 9 `tests/test_*.py` приведены к единой docstring-шапке «Run with:» (модульная +
+  `discover`). Часть файлов раньше команды не имела вовсе (test_ask/test_improve_dispatch/test_server_health).
+- **Makefile:** добавлен тонкий stdlib `Makefile` (`make test` → discover, `make serve` → server.py), без
+  новых зависимостей (q1=A).
+- **Зачем:** «как прогнать тесты / поднять сервер» было самым частым вопросом — ответ добывался чтением
+  исходников. Источник: `/improve` cand-16 (DX, score 1.50), парная к фиче 1 (тесты тихих путей).
+- **Объём:** только docs — прод-код и тела тестов не тронуты; полный прогон остался зелёным (123). ADR нет.
+
+## 2026-06-16 — awaiting-human-signal (фича 5/8 очереди `/improve`)
+- **Что:** Когда задача упирается в батч-гейт и **ждёт ответа человека**, это теперь видно и в **хабе**,
+  и фоновым **сигналом на дашборде**. Менялись `scripts/server.py` + `templates/dashboard.html` +
+  `tests/test_hub.py`.
+  - **Хаб (`scripts/server.py`).** В карточку `_hub_run` (`:793`) добавлено **дозаписью** поле
+    `awaiting = (state.checkpoint == "awaiting-batch") or (dash.status == "awaiting-batch")` (OR двух
+    источников — какой артефакт опередил, тот и сработал). Поле **косметическое**: `_hub_is_active`
+    (`:782`) **НЕ** тронут — терминальная awaiting-задача всё равно уезжает в «Историю» по своему
+    `phase`/окну, флаг её в активных не удерживает. В `HUB_PAGE`: бейдж awaiting переформулирован
+    «ждёт батч» → **«⏳ ждёт ответа»** (`statusBadge`, `:1440`); awaiting-карточки **всплывают наверх**
+    в `render()` (`active.sort` по `r.awaiting`, `:1518`); опц. подсветка `.runcard.awaiting`
+    (`:1475`, из `--awaiting-soft`/`--warn`).
+  - **Дашборд (`templates/dashboard.html`).** Фоновый сигнал «твой ход», грейсфул, без серверных
+    контрактов. Детект перехода `working→awaiting` через модуль-переменную `prevStatus` (`:528`/`:790`):
+    **первый render задаёт базовый статус без сигнала** (анти-спам — уже-awaiting задача при открытии
+    вкладки не уведомляет). При переходе **и** `document.hidden` **и** выданном разрешении → браузер-
+    `Notification` (`:795`, в `try/catch`). **Title-бейдж** `"● ждёт — <title>"` (`setTitleBadge`,
+    `:534`) — базовый канал без Notification-разрешения; `visibilitychange` снимает бейдж при возврате
+    на вкладку (`:2343`). `requestPermission` запрашивается **на жесте** (клик approve/submit,
+    `:1101`/`:1107`), не на старте. Подсветка `.actionbar.awaiting` (`:163`/`:803`) из `--warn-soft`/
+    `--warn` в обеих темах. Всё грейсфул: нет API/разрешения → остаются title-бейдж и подсветка.
+  - **Тесты `tests/test_hub.py` (`AwaitingFlagTest`, 4):** `state.checkpoint=="awaiting-batch"` →
+    `awaiting==True`; `dashboard.status=="awaiting-batch"` → `True`; оба пусты → `False`; и ветка OR.
+- **Зачем:** батч-гейт «задача ждёт правок человека» был виден только если открыт **конкретный**
+  дашборд этой задачи и вкладка на переднем плане. Человек с несколькими параллельными запусками (или со
+  свёрнутой вкладкой) не понимал, что от него ждут ответа. Хаб теперь подсвечивает/поднимает ждущие
+  задачи, а дашборд фоном сигналит (уведомление + бейдж в заголовке вкладки). Пробел функциональности
+  закрыт без новых контрактов: косметическое поле дозаписью в хабе + чисто клиентский сигнал на дашборде.
+- **Именная шероховатость (зафиксирована в обеих area-доках):** дашборд красит из `--warn-soft`, хаб —
+  из `--awaiting-soft`; **значения одинаковые** (`#fff7ed`/`#2a2113`), имена разные — осознанная
+  шероховатость по ADR-0015, не баг.
+- **Проверка:** полный прогон `python3 -m unittest discover -s tests` зелёный, **119 → 123**;
+  `py_compile` сервера + `node --check` инлайн-скриптов (×4); smoke `/hub.json` — поле `awaiting` приходит
+  булевым.
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-20`), фича 5/8, призма
+  пробелы функциональности, score 1.50. Бриф: `.workflow/tasks/awaiting-human-signal/brief.md`.
+- **Доки:** дополнены `areas/parallel-runs-hub.md` (поле `awaiting`: OR-формула, дозаписью,
+  косметическое — не влияет на active/history; бейдж/подъём/подсветка карточки) и
+  `areas/dashboard-feedback-ui.md` (секция «Сигнал awaiting»: детект перехода, Notification/title/
+  visibilitychange, requestPermission на жесте, actionbar-подсветка, токен-шероховатость).
+- **ADR:** нет — решение **аддитивное** (косметическое поле дозаписью + клиентский сигнал, новых
+  архитектурных развилок нет; хаб — ADR-0010, темизация/токены — ADR-0015).
+
+## 2026-06-16 — dispatch-queue-hub-section (фича 4/8 очереди `/improve`)
+- **Что:** Очередь дренажа `/improve` стала **видна в хабе** — новый read-only эндпоинт + секция в
+  `HUB_PAGE`. Менялись `scripts/server.py` + `tests/test_hub.py`.
+  - **`GET /queue.json` (`scripts/server.py:737`, `Handler._queue`).** Passthrough-чтение
+    `<workspace.base>/dispatch-queue.json` через `workspace.read_json` с грейсфул-дефолтом
+    `{"items": []}` (нет файла / битый JSON → **не 500**). Путь — через **общий store** (`workspace.base`,
+    ADR-0010), не worktree-копию: сервер всегда читает каноническую очередь main-репо. **Отдельный**
+    эндпоинт (маршрут `:250`), намеренно **мимо кэша `_hub`** — крошечную очередь не подмешивают в
+    горячий `/hub.json`, чтобы не утяжелять его проход телеметрии.
+  - **Секция «Очередь /improve» в `HUB_PAGE`.** Отдельный контейнер `#queue-root` (`:1398`) +
+    **независимый поллинг** `tickQueue()`/`renderQueue()` (`:1674`/`:1641`): свой `fetch('/queue.json')`,
+    свой дифф (`lastQueue`), свой `setInterval(3000)` — отвязан от `tick()`/`render()` хаба. **`render()`
+    разбит на `#root` (Активные запуски) и `#root-tail` (История + Аналитика)** (`:1543`/`:1548`),
+    `#queue-root` сидит **между** ними (секция в СЕРЕДИНЕ, табличный стиль). Прогресс `done/total` + бар,
+    подсветка `failed`/`skipped`, ссылки `/?slug=`, **одна кнопка** «Копировать команду дренажа»
+    (`DRAIN_CMD="/loop /feature"`, `copyDrainCmd` через `navigator.clipboard` + `execCommand`-fallback);
+    toast портирован из `dashboard.html`. Пусто → секция прячется (`renderQueue` + `#queue-root:empty`).
+    Статус-классы pending/skipped собраны из существующих токенов обоих `:root` (ADR-0015).
+  - **Тесты `tests/test_hub.py` (`QueueEndpointTest`, 3):** passthrough заполненной очереди, нет файла
+    (грейсфул `{"items": []}`), битый JSON (грейсфул).
+- **Зачем:** очередь `/improve` (ADR-0014) жила только в `dispatch-queue.json` на диске — человек не
+  видел прогресс дренажа (сколько фич сделано/в очереди/сбоев) и не имел под рукой команды дренажа.
+  Секция в хабе закрывает этот пробел функциональности, ничего не ломая: отдельный read-only эндпоинт +
+  независимый под-узел — горячий `/hub.json` и его кэш не задеты.
+- **Ключевая архитектурная деталь (зафиксирована в area-доке):** секция очереди — **независимый узел
+  `#queue-root` со своим поллингом** между `#root` и `#root-tail`, а не встроена в `render()`. Иначе
+  дифф `/hub.json` (перерисовка `#root`/`#root-tail`) затирал бы очередь, а её собственный апдейт дёргал
+  бы карточки запусков. Разъединённый поллинг = два независимых дифф-цикла.
+- **Проверка:** полный прогон `python3 -m unittest discover -s tests` зелёный, **116 → 119**;
+  `py_compile` сервера + `node --check` инлайн-скрипта `HUB_PAGE`; **живая браузерная проверка** — `/hub`
+  отрендерил секцию (3/8) между активными и историей, статусы/прогресс/кнопка копирования работают.
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-19`), фича 4/8, призма
+  пробелы функциональности, score 1.50. Бриф: `.workflow/tasks/dispatch-queue-hub-section/brief.md`.
+- **Доки:** дополнена `areas/parallel-runs-hub.md` (контракт `GET /queue.json`, секция «Очередь
+  /improve», инвариант «`/queue.json` мимо кэша + независимый `#queue-root`/поллинг», пункт «как
+  расширять»).
+- **ADR:** нет — решение мелкое и аддитивное (отдельный эндпоинт + независимый под-узел вместо встройки
+  в `render()`), новых архитектурных развилок не вводилось; механика очереди уже покрыта ADR-0014, хаб —
+  ADR-0010. Зафиксировано в area-доке + этой записи.
+
+## 2026-06-16 — preserve-dashboard-input-on-poll (фича 3/8 очереди `/improve`)
+- **Что:** Незабленённый ввод на вкладке «Контент» теперь **переживает тик автополлинга** —
+  чисто клиентская правка `templates/dashboard.html` (~24 строки, **без серверных контрактов**).
+  - **`captureActiveInput()` (`templates/dashboard.html:939`) / `restoreActiveInput(snap)` (`:949`).**
+    `capture` снимает снапшот **только активного (сфокусированного)** textarea внутри `#content` с ключом
+    `data-answer` **или** `data-comment-variant` (value, `selectionStart/End`, факт фокуса); иначе `null`.
+    `restore` находит узел по тому же стабильному data-ключу (через `cssesc`), переписывает прованным
+    значением предзаполнение шаблона, возвращает фокус и каретку (кламп по длине). **Тихий выход**, если
+    поле исчезло (агент удалил вопрос/вариант на лету) или фокус был не в `#content`.
+  - **Врезка в `render()`:** `captureActiveInput()` **до** `$("#content").innerHTML` (`:844`/`:845`),
+    `restoreActiveInput(__snap)` **после** `wireBlocks()` (`:847`). Образец — save/restore скролла из
+    `renderChat`. **Skip-render не вводился** — реальные апдейты плана от агента доходят сразу.
+- **Зачем:** `render()` зовётся из polling-петли (`loadDraft`/`rerender`); каждая перерисовка пересобирает
+  `#content.innerHTML`, и активный, но ещё **не забленённый** ввод (свой ответ на вопрос, коммент к
+  демо-варианту) терялся вместе с кареткой. Инвариант «сохранение по blur/Cmd+Enter» латает долговечную
+  запись в draft, но не окно «текст набран — DOM пересобран». Capture/restore закрывает именно это окно.
+- **Утверждённый параметр:** спасать **только активное поле** (q2=A) — по одному на перерисовку; остальные
+  textarea и так перечитываются из draft.
+- **Проверка:** `node --check` шаблона зелёный; полный прогон тестов **116** не сломан (правка вне Python).
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-1`), фича 3/8, призма UX,
+  score 1.50. Бриф: `.workflow/tasks/preserve-dashboard-input-on-poll/brief.md`.
+- **Доки:** дополнена `areas/dashboard-feedback-ui.md` (capture/restore в «Ключевых файлах», врезка в
+  `render()`, новый инвариант «активный ввод переживает перерисовку»).
+- **ADR:** нет (мелкая клиентская правка, новых архитектурных развилок нет; реюз паттерна save/restore
+  из `renderChat` и draft-контракта ADR-0008).
+
+## 2026-06-16 — server-liveness-stale-detection (фича 2/8 очереди `/improve`)
+- **Что:** Сервер дашборда теперь **достоверно различает живой сервер и stale `server.json`**, закрывая
+  старую боль «мёртвый сервер + протухший `server.json`» (см. память проекта).
+  - **`/health` self-report (`scripts/server.py:181`).** Эндпоинт теперь отдаёт `{ok, pid, port}` — раньше
+    был голый health-чек. `port` берётся из класс-атрибута `Handler.server_port` (`scripts/server.py:123`),
+    который `main` выставляет **после** `bind()` (`scripts/server.py:1731`) — реальный занятый порт, а не
+    `--port`. Так клиент может сверить, что отвечающий сервер — именно тот, что записан в `server.json`.
+  - **Чистые stdlib-функции детекта (новые, оффлайн).** `process_alive(pid)` (`scripts/server.py:1623`) —
+    `os.kill(pid, 0)`; **defensive**: неизвестный/нечисловой pid = мёртв, а `PermissionError`/прочий
+    `OSError` (вкл. Windows без поддержки) = «жив», чтобы из-за ограничения пробы **никогда не выбросить
+    рабочий сервер**. `read_server_info(workspace)` (`:1648`) — читает `server.json`, **никогда не падает**
+    (битый/отсутствующий → `None`). `server_info_is_stale(info, current_port=None)` (`:1660`) — stale, если
+    нет pid / pid мёртв / `current_port` задан и не совпал с записанным.
+  - **Старт `main` (`scripts/server.py:1728`).** Прежний `server.json` читается **до** bind; после bind при
+    stale (мёртвый pid / несовпадающий порт) логируется `stale server.json … replacing` и `server.json`
+    **безусловно перезаписывается** свежим pid/port.
+  - **Reuse-контракт усилён в скиллах.** В `skills/{feature,improve,ask,new-product}/feedback-loop.md`
+    reuse-проза дополнена: переиспользовать сервер только если `GET /health` отвечает **И** его `pid`/`port`
+    совпадают с `server.json`, иначе считать stale и поднимать новый (раньше — «если `server.json` есть и
+    `/health` отвечает», без сверки идентичности).
+  - **Тесты `tests/test_server_health.py` (17, оффлайн без сокета)** — `process_alive` (живой/мёртвый/
+    нечисловой/`pid≤0`/PermissionError-monkeypatch), `read_server_info` (битый/нет файла/не-dict),
+    `server_info_is_stale` (все ветки, сверка порта), `/health`-пейлоад. По конвенции тестов из
+    `conventions.md` (sys.path-хак, tempfile, без сети).
+- **Зачем:** прежний контракт reuse доверял самому факту наличия `server.json` + ответу `/health`, но не
+  проверял, что отвечает **тот же** сервер. После падения/рестарта оставался stale `server.json` (мёртвый
+  pid, чужой порт), и агенты могли «переиспользовать» несуществующий сервер или конфликтовать по порту.
+  pid/port в `/health` + сверка дают агенту способ отличить живой свой сервер от трупа в файле.
+- **Проверка:** полный прогон `python3 -m unittest discover -s tests` зелёный, **99 → 116**. Реальный
+  smoke подтвердил детект stale `server.json` + перезапись на старте.
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-7`), фича 2/8, призма
+  надёжность, score 1.67. Бриф: `.workflow/tasks/server-liveness-stale-detection/brief.md`.
+- **Доки:** точечно дополнены `architecture.md` (сквозной механизм «startup-контракт сервера: `server.json`
+  + stale-детект») и `integrations.md` (артефакт `server.json` с pid/port; `/health` self-report).
+- **ADR:** нет (механика мелкая, аддитивная; новых архитектурных развилок не вводилось — контракт reuse
+  усилён, а не пересмотрен).
+
+## 2026-06-16 — tests-silent-critical-paths (фича 1/8 очереди `/improve`)
+- **Что:** Добавлены **3 оффлайн stdlib-`unittest` файла** на «тихие критические пути» — **прод-код
+  НЕ менялся** (чистые тесты). Прогон `python3 -m unittest discover -s tests` зелёный: было **44**
+  теста, стало **99**.
+  - `tests/test_langfuse_batch.py` (22 теста) — `events_to_langfuse_batch`/`langfuse_config_from_env`/
+    `_envelope` (`scripts/_aipf.py`): детерминизм маппинга известных типов событий +
+    **инвариант «неизвестный тип события (`turn.stop`/`tool.*`/новый) намеренно пропускается»** —
+    защищает «безопасное добавление типов» (conventions.md «Только добавление в формат телеметрии»).
+  - `tests/test_feed.py` (16 тестов) — `_iter_lines_from`/`build_feed` (`scripts/_aipf.py`): байтовый
+    курсор, дельта-only/stateless (ADR-0001), at-least-once на незавершённом хвосте, «битая
+    JSON-строка не роняет ленту» (мягкая деградация), lane best-effort (ADR-0003). Фикстуры — по форме
+    `telemetry_hook.build_event`.
+  - `tests/test_worktree.py` (17 тестов) — `build_parser` (чистый argparse), `_ensure_workflow_symlink`
+    (идемпотентность), анти-traversal через `_aipf.safe_slug`, бонус `list_worktrees`
+    (porcelain-парсер через monkeypatch `_git`). Git не вызывается.
+- **Зачем:** эти пути отказывают **молча** (маппинг событий в Langfuse, чтение хвоста ленты, парсеры
+  CLI), регрессия там незаметна на глаз. Тесты фиксируют контракты и инварианты как исполнимую
+  спецификацию.
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-14`), фича 1/8,
+  призма DX, score 1.83. Бриф: `.workflow/tasks/tests-silent-critical-paths/brief.md`.
+- **Зафиксированная конвенция:** оформлена секция **«Тесты»** в `conventions.md` (оффлайн `unittest`;
+  `sys.path`-хак для импорта `scripts/`; tempfile+`addCleanup`; фикстуры `telemetry.jsonl` через
+  `_aipf.task_file`; git — через monkeypatch `_git`; запуск `python3 -m unittest discover -s tests`).
+  Конвенция уже фактически устоялась (7 тест-файлов с одинаковой шапкой) — описана, чтобы будущие
+  агенты переиспользовали паттерн, а не изобретали.
+- ⚠ **Наблюдение (НЕ баг этой задачи, прод не трогали — q4=A):** `_ensure_workflow_symlink`
+  (`scripts/worktree.py:202`) сравнивает `os.path.realpath(link)` против **не-резолвнутого**
+  `_aipf.workflow_base(main_root)` (`scripts/_aipf.py:41` симлинки не резолвит). На macOS, где tempdir
+  `/var`→`/private/var`, это уводит идемпотентный путь в ветку warning, если пути не нормализовать.
+  В тесте обойдено фикстурой (`realpath` на tempdir). Потенциальная хрупкость прод-сравнения — **возможный
+  follow-up** (нормализовать обе стороны сравнения); ADR ради этого не заводил. Отражено в conventions.md
+  (секция «Тесты», ⚠-нюанс).
+- **Бриф:** `.workflow/tasks/tests-silent-critical-paths/brief.md` (план — там же; задача из очереди
+  `/improve`, см. запись `improve-overall` ниже).
+- **ADR:** нет (чистые тесты, новых решений не вводилось).
+
+## 2026-06-15 — improve-overall (прогон `/improve`, диспетч в очередь)
+- **Что аудировали:** сквозной аудит **всего приложения** ai-pathfinder через `/improve`
+  (workflow-оркестратор; код проекта НЕ правился). Это не feature-задача — `/improve` производит
+  feature-прогоны, а не редактирует код.
+- **Форма рой → консенсус → выбор → диспетч** (механика — ADR-0012/0013/0014):
+  - **Рой:** 7 read-only scout-аналитиков `wf-improver` (scout-режим) по призмам — UX/продукт,
+    перформанс, надёжность/устойчивость, техдолг, DX, пробелы функциональности, a11y+безопасность →
+    **49 сырых кандидатов**.
+  - **Консолидация:** оркестратор дедуплицировал по «той же области/сути изменения» (смежные находки
+    разных призм слиты, `areas` объединены) → **27 кандидатов** `cand-1…27`
+    (`.workflow/tasks/improve-overall/candidates.md`, id стабильны).
+  - **Панель:** 3 голосующих `wf-improver` (vote-режим) независимо оценили **весь** список 0–3 по
+    imp/eff/rsk/conf → детерминированная агрегация оркестратором
+    `score=(mean(imp)−0.5·mean(eff)−0.5·mean(rsk))·mean(conf)/3`, отброс `keep==0` → **топ-8**.
+  - **Гейт:** человек отметил **все 8** как «Делаем».
+  - **DISPATCH:** 8 фич поставлены в `.workflow/dispatch-queue.json` (`mode:"sequential-feature"`,
+    ADR-0014), по `brief.md` на фичу в `.workflow/tasks/<slug>/`. `/improve` `/feature` сам не
+    запускает (чистота контекста) — дренаж очереди отдельными `/feature`-прогонами.
+- **Что попало в очередь (8 фич, n · slug · призма · score):**
+  1. `tests-silent-critical-paths` · DX · 1.83 — тесты на `events_to_langfuse_batch`/`build_feed`/worktree CLI.
+  2. `server-liveness-stale-detection` · надёжность · 1.67 — pid/port в `/health` + детект stale `server.json`.
+  3. `preserve-dashboard-input-on-poll` · UX · 1.50 — не терять ввод textarea при innerHTML-перерисовке.
+  4. `dispatch-queue-hub-section` · пробелы фич · 1.50 — `GET /queue.json` + секция очереди в хабе.
+  5. `awaiting-human-signal` · пробелы фич · 1.50 — awaiting-флаг в хабе + Notification/title в дашборде.
+  6. `readme-development-section` · DX · 1.50 — README «Development» + команда тестов.
+  7. `hub-search-filters` · пробелы фич · 1.33 — клиентский поиск/фильтры в хабе.
+  8. `mockup-security-headers` · безопасность · 1.00 — CSP + nosniff на `/mockup`.
+  > Эти 8 — **только в очереди**, НЕ реализованы. Реализация будет отдельными `/feature`-прогонами,
+  > каждый со своей записью в журнале.
+- **Операционная деталь (draft без submit прочитан напрямую):** человек на гейте нажал «Утвердить план»
+  **без** промежуточного «Отправить» — все 8 пиков жили только в `draft.json` (несабмиченный черновик,
+  который сервер не отдаёт по HTTP — вне `READABLE_FILES`). Оркестратор прочитал их **напрямую с диска**
+  (полные и однозначные) вместо переспроса про Submit. Прагматичное отклонение от документированного
+  порядка Submit→Approve, оправданное файловым доступом оркестратора и однозначностью намерения.
+  Зафиксировано **аддитивным уточнением к ADR-0013** (раздел «Уточнение (2026-06-15)») — отдельный ADR
+  не заводил: механика `/improve` уже покрыта ADR-0012/0014, draft-контракт — ADR-0013.
+- **План:** `.workflow/tasks/improve-overall/plan.md`
+- **ADR:** уточнение к `decisions/ADR-0013-improve-feature-pick-reuse-zero-server.md` (нового ADR нет).
+
 ## 2026-06-15 — ask-command (v0.15.0)
 - **Что:** Добавлена четвёртая команда-оркестратор **`/ask`** — лёгкий **read-only** режим
   «вопрос-ответ». По вопросу человека оркестратор спавнит мини-рой read-only `ask-researcher` (по граням),

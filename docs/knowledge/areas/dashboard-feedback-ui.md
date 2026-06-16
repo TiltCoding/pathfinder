@@ -16,7 +16,10 @@
 
 - `:627` — `render(data, replies)`: рисует карточки «Сводка / Карта / Демо / План / Вопросы /
   Work-streams». Строит `repliesByBlock` (по `r.blockId`) и `repliesByQ` (по `r.questionId`) из
-  `replies.replies` (`:638`). В конце зовёт `wireBlocks()`/`highlightComments()`/`updateQueue()`.
+  `replies.replies` (`:638`). Обрамляет переустановку `#content.innerHTML` (`:845`) парой
+  `captureActiveInput()` (`:844`, **до** innerHTML) → `restoreActiveInput(__snap)` (`:847`, **после**
+  `wireBlocks()`), чтобы тик автополлинга не сбросил активный ввод. В конце зовёт
+  `wireBlocks()`/`highlightComments()`/`updateQueue()`.
 - `:670` — ветка `item.kind==="choice"`: radio-опции **плюс** всегда видимый блок `.own-answer` с
   `<textarea data-answer="<item.id>">` (`:677`). Предзаполнение «своего ответа» (`:672`): берётся
   существующий `answer` по `questionId`, если его `text` **не совпадает ни с одной `options`** —
@@ -34,11 +37,50 @@
   в т.ч. для варианта без `caption`. `caption` (если есть) остаётся select-to-commentable, но **без**
   собственного футера (`:733`) — чтобы реплаи/карточки не дублировались.
 - `:755` — `wireBlocks()`: навешивает обработчики (см. «Взаимное исключение»).
+- `:939` — `captureActiveInput()` / `:949` — `restoreActiveInput(snap)`: сохранение/восстановление
+  **активного незабленённого** textarea вокруг перерисовки (задача `preserve-dashboard-input-on-poll`,
+  чистый фронтенд). `captureActiveInput` снимает снапшот **только** сфокусированного textarea внутри
+  `#content` с ключом `data-answer` **или** `data-comment-variant` (value, `selectionStart/End`, факт
+  фокуса); иначе `null`. `restoreActiveInput` ищет узел по тому же стабильному data-ключу (через
+  `cssesc`), переписывает прованным значением предзаполнение шаблона, возвращает фокус и каретку
+  (с клампом по длине). Тихий выход, если поле исчезло (вопрос/вариант удалён агентом на лету) или
+  фокус был не в `#content`. Образец — save/restore скролла из `renderChat`.
 - `:798` — `saveAnswer(qid, val)`: `POST /draft {kind:"answer", questionId, text}` → `loadDraft()`.
 - `:891` — `sendComment()`: select-to-comment — `POST /draft {kind:"comment", blockId, selectedText, text}`.
 - `:898` — `saveVariantComment(variantId, value, ta)`: тонкая обёртка над тем же контрактом, что
   `sendComment`, но `blockId=variantId`, `selectedText:""`; **очищает поле** (`:901`) перед запросом,
   чтобы на один вариант можно было оставить несколько комментариев.
+
+## Сигнал awaiting (задача ждёт ответа человека)
+
+Когда `data.status === "awaiting-batch"` (агент дошёл до батч-гейта), дашборд **фоном сигналит**
+человеку, даже если вкладка свёрнута. Чистый фронтенд (`templates/dashboard.html`, задача
+`awaiting-human-signal`), серверные контракты не тронуты.
+
+- **Детект перехода `working → awaiting`** (`:790`): модуль-переменная `prevStatus` (`:528`) хранит
+  прошлый `data.status`; `enter = prevStatus !== null && prevStatus !== "awaiting-batch" && data.status
+  === "awaiting-batch"`. Сразу после — `prevStatus = data.status`. **Первый `render()` задаёт базовый
+  статус без сигнала** (`prevStatus` стартует `null`) — анти-спам: открыл вкладку, а задача уже на гейте
+  → уведомления нет, сигналим **только по фронту** перехода.
+- **Браузер-`Notification` при переходе** (`:795`): только если `enter && document.hidden && "Notification"
+  in window && Notification.permission === "granted"` — то есть лишь когда вкладка реально в фоне и
+  разрешение уже выдано. Всё в `try/catch`, **грейсфул**: нет API/разрешения → молча ничего.
+- **Title-бейдж** (`setTitleBadge`, `:534`): при awaiting `document.title` → `"● ждёт — <title>"`, иначе
+  возврат к `baseTitle` (статичный заголовок, снят при старте, `:529`). Виден в фоновой вкладке без
+  Notification-разрешения — это базовый, всегда-работающий канал.
+- **`visibilitychange`** (`:2343`): возврат на вкладку (`!document.hidden`) снимает title-бейдж
+  (`setTitleBadge(false)`) — человек уже смотрит, бейдж не нужен.
+- **`requestPermission` на жесте** (`:1101`/`:1107`): разрешение на уведомления запрашивается **только**
+  из обработчика клика (approve/submit), не на старте — браузеры душат `requestPermission` вне
+  пользовательского жеста.
+- **Контекстная подсветка actionbar** (`:803`): `#actionbar` получает класс `.awaiting` при awaiting →
+  `.actionbar.awaiting` (`:163`) красит фон/верхнюю границу из `--warn-soft`/`--warn` (токены есть в
+  **обеих** темах, ADR-0015).
+
+> **Именная шероховатость токена.** Подсветка дашборда берёт `--warn-soft`/`--warn`, а аналогичная
+> подсветка карточки в хабе — `--awaiting-soft`/`--warn` (`scripts/server.py`). **Значения одинаковые**
+> (`#fff7ed` светлая / `#2a2113` тёмная), имена разные — зафиксировано в ADR-0015 как осознанная
+> шероховатость, не баг.
 
 ## Модель draft (что копится во фронте → уходит в submission)
 
@@ -78,6 +120,16 @@
 - **`regionFooter(vr.id)` рендерится ровно один раз на вариант** (`:746`), в т.ч. без `caption`. Это и
   чинило исходный баг: реплаи агента по `blockId===vr.id` раньше были видны только при наличии caption.
 - **Поле коммента у варианта видно всегда** (`:734`), независимо от `caption`.
+- **Активный ввод переживает перерисовку** (`captureActiveInput`/`restoreActiveInput` вокруг innerHTML в
+  `render()`): незабленённый текст ответа на вопрос или коммента к демо-варианту + позиция каретки не
+  теряются на тике автополлинга. Спасается **только активное (сфокусированное) поле** (q2=A) — по одному
+  на перерисовку; остальные поля и так перечитываются из draft. Skip-render не вводился: реальные апдейты
+  плана от агента доходят сразу. Не отменяет инвариант «сохранение по blur/Cmd+Enter» — он про долговечную
+  запись в draft, а capture/restore лишь латает окно «ввод не забленён, а DOM уже пересобран».
+- **Сигнал awaiting грейсфул и анти-спамный.** Уведомление шлётся **только по фронту** перехода
+  `working→awaiting` (`prevStatus`, первый render — базовый без сигнала) и **только** когда вкладка в
+  фоне с выданным разрешением; без Notification/разрешения остаётся title-бейдж и подсветка actionbar.
+  Возврат на вкладку снимает бейдж (`visibilitychange`). Серверный контракт `data.status` не менялся.
 - Совместимость аддитивна: вопрос без `options` рендерится как `open`; задача без `demo` — как раньше.
 
 ## Подводные камни
@@ -102,4 +154,4 @@
   либо потребует +1 строки в сервере — см. `areas/dashboard-changes-tab.md`-стиль решения (дерево/схема
   на фронте, бэкенд почти нетронут).
 
-_updated: 2026-06-13_
+_updated: 2026-06-16 (awaiting-human-signal: фоновый сигнал awaiting — Notification/title/actionbar)_

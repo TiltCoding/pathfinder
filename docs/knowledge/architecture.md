@@ -92,5 +92,12 @@
 - **Транскрипты.** Источник текста сообщений и чисел usage — JSONL-файлы CC в
   `~/.claude/projects/<proj>/...`. Читаются только UTF-8. Локация и формат — в области
   [areas/telemetry-tracing.md](areas/telemetry-tracing.md).
+- **Startup-контракт сервера и stale-детект.** На старте `main` пишет `<base>/server.json`
+  (`{port, pid, url, ts}`, `scripts/server.py:1615`) и выставляет `Handler.server_port` после `bind()`;
+  `GET /health` **self-report** отдаёт `{ok, pid, port}` (`scripts/server.py:181`). Прежний `server.json`
+  считается **stale** (`server_info_is_stale`, `:1660`), если pid мёртв (`process_alive`, `:1623`) или
+  порт не совпал, — тогда он безусловно перезаписывается. Контракт reuse для агента: переиспользовать
+  сервер **только** если `/health` отвечает И его `pid`/`port` совпадают с `server.json`, иначе поднять
+  новый (`skills/*/feedback-loop.md`). Так живой сервер отличается от трупа в файле.
 
-_updated: 2026-06-13_
+_updated: 2026-06-16_

@@ -38,6 +38,25 @@
 - **Живые эндпоинты — оффсетное чтение.** Лента читает только хвост файла (`_iter_lines_from`,
   `scripts/_aipf.py:381`); полное чтение (`build_trace`) — только в тяжёлом `/trace` с кэшем 3 с.
 
+## Тесты
+
+- **Оффлайн stdlib-`unittest`, без внешних зависимостей и сети.** Все тесты в `tests/*.py` —
+  чистый `unittest`; ни git, ни HTTP, ни диск вне tempfile. Цель — покрывать «тихие критические
+  пути» (маппинг событий, чтение хвоста, парсеры) детерминированно.
+- **`sys.path`-хак для импорта `scripts/`** в шапке каждого файла (одинаковый блок):
+  `_SCRIPTS = .../scripts; sys.path.insert(0, _SCRIPTS)` → `import _aipf` и т. п. Файлы работают и как
+  `python3 tests/test_x.py`, и как `python3 -m unittest tests.test_x`.
+- **Изоляция через tempfile + cleanup.** Где нужен диск — `tempfile.mkdtemp()` + `addCleanup`
+  (или `shutil.rmtree` в `tearDown`); фикстуры `telemetry.jsonl` строятся под `_aipf.task_file(...)`
+  по форме `telemetry_hook.build_event`. Git/`_git` — через monkeypatch (фейковый `_git` отдаёт
+  porcelain-вывод), git не вызывается.
+- **Запуск всего набора:** `python3 -m unittest discover -s tests`.
+- ⚠ **macOS-нюанс фикстур worktree-тестов:** tempdir пропускают через `os.path.realpath`, т.к.
+  `tempfile.mkdtemp` отдаёт путь под `/var` (симлинк на `/private/var`), а `_aipf.workflow_base`
+  (`scripts/_aipf.py:41`) симлинки не резолвит — без нормализации идемпотентная ветка
+  `_ensure_workflow_symlink` (`scripts/worktree.py:202`) уходит в warning. Это особенность теста;
+  потенциальная хрупкость прод-сравнения — см. task-log `tests-silent-critical-paths`.
+
 ## Полезные утилиты (переиспользовать)
 
 - `scripts/_aipf.py:76` — `append_jsonl(path, obj)` — атомарная дозапись одной JSON-строки.
@@ -48,4 +67,4 @@
 - `scripts/_aipf.py:25` — `now_iso_utc()` — таймстемп ISO-8601 UTC `Z`.
 - `scripts/_aipf.py:496` — `_spans_from_events(events)` — склейка start/end в спаны (паттерн парности).
 
-_updated: 2026-06-10_
+_updated: 2026-06-16_
