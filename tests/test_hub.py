@@ -7,13 +7,16 @@ worktree state writer (`worktree.record_worktree_in_state`), and the per-task
 working-tree resolver (`server.Handler._task_root`).
 
 No network and no disk outside a tempfile; no real git worktree is required —
-the `_task_root` test exercises only the fallback path. Run with:
-    python3 tests/test_hub.py
+the `_task_root` test exercises only the fallback path.
+
+Run with:
     python3 -m unittest tests.test_hub
+    python3 -m unittest discover -s tests   # full suite
 """
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time

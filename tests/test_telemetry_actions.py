@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Offline tests for the agent-trace-details backend (stdlib unittest only).
 
-No network and no disk outside a tempfile. Run with:
-    python3 tests/test_telemetry_actions.py
+No network and no disk outside a tempfile.
+
+Run with:
     python3 -m unittest tests.test_telemetry_actions
+    python3 -m unittest discover -s tests   # full suite
 """
 
 import json

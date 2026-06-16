@@ -15,9 +15,11 @@ A couple of structural smoke checks for the skill/agent are included but skip
 gracefully when those files are still being authored by a parallel work-stream
 (the full run happens at VERIFY once every stream lands).
 
-No network and no disk outside a tempfile. Run with:
-    python3 tests/test_ask.py
+No network and no disk outside a tempfile.
+
+Run with:
     python3 -m unittest tests.test_ask
+    python3 -m unittest discover -s tests   # full suite
 """
 
 import json

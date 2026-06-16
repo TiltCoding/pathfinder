@@ -8,9 +8,11 @@ find_subagent_files would then pull that session's days-old transcripts onto thi
 task's timeline, dragging t0 back by hours/days. These tests pin the fix and its
 non-regression (a genuinely multi-day run is still shown in full).
 
-No network and no disk outside a tempfile. Run with:
-    python3 tests/test_trace_window.py
+No network and no disk outside a tempfile.
+
+Run with:
     python3 -m unittest tests.test_trace_window
+    python3 -m unittest discover -s tests   # full suite
 """
 
 import json

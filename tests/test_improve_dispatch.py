@@ -12,9 +12,11 @@ only add `worktreePath`/`branch` (the idempotent DISPATCH invariant).
 
 Reuses the patterns of tests/test_hub.py: the same `scripts/` sys.path hack,
 `server.Workspace`, the `_make_handler` shortcut, and a tempfile-only store — no
-network, no real git worktree. Run with:
-    python3 tests/test_improve_dispatch.py
+network, no real git worktree.
+
+Run with:
     python3 -m unittest tests.test_improve_dispatch
+    python3 -m unittest discover -s tests   # full suite
 """
 
 import json

@@ -208,6 +208,34 @@ Then run `/feature <describe your task>` in any project. The plugin starts the c
 dashboard for the task, and walks the phases. Per-task scratch lives in `.workflow/` (gitignored); the
 knowledge base in `docs/knowledge/` is meant to be committed.
 
+## Development
+
+**Tests.** The suite is offline, stdlib-only `unittest` (no network, no disk outside a tempfile). Run the
+whole set from the repo root:
+
+```
+python3 -m unittest discover -s tests
+```
+
+A single file runs the same way as a module, e.g. `python3 -m unittest tests.test_hub`. There is also a
+thin `Makefile`: `make test` runs the full suite.
+
+**Run the companion server locally.** The server is stdlib-only Python — no build step, no dependencies:
+
+```
+python3 scripts/server.py --root "$(pwd)"
+```
+
+or `make serve`. It binds an available port and writes its URL/port to `.workflow/server.json` (read the
+`url` / `port` fields), and `GET /health` self-reports `{ok, ts, pid, port}` so you can tell which process
+owns the server. Useful flags: `--port N` (prefer a specific port), `--no-browser` (don't open a tab), and
+`--no-forward` (disable Langfuse forwarding).
+
+**Hooks & telemetry.** Telemetry hooks are wired in `hooks/hooks.json` and append a span tree to
+`.workflow/tasks/<slug>/telemetry.jsonl` — they only touch local disk. Without `LANGFUSE_PUBLIC_KEY` and
+`LANGFUSE_SECRET_KEY` set, telemetry stays **local-only** (nothing is forwarded); see
+[Telemetry & MCP](#telemetry--mcp) for the full env-var table and forwarding details.
+
 ## Conventions
 
 - Artifacts, the dashboard, and the knowledge base are written in **Russian**; the skill/agent
