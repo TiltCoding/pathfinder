@@ -864,8 +864,10 @@ function render(data, replies){
     h += card("Work-streams", w);
   }
 
+  const __snap = captureActiveInput();
   $("#content").innerHTML = h || `<p class="empty">Агент ещё не наполнил дашборд.</p>`;
   wireBlocks();
+  restoreActiveInput(__snap);
   highlightComments();
   updateQueue();
 }
@@ -956,6 +958,28 @@ function wireBlocks(){
     q.onclick = () => flashTo(`mark.commented[data-cid="${cssesc(q.getAttribute("data-cid"))}"]`));
 }
 function cssesc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/"/g,'\\"'); }
+// snapshot the focused #content textarea before a re-render so its unsaved text/caret survive innerHTML
+function captureActiveInput(){
+  const el = document.activeElement;
+  if(!el || el.tagName !== "TEXTAREA" || !(el.closest && el.closest("#content"))) return null;
+  let attr = null;
+  if(el.getAttribute("data-answer") !== null) attr = "data-answer";
+  else if(el.getAttribute("data-comment-variant") !== null) attr = "data-comment-variant";
+  if(!attr) return null;
+  return { attr, key: el.getAttribute(attr), value: el.value, start: el.selectionStart, end: el.selectionEnd };
+}
+// restore a captured textarea's value/focus/caret onto the freshly rendered node (silent if it vanished)
+function restoreActiveInput(snap){
+  if(!snap) return;
+  const el = document.querySelector(`#content textarea[${snap.attr}="${cssesc(snap.key)}"]`);
+  if(!el) return; // question/variant removed by the agent mid-typing — accept the loss quietly
+  el.value = snap.value; // override the template's prefill with what the human had typed
+  el.focus();
+  try {
+    const len = el.value.length;
+    el.setSelectionRange(Math.min(snap.start, len), Math.min(snap.end, len));
+  } catch(e){}
+}
 function flashTo(sel){
   const el = document.querySelector(sel);
   if(!el) return;
