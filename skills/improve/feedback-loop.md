@@ -15,7 +15,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/server.py" --root "$(pwd)" >/dev/null 2>&
 
 Run it with the Bash tool using `run_in_background: true`. It writes `.workflow/server.json` with the
 chosen `port` and `url` — read that file to learn the port (it auto-picks a free port near 8473). If
-`server.json` already exists and `GET /health` answers, reuse it instead of starting another.
+`server.json` already exists and `GET /health` answers **and** its `pid`/`port` match `server.json`,
+reuse it instead of starting another; otherwise treat `server.json` as stale and start a new server.
 
 Then per task:
 1. Copy `${CLAUDE_PLUGIN_ROOT}/templates/dashboard.html` → `.workflow/tasks/<slug>/index.html`.

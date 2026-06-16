@@ -131,6 +131,7 @@ def now_iso():
 
 class Handler(BaseHTTPRequestHandler):
     workspace = None  # set on the server instance class
+    server_port = None            # real bound port, set in main() after bind()
     _trace_cache = {}             # slug -> {mt, exp, data}
     _trace_lock = threading.Lock()
     _wakers = {}                  # slug -> threading.Condition (long-poll /wait)
@@ -193,7 +194,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_task_file(slug, "index.html",
                                          "text/html; charset=utf-8")
         if path == "/health":
-            return self._json(200, {"ok": True, "ts": now_iso()})
+            return self._json(200, {"ok": True, "ts": now_iso(),
+                                    "pid": os.getpid(),
+                                    "port": getattr(self, "server_port", None)})
         if path == "/data":
             return self._serve_task_file(slug, "dashboard.json")
         if path == "/mockup":
@@ -1632,6 +1635,58 @@ def write_server_info(workspace, port, pid):
     return info
 
 
+def process_alive(pid):
+    """True if a process with ``pid`` looks alive (conservative on errors).
+
+    Pure/offline: uses signal 0 only, never touches the network. Unknown or
+    non-numeric pids are treated as dead. On platforms where ``os.kill`` is
+    unsupported (e.g. Windows) we stay conservative and report alive so a
+    working server is never thrown away over a probe limitation.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # alive but owned by another user
+    except OSError:
+        return True  # unsupported / unknown — don't reject a live server
+    return True
+
+
+def read_server_info(workspace):
+    """Read ``<base>/server.json`` written by ``write_server_info``.
+
+    Returns the parsed dict, or ``None`` when the file is missing, not valid
+    JSON, or not a dict. Never raises — the server must not crash on a stale or
+    corrupt file (see conventions.md).
+    """
+    info = workspace.read_json(
+        os.path.join(workspace.base, "server.json"), None)
+    return info if isinstance(info, dict) else None
+
+
+def server_info_is_stale(info, current_port=None):
+    """True if ``info`` describes a server that should be replaced.
+
+    Stale when: ``info`` is empty/missing a pid, the recorded pid is not alive,
+    or ``current_port`` is given and differs from the recorded port.
+    """
+    if not info or "pid" not in info:
+        return True
+    if not process_alive(info.get("pid")):
+        return True
+    if current_port is not None and info.get("port") != current_port:
+        return True
+    return False
+
+
 class FeedbackServer(ThreadingHTTPServer):
     """ThreadingHTTPServer that fails loudly when a port is already taken.
 
@@ -1685,7 +1740,14 @@ def main(argv=None):
     os.makedirs(workspace.tasks, exist_ok=True)
     Handler.workspace = workspace
 
+    prev_info = read_server_info(workspace)
+
     httpd, port = bind(workspace, args.port)
+    Handler.server_port = port
+    if server_info_is_stale(prev_info, port):
+        print("ai-pathfinder server: stale server.json "
+              f"(prev pid={(prev_info or {}).get('pid')}, "
+              f"port={(prev_info or {}).get('port')}) — replacing", flush=True)
     info = write_server_info(workspace, port, os.getpid())
 
     config = None if args.no_forward else _aipf.langfuse_config_from_env()
