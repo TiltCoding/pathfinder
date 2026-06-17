@@ -57,6 +57,34 @@
   `_ensure_workflow_symlink` (`scripts/worktree.py:202`) уходит в warning. Это особенность теста;
   потенциальная хрупкость прод-сравнения — см. task-log `tests-silent-critical-paths`.
 
+### Кросс-платформенность тестов (Linux/macOS/Windows)
+
+Набор обязан проходить на всех трёх ОС матрицы CI без правок прод-кода — чинится **непортируемость
+теста**, а не «баг продукта». Паттерны (задача `ci-cross-platform-tests`, 2026-06-17):
+
+- **Skip по реальной способности, а не по `os.name`.** Symlink-тесты гейтятся пробой `os.symlink` во
+  временной директории (хелпер `_symlink_supported()` + константа `_SYMLINKS` + `@skipUnless(_SYMLINKS, …)`,
+  `tests/test_worktree.py`). Так Windows с Developer Mode / админ-CI, где симлинки **работают**, не
+  глушится зря — пропуск только когда возможность реально отсутствует.
+- **`@skipIf(os.name == "nt")` — только для платформенно-зависимой семантики ОС.** Pid-проба
+  `os.kill(pid, 0)` на Windows кидает `OSError(WinError 87)`, а не `ProcessLookupError`, поэтому
+  dead-pid тесты `tests/test_server_health.py` скипаются на `nt`. Продукт намеренно консервативен (любой
+  не-`ProcessLookupError` = «жив», чтобы не выбросить рабочий сервер) — его НЕ трогаем, скипается тест.
+- **Фикстуры jsonl — с `newline=""`.** Открывать файлы телеметрии под запись с `newline=""`
+  (`tests/test_feed.py`): иначе на Windows `\n` транслируется в `\r\n`, а байтовый курсор `_iter_lines_from`
+  (`scripts/_aipf.py:381`) считает оффсеты по байтам и сбивается на лишнем `\r`. Формат на диске — строго LF.
+- **Пути в тестах строить от `tempfile`/`os.path.realpath`, сравнивать через `os.path.abspath`.** Никаких
+  POSIX-литералов (`/repo/main`) в ассертах — на Windows реальный путь `C:\repo\main`. Базу берут из
+  `os.path.realpath(tempfile.mkdtemp())`, ожидание считают тем же `os.path.*` API
+  (`ListWorktreesPorcelainTest`, `tests/test_worktree.py`).
+
+### CI
+
+- **`.github/workflows/ci.yml`** — matrix `os: [ubuntu/macos/windows-latest] × python: [3.11, 3.12, 3.13]`,
+  `on: [push, pull_request]`, `fail-fast: false` (видеть все падающие комбинации сразу). Единственный шаг —
+  `python -m unittest discover -s tests`; **stdlib-only, без `pip install`** (соответствует инварианту
+  «сервер/тесты — только stdlib»). Любой новый тест обязан укладываться в этот безпиповый прогон.
+
 ## Полезные утилиты (переиспользовать)
 
 - `scripts/_aipf.py:76` — `append_jsonl(path, obj)` — атомарная дозапись одной JSON-строки.
@@ -67,4 +95,4 @@
 - `scripts/_aipf.py:25` — `now_iso_utc()` — таймстемп ISO-8601 UTC `Z`.
 - `scripts/_aipf.py:496` — `_spans_from_events(events)` — склейка start/end в спаны (паттерн парности).
 
-_updated: 2026-06-16_
+_updated: 2026-06-17 (кросс-платформенность тестов + CI)_

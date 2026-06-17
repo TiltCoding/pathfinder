@@ -35,7 +35,7 @@ import _aipf  # noqa: E402
 def _append_jsonl(path, rows):
     """Append jsonl fixture rows (copy of tests/test_trace_window.py:38-42)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
+    with open(path, "a", encoding="utf-8", newline="") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
@@ -117,7 +117,7 @@ class IterLinesFromTest(unittest.TestCase):
     def test_unterminated_tail_is_held_for_reread(self):
         # A complete line then a tail WITHOUT a trailing newline.
         _append_jsonl(self.path, [{"a": 1}])
-        with open(self.path, "a", encoding="utf-8") as f:
+        with open(self.path, "a", encoding="utf-8", newline="") as f:
             f.write('{"b": 2}')  # no '\n' yet
         complete_size = len(b'{"a": 1}\n')  # cursor must stop at the tail start
 
@@ -131,7 +131,7 @@ class IterLinesFromTest(unittest.TestCase):
         self.assertEqual(off2, off)
         # Once the hook finishes the line ('\n' appended), the held tail is
         # re-read whole from the same cursor (at-least-once delivery).
-        with open(self.path, "a", encoding="utf-8") as f:
+        with open(self.path, "a", encoding="utf-8", newline="") as f:
             f.write("\n")
         tail, off3 = _aipf._iter_lines_from(self.path, off)
         self.assertEqual([json.loads(x) for x in tail], [{"b": 2}])
