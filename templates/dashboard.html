@@ -1139,6 +1139,7 @@ let changedFiles = [], selectedFile = null, selectedDiff = "";
 let changesShowAll = false;            // toggle: false = только tracked (untracked скрыты), true = все
 const changesCollapsed = new Set();    // dir paths collapsed by the user (persists across polling re-renders)
 async function changesTick(){
+  if(document.hidden) return;
   try {
     const [ch, rv] = await Promise.all([
       api("/changes?slug=" + encodeURIComponent(SLUG)),
@@ -1372,6 +1373,7 @@ function applyFeedEvents(events){
 }
 
 async function traceTick(){
+  if(document.hidden) return;
   try {
     const [tr, feed] = await Promise.all([
       api("/trace?slug=" + encodeURIComponent(SLUG)),
@@ -2287,6 +2289,7 @@ $("#btn-chat-toggle").onclick = () => toggleChat();
 $("#chat-close").onclick = () => toggleChat(false);
 
 async function chatTick(){
+  if(document.hidden) return;
   try {
     const r = await api("/chat?slug=" + encodeURIComponent(SLUG));
     const next = (r && r.messages) || [];
@@ -2340,7 +2343,14 @@ async function tick(){
 }
 (async function init(){
   // возврат фокуса на вкладку снимает title-бейдж «ждёт»
-  document.addEventListener("visibilitychange", () => { if(!document.hidden) setTitleBadge(false); });
+  document.addEventListener("visibilitychange", () => {
+    if(document.hidden) return;
+    setTitleBadge(false);
+    // догоняющие тики при возврате на вкладку (гейченные тики молчали в фоне)
+    chatTick();
+    if(activeTab === "trace") traceTick();
+    else if(activeTab === "changes") changesTick();
+  });
   await loadDraft();
   await tick();
   setInterval(tick, 3000);

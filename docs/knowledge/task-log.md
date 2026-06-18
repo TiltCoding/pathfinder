@@ -4,6 +4,18 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-18 — pause-polling-when-hidden (фича 3/8 из очереди `improve-overall`)
+- **Что:** Гейт фронтового поллинга по `document.hidden` (`templates/dashboard.html`): ранний
+  `return` в `traceTick` (`:1374`), `changesTick` (`:1141`), `chatTick` (`:2289`) когда вкладка
+  скрыта; `visibilitychange` (`:2343`) при возврате делает догоняющие вызовы `chatTick()` +
+  активного таб-тика (trace/changes).
+- **Важный нюанс:** главный `tick` (`:2331`, `/data`) **намеренно НЕ гейчен** — он нужен фоновому
+  awaiting-уведомлению (`:795`, Notification срабатывает именно при `document.hidden`). Гейт всех 4
+  тиков (как предлагал scout cand-13) сломал бы это уведомление. Гейтим только тяжёлые
+  (`/trace` перечитывает транскрипты, `/changes` — git diff) + лёгкий chat.
+- **Решения человека:** q1 — главный tick оставить как есть; q2 — chatTick гейтить.
+- **Объём:** 0 правок `scripts/*`. ADR не нужен.
+
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
   `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`
