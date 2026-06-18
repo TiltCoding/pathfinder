@@ -4,6 +4,18 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-18 — markdown-url-sanitize-xss (фича 4/8 из очереди `improve-overall`)
+- **Что:** Санитизация схемы URL в markdown-ссылках (`templates/dashboard.html:582`, функция `inline`):
+  строковый `.replace(... href="$2")` заменён на функциональный replacer с allow-list схем —
+  `http(s)`/`mailto` + относительные/якоря; `javascript:`/`data:`/`vbscript:` и protocol-relative
+  `//host` → `href="#"`. Логика проверена 13 кейсами (node).
+- **Зачем:** Закрывает stored-XSS: `dashboard.json` агент пишет из недоверённых источников, а
+  `[клик](javascript:…)` исполнял JS в origin дашборда. Единственный активный контент вне sandbox-iframe.
+- **Нюанс:** mockup-ссылки (`:914/:916`) безопасны (относительный `/mockup?...` + `encodeURIComponent`),
+  не трогали. `inline` — единственная точка рендера markdown-ссылок, фикс покрывает весь `md()`.
+- **Решения человека:** q1 — `href="#"` для запрещённой схемы; q2 — блокировать `//host`.
+- **Объём:** 0 правок `scripts/*`. ADR не нужен.
+
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
   `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`
