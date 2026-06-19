@@ -161,6 +161,9 @@
   .actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.06); }
   /* «ваш ход»: контекстная подсветка actionbar при awaiting (токены из обеих тем, ADR-0015) */
   .actionbar.awaiting { background: var(--warn-soft); border-top-color: var(--warn); }
+  /* подсказка порядка Submit→Approve — видна только в awaiting (тоггл .awaiting на рендере) */
+  .actionbar-hint { font-size: 12px; font-weight: 600; color: var(--warn); }
+  .actionbar:not(.awaiting) .actionbar-hint { display: none; }
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
   .queue { font-size: 13px; color: var(--muted); flex: 1; }
   .queue b { color: var(--ink); }
@@ -500,6 +503,7 @@
 
 <div class="actionbar" id="actionbar">
   <div class="actionbar-inner">
+    <div class="actionbar-hint">Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.</div>
     <div class="queue">Очередь правок: <b id="queue-count">0</b></div>
     <button class="ghost" id="btn-approve">Утвердить план</button>
     <button class="primary" id="btn-submit" disabled>Отправить агенту на доработку</button>

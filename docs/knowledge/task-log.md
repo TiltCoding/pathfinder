@@ -4,6 +4,18 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-19 — actionbar-order-hint (фича 7/8 из очереди `improve-overall`)
+- **Что:** Подсказка порядка действий на actionbar (`templates/dashboard.html`): HTML-элемент
+  `.actionbar-hint` («Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.») первым
+  ребёнком `.actionbar-inner` + 2 CSS-правила (цвет `--warn`, скрытие вне awaiting через
+  `.actionbar:not(.awaiting) .actionbar-hint{display:none}`).
+- **Зачем:** Инструкция о порядке Submit→Approve жила только в `summary` (надо прокрутить); хинт у
+  кнопок (закон близости) снижает шанс пропустить шаг. cand-3 из аудита.
+- **Нюанс:** 0 JS — видимость даёт существующий тоггл `.awaiting` (`:803`), вешаемый по
+  `status==="awaiting-batch"`.
+- **Решения человека:** q1 — инлайн первым ребёнком; q2 — цвет `--warn`.
+- **Объём:** 0 правок `scripts/*`. ADR не нужен.
+
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
   `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`
