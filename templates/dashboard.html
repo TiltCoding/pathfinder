@@ -1056,7 +1056,9 @@ function wireBlocks(){
   document.querySelectorAll("textarea[data-thread]").forEach(ta =>
     ta.onkeydown = (e) => {
       if(e.key === "Enter" && !e.shiftKey){ e.preventDefault();
-        postAnchored(ta.getAttribute("data-thread"), ta.value, ""); }
+        const anchor = ta.getAttribute("data-thread"), val = ta.value;
+        ta.value = "";   // clear before posting so the re-render's focus-restore doesn't re-fill it
+        postAnchored(anchor, val, ""); }
     });
   // click a comment's quote -> scroll to & flash its highlight in the prose
   document.querySelectorAll(".cmt-quote[data-cid]").forEach(q =>
