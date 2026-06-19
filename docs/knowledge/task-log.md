@@ -90,6 +90,16 @@
   не трогали. `inline` — единственная точка рендера markdown-ссылок, фикс покрывает весь `md()`.
 - **Решения человека:** q1 — `href="#"` для запрещённой схемы; q2 — блокировать `//host`.
 - **Объём:** 0 правок `scripts/*`. ADR не нужен.
+## 2026-06-19 — dev-py-cross-platform-runner (фича 5/8 из очереди `improve-overall`)
+- **Что:** Новый `dev.py` (stdlib, `argparse`) — кросс-платформенный раннер: `test [цели]`
+  (`sys.executable -m unittest`, discover или цели), `serve` (проброс `--port/--open/--no-browser/--no-forward`
+  в `scripts/server.py --root <ROOT>`), `lint` (стаб: зовёт `scripts/check_stdlib.py` если есть, иначе
+  сообщение про feat-8). ROOT = каталог `dev.py`; `subprocess.call` + проброс кодов возврата. README
+  «## Development» дополнен кросс-платформенным путём.
+- **Зачем:** `Makefile` POSIX-only (`python3`/`$$(pwd)`/требует `make`) — на Windows DX-слой не работал.
+  `sys.executable` снимает зависимость от `make` и имени интерпретатора.
+- **Решения человека:** q1 — включить `lint`-стаб (forward-совместимо с feat-8); q2 — `test` прокидывает цели.
+- **Объём:** `Makefile` и `scripts/*` не тронуты (dev.py дополняет). ADR не нужен.
 
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
