@@ -138,15 +138,15 @@
   .ws-summary .bar > i.in_progress { background: var(--accent); }
   .ws-summary b { color: var(--ok); font-weight: 700; }
 
-  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
-  section.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; margin: 24px 0; box-shadow: var(--shadow); }
+  section.card > h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--head); margin: 0 0 14px; }
   .md p { margin: 0 0 10px; }
   .md h1 { font-size: 20px; font-weight: 700; margin: 18px 0 8px; }
   .md h2 { font-size: 17px; font-weight: 700; margin: 16px 0 7px; }
   .md h3 { font-size: 15px; margin: 14px 0 6px; }
   .md h4 { font-size: 13px; font-weight: 700; margin: 12px 0 4px; color: var(--muted); }
   .md ul, .md ol { margin: 6px 0 10px; padding-left: 22px; } .md li { margin: 2px 0; }
-  .md code { background: var(--chip); padding: 1px 5px; border-radius: 5px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .md code { background: var(--line3); color: var(--head); padding: 1px 6px; border-radius: 4px; font: 12px/1.5 var(--font-mono); }
   .md pre { background: var(--chip); padding: 12px 14px; border-radius: 8px; overflow: auto; }
   .md pre code { background: none; padding: 0; } .md a { color: var(--accent); }
   .md em { font-style: italic; }
@@ -157,14 +157,16 @@
   .md th { background: var(--chip); font-weight: 600; }
   .md tr:nth-child(even) td { background: var(--accent-soft); }
 
-  .block { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; transition: border-color .15s, background .15s; }
+  .block { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 10px 0; transition: border-color .15s, background .15s; }
   .block:hover { border-color: var(--accent); }
   .block.has-draft { border-color: var(--accent); background: var(--accent-soft); }
   .block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .block-title { font-weight: 600; flex: 1; }
-  .block-id { font: 11px ui-monospace, monospace; color: var(--muted); }
+  .block-id { font: 11px var(--font-mono); color: var(--muted2); }
   ::selection { background: var(--sel); }
-  textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; background: var(--bg); color: var(--ink); }
+  textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; font: 13px var(--font-sans); background: var(--bg); color: var(--ink); }
+  textarea::placeholder { color: var(--muted2); }
+  textarea:focus { outline: none; border-color: var(--accent); }
 
   /* commentable prose regions (summary / codebase map) */
   .region { position: relative; }
@@ -197,13 +199,15 @@
   /* visual-demo variants */
   .demo-intro { margin-bottom: 12px; }
   .variants { display: grid; grid-template-columns: 1fr; gap: 16px; }
-  .variant { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+  .variant { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); transition: border-color .15s, box-shadow .15s; }
   .variant:hover { border-color: var(--accent); }
   .variant.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .variant-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--chip); cursor: pointer; }
+  .variant-head { display: flex; align-items: center; gap: 9px; padding: 14px 16px; background: var(--panel); cursor: pointer; }
   .variant.sel .variant-head { background: var(--accent-soft); }
-  .variant-head .v-title { font-weight: 600; flex: 1; }
-  .variant-head .open { font-size: 12px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  /* нативный радио-кружок в заголовке варианта — красим в акцент (как в дизайне) */
+  .variant-head input[type="radio"] { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  .variant-head .v-title { font-weight: 700; font-size: 14px; flex: 1; }
+  .variant-head .open { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; white-space: nowrap; }
   iframe.mock { display: block; width: 100%; height: 420px; border: none; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; }
   .v-body { padding: 10px 12px; }
   .v-body .region { padding: 0; }
@@ -230,7 +234,9 @@
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
   .queue { font-size: 13px; color: var(--muted); flex: 1; }
   .queue b { color: var(--ink); }
-  button.primary { background: var(--accent); color: #fff; border: none; border-radius: 9px; padding: 10px 18px; font-weight: 600; cursor: pointer; }
+  /* основные действия — чёрная кнопка (дизайн: «Отправить»/«Send») */
+  button.primary { background: var(--sel-bg); color: var(--sel-fg); border: none; border-radius: 8px; padding: 9px 18px; font: 600 13px var(--font-sans); cursor: pointer; }
+  button.primary:hover:not(:disabled) { opacity: .9; }
   button.primary:disabled { opacity: .45; cursor: not-allowed; }
   button.ghost { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: 600 12px var(--font-sans); cursor: pointer; }
   button.ghost:hover { border-color: var(--accent); }
