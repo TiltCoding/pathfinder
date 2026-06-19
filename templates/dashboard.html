@@ -426,6 +426,16 @@
   .msg.human { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
   .msg.agent { align-self: flex-start; background: var(--chip); color: var(--ink); border-bottom-left-radius: 4px; }
   .msg .ts { font-size: 10px; opacity: .6; margin-top: 3px; }
+  .thread { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .th-turn { max-width: 92%; padding: 7px 10px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  .th-turn.human { align-self: flex-end; background: var(--accent-soft); }
+  .th-turn.agent { align-self: flex-start; background: var(--chip); }
+  .th-turn .th-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; opacity: .7; margin-bottom: 2px; }
+  .th-turn .th-quote { color: var(--muted); border-left: 3px solid var(--accent); padding: 1px 8px; margin-bottom: 4px; white-space: pre-wrap; }
+  .th-needs { color: var(--warn); font-weight: 700; }
+  .th-status { font-size: 11px; color: var(--ok); margin-top: 2px; }
+  .th-reply textarea { min-height: 38px; margin-top: 6px; }
+  .block.thread-open, .region.thread-open, .variant.thread-open { box-shadow: inset 3px 0 0 var(--warn); }
   .chat-input { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
   .chat-input textarea { min-height: 38px; }
   .chat-input button.primary { padding: 8px 14px; white-space: nowrap; }
@@ -836,12 +846,13 @@ function render(data, replies){
     if(r.blockId){ (repliesByBlock[r.blockId] = repliesByBlock[r.blockId] || []).push(r); }
     if(r.questionId){ (repliesByQ[r.questionId] = repliesByQ[r.questionId] || []).push(r); }
   });
+  const threadsByAnchor = anchoredThreads();
 
   let h = "";
-  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock));
-  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock));
+  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock, threadsByAnchor));
+  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock, threadsByAnchor));
 
-  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock));
+  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock, threadsByAnchor));
 
   if((data.planBlocks||[]).length){
     let b = "";
@@ -851,7 +862,7 @@ function render(data, replies){
         <div class="block-head"><span class="block-title">${esc(blk.title||"")}</span>
           <span class="block-id">${esc(blk.id)}</span></div>
         <div class="md block-body">${md(blk.body||"")}</div>
-        ${regionFooter(blk.id, repliesByBlock)}
+        ${regionFooter(blk.id, repliesByBlock, threadsByAnchor)}
       </div>`;
     }
     h += card("План", b);
@@ -935,28 +946,56 @@ function renderWsSummary(data){
     '<i class="in_progress" style="width:' + pct(c.in_progress) + '%"></i></span>' +
     '<span><b>' + c.done + '/' + c.total + '</b> готово · ' + c.in_progress + ' в работе · ' + c.todo + ' в очереди</span>';
 }
+// Bucket chat messages that carry an `anchor` into per-anchor threads (ordered as stored).
+function anchoredThreads(){
+  const by = {};
+  for(const m of chatMsgs){ if(m.anchor){ (by[m.anchor] = by[m.anchor] || []).push(m); } }
+  return by;
+}
+function threadTurns(msgs){
+  let html = "";
+  for(const m of msgs){
+    const quote = m.quote ? '<div class="th-quote">' + esc(m.quote) + '</div>' : "";
+    const needs = (m.role === "agent" && m.needsAnswer) ? ' <span class="th-needs">нужен ваш ответ</span>' : "";
+    const who = (m.role === "agent" ? "агент" : "вы") + needs;
+    const text = m.role === "agent" ? md(m.text) : esc(m.text);
+    html += '<div class="th-turn ' + (m.role === "agent" ? "agent" : "human") + '">' +
+            quote + '<div class="th-who">' + who + '</div><div class="th-text">' + text + '</div></div>';
+  }
+  // "учтено агентом": last turn is an agent reply (not itself a question) following a human turn
+  const last = msgs[msgs.length - 1];
+  const hadHuman = msgs.some(x => x.role === "human");
+  if(last && last.role === "agent" && !last.needsAnswer && hadHuman){
+    html += '<div class="th-status">✓ учтено агентом</div>';
+  }
+  return html;
+}
 function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
 // a commentable prose region (summary / codebase map)
-function region(anchor, innerHtml, repliesByBlock){
+function region(anchor, innerHtml, repliesByBlock, threadsByAnchor){
   const has = draftItems.some(i => i.blockId === anchor);
   return `<div class="region ${has?'has-draft':''}" data-anchor="${esc(anchor)}">
     <div class="md">${innerHtml}</div>
-    ${regionFooter(anchor, repliesByBlock)}
+    ${regionFooter(anchor, repliesByBlock, threadsByAnchor)}
   </div>`;
 }
 // agent replies + the human's left comments, keyed to one anchor
-function regionFooter(anchor, repliesByBlock){
-  const reps = (repliesByBlock||{})[anchor] || [];
-  const drafts = draftItems.filter(i => i.blockId === anchor);
+function regionFooter(anchor, repliesByBlock, threadsByAnchor){
+  const reps = (repliesByBlock||{})[anchor] || [];        // legacy replies.json (kept for back-compat)
+  const drafts = draftItems.filter(i => i.blockId === anchor);  // removed in Task 5
+  const msgs = (threadsByAnchor||{})[anchor] || [];
+  const thread = msgs.length ? `<div class="thread">${threadTurns(msgs)}</div>` : "";
+  const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="Ответить в этой ветке… (Enter — отправить)"></textarea></div>`;
   return reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")
-       + drafts.map(d=>cmtCard(d)).join("");
+       + drafts.map(d=>cmtCard(d)).join("")
+       + thread + input;
 }
 function cmtCard(d){
   const quote = d.selectedText ? `<div class="cmt-quote" data-cid="${esc(d.id)}">${esc(d.selectedText)}</div>` : "";
   return `<div class="cmt" data-cid="${esc(d.id)}">${quote}<div class="cmt-row"><span class="cmt-text">${esc(d.text)}</span><span class="x" data-remove="${esc(d.id)}">✕</span></div></div>`;
 }
 // visual-demo variants: previewed in sandboxed iframes, picked via the edit queue
-function renderDemo(demo, repliesByBlock){
+function renderDemo(demo, repliesByBlock, threadsByAnchor){
   const sid = demo.selectionId || "demo";
   const ans = draftItems.find(i => i.kind==="answer" && i.questionId===sid);
   const chosen = ans ? ans.text : (demo.selected || "");
@@ -978,7 +1017,7 @@ function renderDemo(demo, repliesByBlock){
         <a class="open" href="${url}" target="_blank" rel="noopener">открыть ↗</a>
       </label>
       <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
-      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock)}</div>
+      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor)}</div>
     </div>`;
   }
   const intro = demo.intro ? `<div class="md demo-intro">${md(demo.intro)}</div>` : "";
@@ -2349,7 +2388,7 @@ function toggleChat(open){
   chatOpen = open != null ? open : !chatOpen;
   $("#chat-panel").hidden = !chatOpen;
   if(chatOpen){
-    chatSeen = chatMsgs.length;
+    chatSeen = chatMsgs.filter(m => !m.anchor).length;
     $("#chat-unread").hidden = true;
     renderChat();
     setTimeout(() => { const l = $("#chat-log"); l.scrollTop = l.scrollHeight; $("#chat-text").focus(); }, 0);
@@ -2365,22 +2404,24 @@ async function chatTick(){
     const next = (r && r.messages) || [];
     const changed = next.length !== chatMsgs.length;
     chatMsgs = next;
-    if(changed) renderChat();
+    if(changed){ renderChat(); rerender(); }
     updateChatUnread();
   } catch(e){ /* server may be restarting */ }
 }
 function updateChatUnread(){
   const b = $("#chat-unread");
-  if(chatOpen){ chatSeen = chatMsgs.length; b.hidden = true; return; }
-  const unread = Math.max(0, chatMsgs.length - chatSeen);
+  const globalCount = chatMsgs.filter(m => !m.anchor).length;
+  if(chatOpen){ chatSeen = globalCount; b.hidden = true; return; }
+  const unread = Math.max(0, globalCount - chatSeen);
   if(unread > 0){ b.hidden = false; b.textContent = unread > 9 ? "9+" : unread; }
   else b.hidden = true;
 }
 function renderChat(){
   const log = $("#chat-log");
-  if(!chatMsgs.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
+  const global = chatMsgs.filter(m => !m.anchor);   // anchored messages live in their thread, not here
+  if(!global.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
-  log.innerHTML = chatMsgs.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
+  log.innerHTML = global.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
     <div class="who">${m.role==='agent'?'агент':'вы'}</div>
     <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
     ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
@@ -2408,7 +2449,7 @@ async function tick(){
       api("/replies?slug=" + encodeURIComponent(SLUG)),
     ]);
     const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now,
-      (data.workstreams||[]).map(w=>w.status).join(","), (replies.replies||[]).length]);
+      (data.workstreams||[]).map(w=>w.status).join(","), (replies.replies||[]).length, chatMsgs.length]);
     if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
     else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
   } catch(e){ /* server may be restarting */ }
