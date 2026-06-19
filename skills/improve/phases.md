@@ -61,7 +61,10 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
   §SELECT GATE): for each candidate `K`, write one `planBlocks[]` card and one
   `questions[kind:"choice"]`, **both with the same `id = feat-K`** and `options:["Делаем","Пропускаем"]`.
   The card `body` (markdown) carries: prism / problem / proposed change / size·risk·impact / affected
-  files (clickable paths). Set status `awaiting-batch`.
+  files (clickable paths), **plus an obligatory one-line ranking from `state.json.votes[]`** — the
+  compact form `score X.XX · согласие N% · impact·effort·risk a·b·c` (numbers only, no vote-note) — so
+  the human sees how the panel scored each feature and the gate is not a black box. Set status
+  `awaiting-batch`.
 - In the `summary`, tell the human the contract in plain Russian: pick «Делаем»/«Пропускаем» per
   feature (or type a free-form note like «делаем, но без X»), then **«Отправить»** to record the choice,
   then **«Утвердить план»** to dispatch the picked ones. State the defaults explicitly: **нет ответа =
