@@ -77,6 +77,12 @@
   .now-line { font-size: 12px; color: var(--muted); margin-top: 6px; padding: 0 2px; }
   .now-line.stale { opacity: .5; }
   .now-line b { color: var(--ink); font-weight: 600; }
+  .ws-summary { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .ws-summary .bar { display: inline-flex; height: 8px; width: 84px; border-radius: 999px; overflow: hidden; background: var(--line); flex: none; }
+  .ws-summary .bar > i { height: 100%; display: block; }
+  .ws-summary .bar > i.done { background: var(--ok); }
+  .ws-summary .bar > i.in_progress { background: var(--accent); }
+  .ws-summary b { color: var(--ink); font-weight: 600; }
 
   section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
   section.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
@@ -471,7 +477,10 @@
     </button>
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
-  <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
+  <div class="top-inner">
+    <div class="progress" style="flex:1"><div id="progress-bar"></div></div>
+    <span class="ws-summary" id="ws-summary" hidden></span>
+  </div>
   <div class="top-inner"><div class="now-line" id="now-line" hidden></div></div>
   <div class="top-inner"><nav class="tabbar">
     <button class="tab active" id="tab-work" data-tab="work">Рабочий процесс</button>
@@ -816,8 +825,11 @@ function render(data, replies){
   }
   $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
   renderNow(data);
-  const pr = data.progress || {done:0,total:0};
+  const wl = data.workstreams || [];
+  const pr = wl.length ? (() => { const c = wsCounts(wl); return {done:c.done, total:c.total}; })()
+                       : (data.progress || {done:0, total:0});
   $("#progress-bar").style.width = (pr.total ? Math.round(100*pr.done/pr.total) : 0) + "%";
+  renderWsSummary(data);
 
   const repliesByBlock = {}, repliesByQ = {};
   (replies.replies || []).forEach(r => {
@@ -905,6 +917,23 @@ function renderNow(data){
   const stale = age != null && age > 90;
   el.classList.toggle("stale", stale);
   el.innerHTML = "Сейчас: <b>" + esc(now) + "</b>" + (age != null && !stale ? " · " + esc(fmtAge(age)) : "");
+}
+function wsCounts(list){
+  const c = { done:0, in_progress:0, todo:0, total:(list||[]).length };
+  for(const ws of (list||[])){ const s = ws.status||"todo"; if(c[s]!=null) c[s]++; else c.todo++; }
+  return c;
+}
+function renderWsSummary(data){
+  const el = $("#ws-summary"); if(!el) return;
+  const list = data.workstreams || [];
+  if(!list.length){ el.hidden = true; return; }
+  const c = wsCounts(list);
+  const pct = n => c.total ? Math.round(100 * n / c.total) : 0;
+  el.hidden = false;
+  el.innerHTML =
+    '<span class="bar"><i class="done" style="width:' + pct(c.done) + '%"></i>' +
+    '<i class="in_progress" style="width:' + pct(c.in_progress) + '%"></i></span>' +
+    '<span><b>' + c.done + '/' + c.total + '</b> готово · ' + c.in_progress + ' в работе · ' + c.todo + ' в очереди</span>';
 }
 function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
 // a commentable prose region (summary / codebase map)
@@ -2378,7 +2407,8 @@ async function tick(){
       api("/data?slug=" + encodeURIComponent(SLUG)),
       api("/replies?slug=" + encodeURIComponent(SLUG)),
     ]);
-    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now, (replies.replies||[]).length]);
+    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now,
+      (data.workstreams||[]).map(w=>w.status).join(","), (replies.replies||[]).length]);
     if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
     else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
   } catch(e){ /* server may be restarting */ }
