@@ -906,7 +906,6 @@ function render(data, replies){
   $("#content").innerHTML = h || `<p class="empty">Агент ещё не наполнил дашборд.</p>`;
   wireBlocks();
   restoreActiveInput(__snap);
-  highlightComments();
   updateQueue();
 }
 function nowAge(ts){
@@ -982,12 +981,10 @@ function region(anchor, innerHtml, repliesByBlock, threadsByAnchor){
 // agent replies + the human's left comments, keyed to one anchor
 function regionFooter(anchor, repliesByBlock, threadsByAnchor){
   const reps = (repliesByBlock||{})[anchor] || [];        // legacy replies.json (kept for back-compat)
-  const drafts = draftItems.filter(i => i.blockId === anchor);  // removed in Task 5
   const msgs = (threadsByAnchor||{})[anchor] || [];
   const thread = msgs.length ? `<div class="thread">${threadTurns(msgs)}</div>` : "";
   const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="Ответить в этой ветке… (Enter — отправить)"></textarea></div>`;
   return reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")
-       + drafts.map(d=>cmtCard(d)).join("")
        + thread + input;
 }
 function cmtCard(d){
@@ -1056,6 +1053,11 @@ function wireBlocks(){
       if(e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault();
         saveVariantComment(ta.getAttribute("data-comment-variant"), ta.value, ta); }
     });
+  document.querySelectorAll("textarea[data-thread]").forEach(ta =>
+    ta.onkeydown = (e) => {
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault();
+        postAnchored(ta.getAttribute("data-thread"), ta.value, ""); }
+    });
   // click a comment's quote -> scroll to & flash its highlight in the prose
   document.querySelectorAll(".cmt-quote[data-cid]").forEach(q =>
     q.onclick = () => flashTo(`mark.commented[data-cid="${cssesc(q.getAttribute("data-cid"))}"]`));
@@ -1068,6 +1070,7 @@ function captureActiveInput(){
   let attr = null;
   if(el.getAttribute("data-answer") !== null) attr = "data-answer";
   else if(el.getAttribute("data-comment-variant") !== null) attr = "data-comment-variant";
+  else if(el.getAttribute("data-thread") !== null) attr = "data-thread";
   if(!attr) return null;
   return { attr, key: el.getAttribute(attr), value: el.value, start: el.selectionStart, end: el.selectionEnd };
 }
@@ -1187,16 +1190,24 @@ $("#sel-send").onclick = sendComment;
 async function sendComment(){
   const text = popInput.value.trim();
   if(!text || !selTarget) return;
-  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"comment", blockId: selTarget.anchor, selectedText: selTarget.text, text }) });
-  hidePopover(); await loadDraft(); toast("Добавлено в очередь");
+  await postAnchored(selTarget.anchor, text, selTarget.text);
+  hidePopover();
 }
-// explicit per-variant comment: same contract as sendComment, anchored to the variant id
 async function saveVariantComment(variantId, value, ta){
   const text = (value || "").trim();
   if(!text || !variantId) return;
-  if(ta) ta.value = "";  // clear field so several comments can be left on one variant
-  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"comment", blockId: variantId, selectedText: "", text }) });
-  await loadDraft(); toast("Добавлено в очередь");
+  if(ta) ta.value = "";
+  await postAnchored(variantId, text, "");
+}
+// One path for every anchored turn (select-to-comment, variant comment, thread reply).
+async function postAnchored(anchor, text, quote){
+  const t = (text || "").trim();
+  if(!t || !anchor) return;
+  const body = { slug:SLUG, anchor, text:t, phase:(lastData&&lastData.phase)||"" };
+  if(quote) body.quote = quote;
+  await api("/chat", { method:"POST", body: JSON.stringify(body) });
+  await chatTick();
+  toast("Отправлено агенту");
 }
 
 // action bar
