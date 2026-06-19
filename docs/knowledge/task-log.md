@@ -4,6 +4,17 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-19 — stdlib-invariant-lint-gate (фича 8/8 из очереди `improve-overall` — очередь дренирована)
+- **Что:** Новый `scripts/check_stdlib.py` (stdlib: ast/glob/re) — исполнимый гейт двух инвариантов:
+  (1) `scripts/*.py` импортируют только stdlib (allowlist = `sys.stdlib_module_names` ∪ локальные стемы
+  `*.py` в scripts/, относит. импорты пропущены — `_aipf` легитимен); (2) `templates/*.html` без CDN
+  (таргетно: внешние `src/href` на `http(s)://`/`//` + `@import url(http…)`). exit 1 при нарушениях.
+- **Зачем:** Инварианты `conventions.md:27,29` держались на дисциплине ревьюера; теперь — гейт.
+  Подхватывается `dev.py lint` (feat-5) и CI (feat-1) — связка замыкается.
+- **Решения человека:** q1 — проверять только `scripts/`; q2 — таргетная CDN-проверка.
+- **Проверка:** позитив (чистый репо → 0) + негатив (`import requests` и `<script src=//…>` → 1).
+- **Объём:** один новый файл, `scripts/server.py` и пр. не тронуты. ADR не нужен.
+
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
   `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`
