@@ -13,10 +13,13 @@ from the project root so it survives across your turns:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/server.py" --root "$(pwd)" >/dev/null 2>&1
 ```
 
-Run it with the Bash tool using `run_in_background: true`. It writes `.workflow/server.json` with the
-chosen `port` and `url` — read that file to learn the port (it auto-picks a free port near 8473). If
-`server.json` already exists and `GET /health` answers **and** its `pid`/`port` match `server.json`,
-reuse it instead of starting another; otherwise treat `server.json` as stale and start a new server.
+Run it with the Bash tool using `run_in_background: true`. **The launch is idempotent** — if a live
+server is already serving this project root, the new process prints `reusing live server …` and exits
+without binding a second port, so it is always safe to just run the command (no need to probe `/health`
+first). It writes `.workflow/server.json` with the chosen `port`, `url` and `root`, and **refreshes a
+`ts` heartbeat** every few seconds so a reader can tell a live server from a corpse. Read that file to
+learn the port — the port is **stable per project root** (derived from it), so the dashboard URL doesn't
+drift between runs. To reap stale/orphaned servers for this root, run the same script with `--gc`.
 
 Then per task:
 1. Copy `${CLAUDE_PLUGIN_ROOT}/templates/dashboard.html` → `.workflow/tasks/<slug>/index.html`.

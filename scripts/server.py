@@ -32,14 +32,18 @@ Usage:
 """
 
 import argparse
+import atexit
+import hashlib
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -50,6 +54,8 @@ import _aipf  # noqa: E402  (shared helpers: layout, Langfuse forwarding)
 SLUG_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 DEFAULT_PORT = 8473
 PORT_SCAN = 25
+HEARTBEAT_SECS = 5        # how often a live server refreshes server.json's ts
+SERVER_STALE_SECS = 30    # server.json whose heartbeat stopped this long ago = corpse
 
 # A task is "active" on the hub when its phase is non-terminal AND it was
 # updated within this window; otherwise it falls into history (see _build_hub).
@@ -194,9 +200,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_task_file(slug, "index.html",
                                          "text/html; charset=utf-8")
         if path == "/health":
+            ws = getattr(self, "workspace", None)
             return self._json(200, {"ok": True, "ts": now_iso(),
                                     "pid": os.getpid(),
-                                    "port": getattr(self, "server_port", None)})
+                                    "port": getattr(self, "server_port", None),
+                                    "root": os.path.realpath(ws.root) if ws else None})
         if path == "/data":
             return self._serve_task_file(slug, "dashboard.json")
         if path == "/mockup":
@@ -1950,7 +1958,7 @@ class TelemetryForwarder(threading.Thread):
 def write_server_info(workspace, port, pid):
     os.makedirs(workspace.base, exist_ok=True)
     info = {"port": port, "pid": pid, "url": f"http://localhost:{port}",
-            "ts": now_iso()}
+            "root": os.path.realpath(workspace.root), "ts": now_iso()}
     workspace.write_json(os.path.join(workspace.base, "server.json"), info)
     return info
 
@@ -2007,6 +2015,174 @@ def server_info_is_stale(info, current_port=None):
     return False
 
 
+def server_info_age(info):
+    """Seconds since the server.json heartbeat ``ts``, or ``None`` if unparseable.
+
+    ``ts`` is written by :func:`now_iso` in local time. A live server refreshes
+    it every ``HEARTBEAT_SECS`` (see :class:`Heartbeat`); a corpse's ``ts`` stops
+    advancing. Returns ``None`` when ``ts`` is missing/malformed so callers fall
+    back to the pid probe rather than wrongly declaring a server stale.
+    """
+    ts = (info or {}).get("ts")
+    if not ts:
+        return None
+    try:
+        epoch = time.mktime(time.strptime(ts, "%Y-%m-%dT%H:%M:%S"))
+    except (ValueError, OverflowError):
+        return None
+    return max(0.0, time.time() - epoch)
+
+
+def server_is_live(info, root=None):
+    """True when ``info`` describes a server we should reuse, not replace.
+
+    Live when the recorded pid is alive AND — if a heartbeat ``ts`` is present —
+    it is fresh (< ``SERVER_STALE_SECS`` old) AND — if ``root`` is given and the
+    file records a ``root`` — the two paths match. Missing fields never *force*
+    "live": an unknown heartbeat or unknown root falls back to the pid probe, so
+    an old-schema ``server.json`` is treated conservatively. This is the
+    idempotency gate: a second launch reuses a live server instead of spawning a
+    duplicate (the root cause of the orphan pile-up).
+    """
+    if not info or not process_alive(info.get("pid")):
+        return False
+    age = server_info_age(info)
+    if age is not None and age > SERVER_STALE_SECS:
+        return False  # pid alive but heartbeat stopped — a hung/recycled corpse
+    if root is not None and info.get("root") is not None:
+        if os.path.realpath(root) != os.path.realpath(info.get("root")):
+            return False  # a live server, but serving a different project
+    return True
+
+
+def port_for_root(root):
+    """Stable preferred port derived from the project root.
+
+    Keeps a project's dashboard URL from drifting between runs and makes two
+    different projects rarely target the same default port (the cross-project
+    port-squatting seen in the wild). Uses a salt-free SHA-1 digest because
+    Python's built-in ``hash()`` is randomized per process.
+    """
+    digest = hashlib.sha1(os.path.realpath(root).encode("utf-8")).digest()
+    return DEFAULT_PORT + (digest[0] % PORT_SCAN)
+
+
+class Heartbeat(threading.Thread):
+    """Daemon thread that refreshes ``server.json``'s ``ts`` while the server is
+    alive, so a reader can tell a live server from a corpse whose pid the OS has
+    since recycled. Dies with the process; hiccups never take the server down.
+    """
+
+    def __init__(self, workspace, port, pid, interval=HEARTBEAT_SECS):
+        super().__init__(daemon=True)
+        self.workspace = workspace
+        self.port = port
+        self.pid = pid
+        self.interval = interval
+        self._stop = threading.Event()
+
+    def run(self):
+        while not self._stop.wait(self.interval):
+            try:
+                write_server_info(self.workspace, self.port, self.pid)
+            except Exception:
+                pass  # a heartbeat write must never crash the server
+
+    def stop(self):
+        self._stop.set()
+
+
+def _probe_health(port, timeout=0.3):
+    """``GET /health`` on localhost:``port``; parsed dict or ``None`` on any error."""
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def discover_servers(port_range=None):
+    """Probe the local port range for live ai-pathfinder servers.
+
+    Returns a list of ``{port, pid, root}`` for every port that answers
+    ``/health`` like one of ours. I/O; the *decision* of what to kill is the
+    pure :func:`gc_targets` so it stays unit-testable.
+    """
+    ports = port_range if port_range is not None else range(
+        DEFAULT_PORT, DEFAULT_PORT + PORT_SCAN)
+    found = []
+    for p in ports:
+        h = _probe_health(p)
+        if isinstance(h, dict) and h.get("ok") and "pid" in h:
+            found.append({"port": p, "pid": h.get("pid"), "root": h.get("root")})
+    return found
+
+
+def gc_targets(servers, root=None, exclude_pid=None):
+    """Pure: which discovered servers to reap.
+
+    Keeps a server when (``root`` given) its reported root matches (realpath),
+    always dropping ``exclude_pid`` (self). A server with no reported root is
+    *not* matched against a specific ``root`` — we never kill an unidentified
+    server on someone else's behalf.
+    """
+    rp = os.path.realpath(root) if root else None
+    out = []
+    for s in servers:
+        if exclude_pid is not None and s.get("pid") == exclude_pid:
+            continue
+        if rp is not None:
+            sr = s.get("root")
+            if not sr or os.path.realpath(sr) != rp:
+                continue
+        out.append(s)
+    return out
+
+
+def reap_servers(root=None, exclude_pid=None, port_range=None):
+    """Discover and SIGTERM orphan ai-pathfinder servers (best-effort).
+
+    Returns the list of ``{port, pid, root}`` actually signalled.
+    """
+    targets = gc_targets(discover_servers(port_range),
+                         root=root, exclude_pid=exclude_pid)
+    killed = []
+    for s in targets:
+        try:
+            os.kill(int(s["pid"]), signal.SIGTERM)
+            killed.append(s)
+        except (OSError, ValueError, TypeError):
+            pass
+    return killed
+
+
+def clear_server_info(workspace, pid):
+    """Remove ``server.json`` iff it still records ``pid`` — never clobber a
+    successor's pointer when shutting down."""
+    try:
+        info = read_server_info(workspace)
+        if info and info.get("pid") == pid:
+            os.remove(os.path.join(workspace.base, "server.json"))
+    except OSError:
+        pass
+
+
+def install_shutdown_cleanup(workspace, pid):
+    """On graceful exit (return, ``sys.exit``, SIGTERM/SIGINT) drop our own
+    ``server.json`` so the next launch never finds a corpse to trip over."""
+    atexit.register(clear_server_info, workspace, pid)
+
+    def _on_signal(signum, frame):
+        sys.exit(0)  # unwinds serve_forever -> finally + atexit run
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            pass  # not in the main thread / unsupported — atexit still covers us
+
+
 class FeedbackServer(ThreadingHTTPServer):
     """ThreadingHTTPServer that fails loudly when a port is already taken.
 
@@ -2054,21 +2230,56 @@ def main(argv=None):
     ap.add_argument("--no-browser", action="store_true", help="do not open a browser")
     ap.add_argument("--no-forward", action="store_true",
                     help="disable Langfuse telemetry forwarding")
+    ap.add_argument("--force", action="store_true",
+                    help="start a fresh server even if a live one already serves this root")
+    ap.add_argument("--gc", action="store_true",
+                    help="reap orphaned ai-pathfinder servers for this root and exit")
     args = ap.parse_args(argv)
 
     workspace = Workspace(args.root)
     os.makedirs(workspace.tasks, exist_ok=True)
     Handler.workspace = workspace
 
+    if args.gc:
+        killed = reap_servers(root=workspace.root, exclude_pid=os.getpid())
+        clear_server_info(workspace, (read_server_info(workspace) or {}).get("pid"))
+        if killed:
+            for s in killed:
+                print(f"ai-pathfinder gc: reaped pid={s['pid']} port={s['port']}",
+                      flush=True)
+        else:
+            print("ai-pathfinder gc: no orphan servers for this root", flush=True)
+        return
+
     prev_info = read_server_info(workspace)
 
-    httpd, port = bind(workspace, args.port)
+    # Idempotent launch: reuse a live server for this root instead of spawning a
+    # duplicate. This is the fix for the orphan pile-up — repeated launches (one
+    # per session) used to each bind a new port and leave the previous one
+    # running forever.
+    if not args.force and server_is_live(prev_info, workspace.root):
+        print("ai-pathfinder server: reusing live server at "
+              f"{prev_info.get('url')} (pid={prev_info.get('pid')}) — "
+              "already serving this project", flush=True)
+        return
+
+    # Stale/foreign/forced: best-effort reap any live orphan of *this* root, then
+    # bind on the project's stable preferred port (scan as fallback).
+    reap_servers(root=workspace.root, exclude_pid=os.getpid())
+
+    preferred = args.port or port_for_root(workspace.root)
+    httpd, port = bind(workspace, preferred)
     Handler.server_port = port
     if server_info_is_stale(prev_info, port):
         print("ai-pathfinder server: stale server.json "
               f"(prev pid={(prev_info or {}).get('pid')}, "
               f"port={(prev_info or {}).get('port')}) — replacing", flush=True)
     info = write_server_info(workspace, port, os.getpid())
+
+    # Keep server.json's heartbeat fresh and drop it on graceful shutdown, so the
+    # next launch can always tell a live server from a corpse.
+    Heartbeat(workspace, port, os.getpid()).start()
+    install_shutdown_cleanup(workspace, os.getpid())
 
     config = None if args.no_forward else _aipf.langfuse_config_from_env()
     if config:

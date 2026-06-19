@@ -25,6 +25,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 # Make scripts/ importable whether run from the repo root or as a module
@@ -208,6 +209,147 @@ class ReadServerInfoTest(unittest.TestCase):
         self.assertEqual(got["port"], 8517)
         self.assertEqual(got["pid"], os.getpid())
         self.assertEqual(got, info)
+
+    def test_server_info_records_root(self):
+        # ws2 adds `root` so a reader can tell which project a server serves.
+        info = server.write_server_info(self.ws, 8517, os.getpid())
+        self.assertEqual(info["root"], os.path.realpath(self.root))
+
+
+def _ts_ago(seconds):
+    """A now_iso()-formatted timestamp `seconds` in the past (local time)."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S",
+                         time.localtime(time.time() - seconds))
+
+
+class HealthRootTest(unittest.TestCase):
+    """`/health` self-reports the project `root` (None when no workspace)."""
+
+    def setUp(self):
+        self._prev_port = server.Handler.server_port
+        self._prev_ws = server.Handler.workspace
+        self.addCleanup(self._restore)
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _restore(self):
+        server.Handler.server_port = self._prev_port
+        server.Handler.workspace = self._prev_ws
+
+    def test_health_reports_root_when_workspace_set(self):
+        server.Handler.server_port = 8517
+        ch = _CapturingHandler("/health")
+        ch.workspace = server.Workspace(self.root)
+        status, body = ch.get()
+        self.assertEqual(status, 200)
+        data = json.loads(body.decode("utf-8"))
+        self.assertEqual(data["root"], os.path.realpath(self.root))
+
+    def test_health_root_none_without_workspace(self):
+        server.Handler.server_port = 8517
+        status, body = _CapturingHandler("/health").get()  # no .workspace
+        data = json.loads(body.decode("utf-8"))
+        self.assertIsNone(data["root"])
+
+
+class ServerInfoAgeTest(unittest.TestCase):
+    """`server_info_age` — seconds since the heartbeat ts, None when unparseable."""
+
+    def test_fresh_ts_is_young(self):
+        age = server.server_info_age({"ts": server.now_iso()})
+        self.assertIsNotNone(age)
+        self.assertLess(age, 5)
+
+    def test_old_ts_is_aged(self):
+        age = server.server_info_age({"ts": _ts_ago(3600)})
+        self.assertGreater(age, 3000)
+
+    def test_missing_ts_is_none(self):
+        self.assertIsNone(server.server_info_age({}))
+        self.assertIsNone(server.server_info_age(None))
+
+    def test_garbage_ts_is_none(self):
+        self.assertIsNone(server.server_info_age({"ts": "not-a-timestamp"}))
+
+
+class ServerIsLiveTest(unittest.TestCase):
+    """`server_is_live` — the idempotency gate: reuse vs replace."""
+
+    def test_live_pid_fresh_heartbeat_is_live(self):
+        info = {"pid": os.getpid(), "ts": server.now_iso()}
+        self.assertIs(server.server_is_live(info), True)
+
+    def test_live_pid_stale_heartbeat_is_dead(self):
+        # pid alive but the heartbeat stopped long ago -> a hung/recycled corpse.
+        info = {"pid": os.getpid(), "ts": _ts_ago(3600)}
+        self.assertIs(server.server_is_live(info), False)
+
+    def test_live_pid_without_ts_falls_back_to_pid(self):
+        # Old-schema server.json (no heartbeat) -> trust the pid probe.
+        info = {"pid": os.getpid()}
+        self.assertIs(server.server_is_live(info), True)
+
+    def test_dead_pid_is_not_live(self):
+        info = {"pid": _DEAD_PID, "ts": server.now_iso()}
+        self.assertIs(server.server_is_live(info), False)
+
+    def test_root_mismatch_is_not_live(self):
+        info = {"pid": os.getpid(), "ts": server.now_iso(), "root": "/some/other"}
+        self.assertIs(server.server_is_live(info, root="/my/project"), False)
+
+    def test_root_match_is_live(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        info = {"pid": os.getpid(), "ts": server.now_iso(),
+                "root": os.path.realpath(root)}
+        self.assertIs(server.server_is_live(info, root=root), True)
+
+    def test_empty_info_is_not_live(self):
+        self.assertIs(server.server_is_live(None), False)
+        self.assertIs(server.server_is_live({}), False)
+
+
+class PortForRootTest(unittest.TestCase):
+    """`port_for_root` — stable, in-range, varies across roots."""
+
+    def test_deterministic(self):
+        self.assertEqual(server.port_for_root("/a/b/c"),
+                         server.port_for_root("/a/b/c"))
+
+    def test_in_scan_range(self):
+        for root in ("/x", "/y/z", "/Users/gleb/Documents/pathfinder"):
+            p = server.port_for_root(root)
+            self.assertGreaterEqual(p, server.DEFAULT_PORT)
+            self.assertLess(p, server.DEFAULT_PORT + server.PORT_SCAN)
+
+    def test_varies_across_roots(self):
+        ports = {server.port_for_root(f"/proj/{i}") for i in range(50)}
+        self.assertGreater(len(ports), 1)  # not all roots collide on one port
+
+
+class GcTargetsTest(unittest.TestCase):
+    """`gc_targets` — pure selection of which discovered servers to reap."""
+
+    def _srv(self, pid, port, root=None):
+        return {"pid": pid, "port": port, "root": root}
+
+    def test_excludes_self(self):
+        servers = [self._srv(111, 8473), self._srv(222, 8474)]
+        out = server.gc_targets(servers, exclude_pid=111)
+        self.assertEqual([s["pid"] for s in out], [222])
+
+    def test_no_root_keeps_all_but_self(self):
+        servers = [self._srv(111, 8473, "/a"), self._srv(222, 8474, "/b")]
+        out = server.gc_targets(servers, exclude_pid=999)
+        self.assertEqual(len(out), 2)
+
+    def test_root_filter_keeps_only_matching(self):
+        root = "/Users/gleb/proj"
+        servers = [self._srv(111, 8473, os.path.realpath(root)),
+                   self._srv(222, 8474, "/other/proj"),
+                   self._srv(333, 8475, None)]  # unidentified -> never matched
+        out = server.gc_targets(servers, root=root)
+        self.assertEqual([s["pid"] for s in out], [111])
 
 
 if __name__ == "__main__":
