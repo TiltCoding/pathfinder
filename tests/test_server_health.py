@@ -130,6 +130,8 @@ class ProcessAliveTest(unittest.TestCase):
     def test_self_is_alive(self):
         self.assertIs(server.process_alive(os.getpid()), True)
 
+    @unittest.skipIf(os.name == "nt",
+                     "os.kill(pid,0) probe has different semantics on Windows")
     def test_dead_pid_is_not_alive(self):
         self.assertIs(server.process_alive(_DEAD_PID), False)
 
@@ -147,6 +149,8 @@ class ServerInfoStaleTest(unittest.TestCase):
     """`server_info_is_stale` — replace info whose pid is dead, whose port
     mismatches, or which carries no pid at all."""
 
+    @unittest.skipIf(os.name == "nt",
+                     "os.kill(pid,0) probe has different semantics on Windows")
     def test_dead_pid_is_stale(self):
         self.assertIs(
             server.server_info_is_stale({"pid": _DEAD_PID, "port": 8517}),

@@ -4,6 +4,60 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-17 — ci-cross-platform-tests (фича 1/8 очереди `improve-overall`, feat-1/cand-28)
+- **Что:** Оффлайн тест-сьют сделан **кросс-платформенным** + добавлен CI. Чинилась **непортируемость
+  тестов**, НЕ баги продукта — прод-код не тронут.
+  - `tests/test_worktree.py`: хелпер `_symlink_supported()` (проба `os.symlink` в tmp) + константа
+    `_SYMLINKS` + `@skipUnless` на 3 symlink-теста (skip **по реальной способности**, чтобы Developer
+    Mode/CI с поддержкой симлинков не глушить); `ListWorktreesPorcelainTest` строит пути от
+    `os.path.realpath(tempfile.mkdtemp())` и сравнивает через `os.path.abspath(...)` — фикс
+    `/repo/main` (POSIX-литерал) vs `C:\repo\main`.
+  - `tests/test_feed.py`: `newline=""` в фикстурах jsonl — CRLF→строго LF, иначе байтовый курсор
+    `_iter_lines_from` (`scripts/_aipf.py:381`) сбивается на лишнем `\r` под Windows.
+  - `tests/test_server_health.py`: `@skipIf(os.name == "nt")` на 2 dead-pid теста — на Windows
+    `os.kill(pid, 0)` даёт `OSError(WinError 87)`, не `ProcessLookupError`; продукт намеренно
+    консервативен (любой не-`ProcessLookupError` = «жив») — это **не трогали**, скипнули тест.
+  - `.github/workflows/ci.yml` (новый): matrix `os: [ubuntu/macos/windows-latest] × python: [3.11,3.12,3.13]`,
+    `on: [push, pull_request]`, `fail-fast: false`, единственный шаг
+    `python -m unittest discover -s tests` — stdlib-only, без `pip`.
+- **Зачем:** часть оффлайн-тестов падала на Windows из-за непортируемых допущений (POSIX-пути,
+  `\n`-фикстуры под байтовый курсор, разная pid-семантика, безусловные симлинки), и регрессии на
+  чужих ОС были невидимы — CI-матрицы не было. Теперь набор честно зелёный на 3×ОС × 3×Python.
+- **Источник:** очередь `/improve` (прогон `improve-overall`, кандидат `cand-28`), фича 1/8 (feat-1),
+  призма DX. Бриф: `.workflow/tasks/ci-cross-platform-tests/brief.md`.
+- **Доки:** `conventions.md` — секция «Тесты» дополнена под-разделами **«Кросс-платформенность тестов»**
+  (skip по реальной способности vs `os.name`; `skipIf(nt)` для pid-семантики; `newline=""` для jsonl;
+  пути от `tempfile`/`realpath` + `abspath`) и **«CI»** (матрица, stdlib-only без pip).
+- **ADR:** нет — это **конвенции тестов + стандартный CI**, не архитектурное решение. Паттерны
+  зафиксированы в `conventions.md`; новой развилки/инварианта продукта не вводилось (продукт не менялся).
+
+## 2026-06-17 — improve-overall (прогон `/improve`, аудит → очередь из 8 фич)
+- **Что обследовали:** сквозной аудит **всего приложения** ai-pathfinder через `/improve` по **7 призмам**
+  (UX/продукт, перформанс, надёжность, техдолг, DX, пробелы функциональности, a11y+безопасность). Код
+  проекта НЕ правился — `/improve` только обследует и ставит в очередь (механика — ADR-0012/0013/0014).
+- **Воронка:** рой 7 scout-аналитиков `wf-improver` → **46 находок** → дедуп оркестратором →
+  **35 кандидатов** `cand-1…cand-35` (`.workflow/tasks/improve-overall/candidates.md`, id стабильны) →
+  панель 3 vote (независимая оценка всего списка) → детерминированная агрегация
+  `score=(mean(imp)−0.5·mean(eff)−0.5·mean(rsk))·mean(conf)/3`, отброс `keep==0`, **топ-8**.
+- **Гейт:** человек отметил **все 8** как «Делаем» → очередь `.workflow/dispatch-queue.json`
+  (`mode:"sequential-feature"`, ADR-0014), по `brief.md` на фичу. `/improve` сам `/feature` не запускает.
+- **Очередь (8 фич, ранжированно, n · slug · призма · cand):**
+  1. `ci-cross-platform-tests` · DX · cand-28 — CI + кросс-платформенные тесты (7 тестов падают на Windows).
+  2. `approve-button-submit-guard` · UX · cand-1 — защита approve без submit.
+  3. `pause-polling-when-hidden` · perf · cand-13 — пауза поллинга при `document.hidden`.
+  4. `markdown-url-sanitize-xss` · security · cand-33 — блок `javascript:`-схем в md-ссылках.
+  5. `dev-py-cross-platform-runner` · DX · cand-29 — `dev.py` вместо POSIX-only Makefile.
+  6. `gate-ranking-visibility` · пробелы · cand-8 — строка рейтинга `votes[]` в карточках `feat-K`.
+  7. `actionbar-order-hint` · UX · cand-3 — хинт порядка Submit→Approve на actionbar.
+  8. `stdlib-invariant-lint-gate` · DX · cand-31 — `check_stdlib.py` + grep CDN.
+  > Эти 8 — **только в очереди**, НЕ реализованы. Реализация — отдельными `/feature`-прогонами.
+- **Повтор кейса draft.json-fallback:** человек нажал «Утвердить план», пропустив «Отправить» — выбор
+  всех 8 жил только в несабмиченном `draft.json` (вне `READABLE_FILES`). Оркестратор прочитал его
+  **напрямую с диска** (полон/однозначен) вместо переспроса — ровно сценарий, уже задокументированный
+  **уточнением к ADR-0013** (2026-06-15). Новый ADR не нужен: поведение покрыто, кейс просто встретился снова.
+- **План:** `.workflow/tasks/improve-overall/plan.md`
+- **ADR:** нет (следовали ADR-0012/0013/0014; архитектурно нового не решено).
+
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):
   `X-Content-Type-Options: nosniff` + строгий CSP **только на /mockup**. `scripts/server.py`: `_send`

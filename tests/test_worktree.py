@@ -39,6 +39,30 @@ import _aipf      # noqa: E402
 import worktree   # noqa: E402
 
 
+def _symlink_supported():
+    """Probe whether this platform can create symlinks (privilege-aware).
+
+    On Windows, ``os.symlink`` raises ``OSError`` (WinError 1314) without the
+    ``SeCreateSymbolicLink`` privilege, but succeeds under Developer Mode/admin —
+    so we probe the real capability rather than branching on ``os.name``.
+    """
+    tmp = tempfile.mkdtemp()
+    try:
+        target = os.path.join(tmp, "target")
+        link = os.path.join(tmp, "link")
+        open(target, "w").close()
+        os.symlink(target, link)
+        return True
+    except (OSError, NotImplementedError, AttributeError):
+        return False
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# Computed once at import time so the probe does not run per-test.
+_SYMLINKS = _symlink_supported()
+
+
 class BuildParserTest(unittest.TestCase):
     """`worktree.build_parser`: pure argparse wiring, no git involved."""
 
@@ -104,12 +128,14 @@ class EnsureWorkflowSymlinkTest(unittest.TestCase):
         self.link = os.path.join(self.wt_dir, ".workflow")
         self.target = _aipf.workflow_base(self.main_root)
 
+    @unittest.skipUnless(_SYMLINKS, "no symlink privilege on this platform")
     def test_creates_symlink(self):
         result = worktree._ensure_workflow_symlink(self.main_root, self.wt_dir)
         self.assertIn("symlink created", result)
         self.assertTrue(os.path.islink(self.link))
         self.assertEqual(os.path.realpath(self.link), self.target)
 
+    @unittest.skipUnless(_SYMLINKS, "no symlink privilege on this platform")
     def test_idempotent_second_call(self):
         # Key brief case: re-running `add` must not re-create or warn — the
         # existing correct symlink is recognised and left alone.
@@ -120,6 +146,7 @@ class EnsureWorkflowSymlinkTest(unittest.TestCase):
         self.assertTrue(os.path.islink(self.link))
         self.assertEqual(os.path.realpath(self.link), self.target)
 
+    @unittest.skipUnless(_SYMLINKS, "no symlink privilege on this platform")
     def test_foreign_symlink_warns_and_untouched(self):
         other = os.path.realpath(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, other, ignore_errors=True)
@@ -180,30 +207,36 @@ class ListWorktreesPorcelainTest(unittest.TestCase):
     No real git process is spawned.
     """
 
-    # Absolute paths so os.path.abspath() in the parser is a no-op (a relative
-    # ".." would be collapsed and confuse the path assertions).
-    PORCELAIN = (
-        "worktree /repo/main\n"
-        "HEAD abc123\n"
-        "branch refs/heads/main\n"
-        "\n"
-        "worktree /repo/pathfinder-worktrees/my-slug\n"
-        "HEAD def456\n"
-        "branch refs/heads/my-slug\n"
-    )
-
     def setUp(self):
+        # Build porcelain paths from a platform-valid root so os.path.abspath()
+        # in the parser (scripts/worktree.py:94) is a genuine no-op on any OS —
+        # a hardcoded POSIX literal like "/repo/main" becomes "C:\\repo\\main"
+        # under abspath() on Windows and breaks the equality checks.
+        self.root = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.main_path = os.path.join(self.root, "main")
+        self.slug_path = os.path.join(
+            self.root, "pathfinder-worktrees", "my-slug")
+        self.porcelain = (
+            "worktree {main}\n"
+            "HEAD abc123\n"
+            "branch refs/heads/main\n"
+            "\n"
+            "worktree {slug}\n"
+            "HEAD def456\n"
+            "branch refs/heads/my-slug\n"
+        ).format(main=self.main_path, slug=self.slug_path)
         self._orig_git = worktree._git
         self.addCleanup(setattr, worktree, "_git", self._orig_git)
 
     def test_parses_two_worktrees(self):
-        worktree._git = lambda *a, **k: (0, self.PORCELAIN, "")
-        entries = worktree.list_worktrees("/repo/main")
+        worktree._git = lambda *a, **k: (0, self.porcelain, "")
+        entries = worktree.list_worktrees(self.main_path)
         self.assertEqual(len(entries), 2)
-        self.assertEqual(entries[0]["path"], "/repo/main")
+        self.assertEqual(entries[0]["path"], os.path.abspath(self.main_path))
         self.assertEqual(entries[0]["branch"], "main")
         self.assertEqual(entries[0]["head"], "abc123")
-        self.assertEqual(entries[1]["path"], "/repo/pathfinder-worktrees/my-slug")
+        self.assertEqual(entries[1]["path"], os.path.abspath(self.slug_path))
         # `branch` is the short ref name (refs/heads/ stripped).
         self.assertEqual(entries[1]["branch"], "my-slug")
         self.assertEqual(entries[1]["head"], "def456")
