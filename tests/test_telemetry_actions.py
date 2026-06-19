@@ -10,6 +10,7 @@ Run with:
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -25,8 +26,32 @@ import _aipf  # noqa: E402
 import telemetry_hook  # noqa: E402
 
 
+# build_event resolves the task slug via active_slug(cwd, session_id); a tool/MCP
+# trace event is only emitted once a slug is known (it needs a telemetry.jsonl to
+# write to). These tests exercise the event-shaping logic, not slug resolution, so
+# we anchor every payload to an isolated `.workflow` root with one active task.
+# Without it the tests would silently depend on the developer's ambient
+# `.workflow/tasks/` and fail on a clean checkout (e.g. CI).
+_WF_ROOT = None
+
+
+def setUpModule():
+    global _WF_ROOT
+    _WF_ROOT = tempfile.mkdtemp()
+    active = os.path.join(_aipf.workflow_base(_WF_ROOT), "active.json")
+    os.makedirs(os.path.dirname(active), exist_ok=True)
+    with open(active, "w", encoding="utf-8") as f:
+        json.dump({"slug": "the-task"}, f)
+
+
+def tearDownModule():
+    if _WF_ROOT:
+        shutil.rmtree(_WF_ROOT, ignore_errors=True)
+
+
 def _start_event(payload):
     """Run build_event and return the single tool.start dict (or raise)."""
+    payload = {"cwd": _WF_ROOT, **payload}
     slug, ev = telemetry_hook.build_event(payload)
     events = ev if isinstance(ev, list) else [ev]
     for e in events:
