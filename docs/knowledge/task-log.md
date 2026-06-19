@@ -100,6 +100,16 @@
   `sys.executable` снимает зависимость от `make` и имени интерпретатора.
 - **Решения человека:** q1 — включить `lint`-стаб (forward-совместимо с feat-8); q2 — `test` прокидывает цели.
 - **Объём:** `Makefile` и `scripts/*` не тронуты (dev.py дополняет). ADR не нужен.
+## 2026-06-19 — gate-ranking-visibility (фича 6/8 из очереди `improve-overall`)
+- **Что:** Контракт-правка инструкций `/improve` (markdown): в `skills/improve/phases.md` (§PROPOSE)
+  и `skills/improve/dashboard-guide.md` (§SELECT GATE) добавлена **обязательная строка рейтинга** в
+  карточку `feat-K` — компактно `score X.XX · согласие N% · impact·effort·risk a·b·c` (числа, без
+  vote-note) из `state.json.votes[]`.
+- **Зачем:** `consensus.md:99` требует «legible ranking — not a black box», но контракт карточки этого
+  не закреплял — человек выбирал вслепую к уже посчитанным агрегатам. cand-8 из аудита.
+- **Решения человека:** q1 — компактная единая строка; q2 — без vote-note.
+- **Объём:** 0 правок `server.py`/`dashboard.html`/тестов — markdown в существующем поле `body`
+  (ADR-0013, бэкенд агностичен). Формат согласован с `consensus.md`. ADR не нужен.
 
 ## 2026-06-16 — mockup-security-headers (фича 8/8 — очередь `/improve` дренирована полностью)
 - **Что:** Defense-in-depth для `/mockup` (единственный путь с не-доверенным активным контентом):

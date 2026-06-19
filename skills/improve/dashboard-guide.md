@@ -83,7 +83,10 @@ existing `questions[kind:"choice"]` + `approve-plan` machinery with **zero edits
 - **One card + one choice per feature, sharing `id = feat-K`.** For each top-K candidate `K` write:
   - a `planBlocks[]` card `{ "id": "feat-K", "title": "<feature name>", "body": "<markdown>" }` whose
     body carries призма / проблема / предлагаемое изменение / объём·риск·impact / затронутые файлы
-    (clickable paths) — the rich context the human reads, and
+    (clickable paths) **plus an obligatory ranking line** from `state.json.votes[]` in the compact form
+    `score X.XX · согласие N% · impact·effort·risk a·b·c` (numbers only, no vote-note) — so the ranking
+    the orchestrator already computed is visible at the gate (**0 server edits** — it is just markdown in
+    the existing `body` field, per ADR-0013). This is the rich context the human reads, and
   - a `questions[]` entry `{ "id": "feat-K", "text": "<feature name>?", "kind": "choice",
     "options": ["Делаем", "Пропускаем"] }` — the binary pick.
   The shared `feat-K` id binds the card to its choice, and also routes comments/replies
