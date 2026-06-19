@@ -92,12 +92,17 @@
 - **Транскрипты.** Источник текста сообщений и чисел usage — JSONL-файлы CC в
   `~/.claude/projects/<proj>/...`. Читаются только UTF-8. Локация и формат — в области
   [areas/telemetry-tracing.md](areas/telemetry-tracing.md).
-- **Startup-контракт сервера и stale-детект.** На старте `main` пишет `<base>/server.json`
-  (`{port, pid, url, ts}`, `scripts/server.py:1615`) и выставляет `Handler.server_port` после `bind()`;
-  `GET /health` **self-report** отдаёт `{ok, pid, port}` (`scripts/server.py:181`). Прежний `server.json`
-  считается **stale** (`server_info_is_stale`, `:1660`), если pid мёртв (`process_alive`, `:1623`) или
-  порт не совпал, — тогда он безусловно перезаписывается. Контракт reuse для агента: переиспользовать
-  сервер **только** если `/health` отвечает И его `pid`/`port` совпадают с `server.json`, иначе поднять
-  новый (`skills/*/feedback-loop.md`). Так живой сервер отличается от трупа в файле.
+- **Startup-контракт сервера: singleton + heartbeat + stale-детект.** Запуск **идемпотентен**: `main`
+  читает прежний `server.json` и, если он описывает **живой** сервер для этого корня (`server_is_live`:
+  pid жив + свежий `ts`-heartbeat младше `SERVER_STALE_SECS` + совпал `root`), печатает `reusing live
+  server` и **выходит**, не поднимая второй — корневой фикс «завала осиротевших серверов» (см. ADR-0017).
+  Иначе — best-effort reap осиротевших серверов того же корня (`reap_servers`/`discover_servers` через
+  зонд `/health`) и bind на **стабильном порту** `port_for_root` (sha1 корня → `8473+`, скан как
+  fallback). Живой сервер раз в `HEARTBEAT_SECS` обновляет `ts` (демон-тред `Heartbeat`); труп с
+  переиспользованным ОС-pid выдаёт «застывший» `ts`. `server.json` теперь несёт `root`; `GET /health`
+  self-report — `{ok, pid, port, root}`. На штатном выходе (`return`/`sys.exit`/SIGTERM/SIGINT)
+  `install_shutdown_cleanup` удаляет **свой** `server.json` (`clear_server_info` — только если pid в
+  файле наш). Ручная уборка — `server.py --gc`. Контракт reuse в скиллах упростился: запуск можно просто
+  повторять (`skills/*/feedback-loop.md`).
 
-_updated: 2026-06-16_
+_updated: 2026-06-18_

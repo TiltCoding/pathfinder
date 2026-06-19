@@ -4,6 +4,26 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-18 — server-reliability (надёжность companion-сервера)
+- **Что:** Устранён «завал осиротевших серверов» дашборда (на машине жили 5+ `server.py` по 3–6 дней,
+  а `server.json` указывал на труп → симптом «сервер постоянно падает»).
+  - **Идемпотентный singleton:** `main()` переиспользует живой сервер для корня (`server_is_live`) и
+    выходит, не плодя дубликат; `--force` обходит (`scripts/server.py`).
+  - **Heartbeat:** демон-тред `Heartbeat` раз в `HEARTBEAT_SECS`(5с) обновляет `server.json.ts`;
+    `server_info_age`/`SERVER_STALE_SECS`(30с) ловят труп с переиспользованным ОС-pid.
+  - **Стабильный порт:** `port_for_root` = `8473 + sha1(realpath(root))[0] % 25` (скан — fallback).
+  - **Reap осиротевших:** `discover_servers` (зонд `/health`) + чистый `gc_targets` + `reap_servers`;
+    CLI `server.py --gc`. `server.json` и `/health` получили поле `root`.
+  - **Очистка на выходе:** `install_shutdown_cleanup` (atexit + SIGTERM/SIGINT) → `clear_server_info`
+    удаляет свой `server.json`.
+  - **Тесты:** +20 в `tests/test_server_health.py` (age/live/port/gc/health-root); вся сюита 147 зелёная.
+  - **Доки/контракты:** `architecture.md` §startup переписан; launch-секция в 4×`feedback-loop.md`
+    упрощена до «просто запускай — сервер дедуплицируется»; bump плагина `0.16.0 → 0.17.0`.
+- **Зачем:** дашборд — фундамент под все воркфлоу; ненадёжный сервер обесценивал фичи поверх него.
+  Лечили не «демонизировать сильнее» (серверы и так переживали сессию — `ppid 1`), а самодедупликацию
+  и самоуборку: один сервер на корень, стабильный URL, трупы не копятся.
+- **ADR:** `decisions/ADR-0017-server-singleton-heartbeat-stable-port.md`
+
 ## 2026-06-17 — ci-cross-platform-tests (фича 1/8 очереди `improve-overall`, feat-1/cand-28)
 - **Что:** Оффлайн тест-сьют сделан **кросс-платформенным** + добавлен CI. Чинилась **непортируемость
   тестов**, НЕ баги продукта — прод-код не тронут.
