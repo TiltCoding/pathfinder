@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ai-pathfinder — задача</title>
+<title>ai-pathfinder — task</title>
 <script>
   /* Тема: применяем ДО первой отрисовки (без вспышки/FOUC). Резолв продублирован —
      head-скрипт не видит функций из <body>. Два режима: ключ 'theme' = 'light'|'dark'
@@ -17,6 +17,18 @@
       document.documentElement.setAttribute("data-theme", resolved);
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "light");
+    }
+  })();
+  /* Язык: english-first. Резолв продублирован (head не видит <body>-функций). Ключ
+     'lang' = 'en'|'ru' (явный выбор/кэш глобальной настройки). Отсутствие/неизвестное =
+     жёсткий дефолт 'en' (без navigator.language). Источник истины — /settings.json,
+     подтягивается позже в initLang(); здесь — ранний <html lang> без FOUC. */
+  (function () {
+    try {
+      var l = localStorage.getItem("lang");
+      document.documentElement.setAttribute("lang", l === "ru" ? "ru" : "en");
+    } catch (e) {
+      document.documentElement.setAttribute("lang", "en");
     }
   })();
 </script>
@@ -364,6 +376,9 @@
                align-items: center; justify-content: center; font-size: 15px; line-height: 1;
                padding: 8px 11px; }
   .theme-btn:hover { border-color: var(--accent); }
+  /* язык: иконка-кнопка EN⇄RU рядом с темой (флип, образец #theme-btn); метка = ТЕКУЩИЙ язык */
+  .lang-btn { margin-left: auto; min-width: 44px; font-size: 13px; font-weight: 700; letter-spacing: .03em; }
+  .theme-btn + .theme-btn { margin-left: 0; }
 
   .changes-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 820px) { .changes-grid { grid-template-columns: 1fr; } }
@@ -477,16 +492,19 @@
 <body>
 <header class="top">
   <div class="top-inner">
-    <a class="hub-link" href="/hub">← Все запуски</a>
-    <h1 class="title" id="title">Задача</h1>
+    <a class="hub-link" href="/hub" id="hub-link">← All runs</a>
+    <h1 class="title" id="title">Task</h1>
     <span class="badge phase" id="phase">—</span>
     <span class="badge" id="iter"></span>
     <span class="status working" id="status"><span class="dot"></span><span id="status-text">…</span></span>
-    <button class="ghost theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему">
+    <button class="ghost theme-btn lang-btn" id="lang-btn" title="Toggle language" aria-label="Toggle language">
+      <span id="lang-label">EN</span>
+    </button>
+    <button class="ghost theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme">
       <span id="theme-icon">☀️</span>
     </button>
-    <button class="ghost" id="open-threads" hidden title="Перейти к ветке, ждущей ответа"></button>
-    <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
+    <button class="ghost" id="open-threads" hidden title="Jump to thread awaiting reply"></button>
+    <button class="ghost chat-toggle" id="btn-chat-toggle" title="Chat with agent">💬 <span id="chat-toggle-label">Chat</span><span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
   <div class="top-inner">
     <div class="progress" style="flex:1"><div id="progress-bar"></div></div>
@@ -494,55 +512,55 @@
   </div>
   <div class="top-inner"><div class="now-line" id="now-line" hidden></div></div>
   <div class="top-inner"><nav class="tabbar">
-    <button class="tab active" id="tab-work" data-tab="work">Рабочий процесс</button>
-    <button class="tab" id="tab-changes" data-tab="changes">Изменения</button>
-    <button class="tab" id="tab-docs" data-tab="docs">Документация</button>
-    <button class="tab" id="tab-trace" data-tab="trace">Трейсинг</button>
+    <button class="tab active" id="tab-work" data-tab="work">Workflow</button>
+    <button class="tab" id="tab-changes" data-tab="changes">Changes</button>
+    <button class="tab" id="tab-docs" data-tab="docs">Documentation</button>
+    <button class="tab" id="tab-trace" data-tab="trace">Tracing</button>
   </nav></div>
 </header>
 
 <main class="wrap" id="content">
-  <p class="empty">Загрузка…</p>
+  <p class="empty">Loading…</p>
 </main>
 
 <main class="wrap" id="changes" hidden>
-  <p class="empty">Загрузка изменений…</p>
+  <p class="empty">Loading changes…</p>
 </main>
 
 <main class="wrap wide" id="docs" hidden>
-  <p class="empty">Загрузка документации…</p>
+  <p class="empty">Loading documentation…</p>
 </main>
 
 <main class="wrap" id="trace" hidden>
-  <p class="empty">Загрузка трейсинга…</p>
+  <p class="empty">Loading tracing…</p>
 </main>
 
 <div id="sel-popover">
-  <textarea id="sel-input" rows="1" placeholder="Комментарий к выделенному…"></textarea>
+  <textarea id="sel-input" rows="1" placeholder="Comment on the selection…"></textarea>
   <div class="sel-row">
-    <span class="hint">Enter — отправить · Esc — отмена</span>
-    <button class="primary" id="sel-send">Отправить</button>
+    <span class="hint">Enter — send · Esc — cancel</span>
+    <button class="primary" id="sel-send">Send</button>
   </div>
 </div>
 
 <div class="actionbar" id="actionbar">
   <div class="actionbar-inner">
-    <div class="actionbar-hint">Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.</div>
-    <div class="queue">Очередь правок: <b id="queue-count">0</b></div>
-    <button class="ghost" id="btn-approve">Утвердить план</button>
-    <button class="primary" id="btn-submit" disabled>Отправить агенту на доработку</button>
+    <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
+    <div class="queue">Edit queue: <b id="queue-count">0</b></div>
+    <button class="ghost" id="btn-approve">Approve plan</button>
+    <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
   </div>
 </div>
 <aside class="chat-panel" id="chat-panel" hidden>
   <div class="chat-head">
-    <span>Чат с агентом</span>
-    <span class="chat-hint">стиринг на чекпоинтах</span>
-    <button class="chat-x" id="chat-close" title="Закрыть">✕</button>
+    <span>Chat with agent</span>
+    <span class="chat-hint">steering at checkpoints</span>
+    <button class="chat-x" id="chat-close" title="Close">✕</button>
   </div>
-  <div class="chat-log" id="chat-log"><p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p></div>
+  <div class="chat-log" id="chat-log"><p class="empty">No messages yet. Write to the agent — it will read and reply at the next checkpoint.</p></div>
   <div class="chat-input">
-    <textarea id="chat-text" rows="2" placeholder="Сообщение агенту… (Enter — отправить)"></textarea>
-    <button class="primary" id="chat-send">Отправить</button>
+    <textarea id="chat-text" rows="2" placeholder="Message to the agent… (Enter — send)"></textarea>
+    <button class="primary" id="chat-send">Send</button>
   </div>
 </aside>
 <div class="toast" id="toast"></div>
@@ -560,7 +578,9 @@ function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;"
 
 // Бейдж «ждёт» в заголовке вкладки (виден в фоне). Снимается возвратом title к baseTitle.
 function setTitleBadge(on){
-  document.title = on ? ("● ждёт — " + (lastData && lastData.title ? lastData.title : "задача")) : baseTitle;
+  const prefix = (lang === "ru") ? "● ждёт — " : "● awaiting — ";
+  const fallback = (lang === "ru") ? "задача" : "task";
+  document.title = on ? (prefix + (lastData && lastData.title ? lastData.title : fallback)) : baseTitle;
 }
 
 // --- тема: два режима (Светлая/Тёмная), переключатель — иконка-кнопка ---
@@ -572,12 +592,12 @@ const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
 function storedTheme(){ const s = localStorage.getItem("theme"); return (s === "light" || s === "dark") ? s : null; }
 function resolveTheme(){ return storedTheme() || (themeMql.matches ? "dark" : "light"); }
 function applyTheme(){
-  const t = resolveTheme();
-  document.documentElement.setAttribute("data-theme", t);
+  const th = resolveTheme();
+  document.documentElement.setAttribute("data-theme", th);
   const icon = $("#theme-icon");
-  if(icon) icon.textContent = t === "dark" ? "🌙" : "☀️";
+  if(icon) icon.textContent = th === "dark" ? "🌙" : "☀️";
   const btn = $("#theme-btn");
-  if(btn) btn.title = t === "dark" ? "Тёмная тема — переключить на светлую" : "Светлая тема — переключить на тёмную";
+  if(btn) btn.title = th === "dark" ? t("theme.toLight") : t("theme.toDark");
 }
 (function initTheme(){
   const btn = $("#theme-btn");
@@ -592,6 +612,485 @@ function applyTheme(){
   themeMql.addEventListener("change", () => { if(!storedTheme()) applyTheme(); });
   applyTheme();
 })();
+
+// --- i18n: english-first словарь + t(key) (образец темы, ADR-0015) ---
+// Плоские английские ключи. EN-значения — канонический glossary; RU — текущие строки.
+// Источник истины языка — глобальный /settings.json (b1); localStorage['lang'] — кэш и
+// общий ключ дашборд↔хаб. Дефолт — жёсткий 'en' (без navigator.language). Состояние
+// (lang) живёт в модульной переменной + <html lang>, вне #content/#trace-summary (sig-гард).
+// Динамические строки берутся из словаря на КАЖДОМ рендере → смена языка = повторный render.
+const STR = {
+  en: {
+    // header / tabs
+    "header.allRuns": "← All runs",
+    "header.task": "Task",
+    "header.toggleTheme": "Toggle theme",
+    "header.toggleLang": "Toggle language",
+    "theme.toLight": "Dark theme — switch to light",
+    "theme.toDark": "Light theme — switch to dark",
+    "header.chat": "Chat",
+    "header.chatWithAgent": "Chat with agent",
+    "header.jumpThreads": "Jump to thread awaiting reply",
+    "header.iteration": "iteration",        // + " N"
+    "header.awaitingInput": "awaiting your input",
+    "header.agentWorking": "agent working",
+    "header.now": "Now:",
+    "tab.work": "Workflow",
+    "tab.changes": "Changes",
+    "tab.docs": "Documentation",
+    "tab.trace": "Tracing",
+    // loading placeholders
+    "loading.work": "Loading…",
+    "loading.changes": "Loading changes…",
+    "loading.docs": "Loading documentation…",
+    "loading.trace": "Loading tracing…",
+    // popover / actionbar / chat panel
+    "pop.placeholder": "Comment on the selection…",
+    "pop.hint": "Enter — send · Esc — cancel",
+    "pop.send": "Send",
+    "actionbar.hint": "Mark features → Submit → Approve. No answer = Skip.",
+    "actionbar.queue": "Edit queue:",
+    "actionbar.approve": "Approve plan",
+    "actionbar.submit": "Send to agent for revision",
+    "chat.title": "Chat with agent",
+    "chat.subtitle": "steering at checkpoints",
+    "chat.close": "Close",
+    "chat.empty": "No messages yet. Write to the agent — it will read and reply at the next checkpoint.",
+    "chat.inputPlaceholder": "Message to the agent… (Enter — send)",
+    "chat.send": "Send",
+    // cards / sections
+    "card.summary": "Task summary",
+    "card.codebaseMap": "Codebase map",
+    "card.demo": "Solution demo",
+    "card.plan": "Plan",
+    "card.questions": "Open questions",
+    "card.workstreams": "Work-streams",
+    "card.ownAnswer": "Or your own answer:",
+    "card.ownAnswerPlaceholder": "Your own answer…",
+    "card.answerPlaceholder": "Your answer…",
+    "card.empty": "The agent hasn't populated the dashboard yet.",
+    // threads / status / age
+    "thread.who.agent": "agent",
+    "thread.who.you": "you",
+    "thread.needsReply": "needs your reply",
+    "thread.handled": "✓ handled by the agent",
+    "thread.replyPlaceholder": "Reply in this thread… (Enter — send)",
+    "thread.awaiting.one": "awaiting reply",       // «🔸 1 awaiting reply»
+    "thread.awaiting.many": "awaiting reply",      // «🔸 N awaiting reply»
+    "ws.todo": "to do",
+    "ws.in_progress": "in progress",
+    "ws.done": "done",
+    "ws.summary.done": "done",
+    "ws.summary.inProgress": "in progress",
+    "ws.summary.queued": "queued",
+    "age.s": "s ago",
+    "age.m": "m ago",
+    "age.h": "h ago",
+    // demo variant comment
+    "demo.commentLabel": "💬 Comment on this variant:",
+    "demo.commentPlaceholder": "Refine just this variant…",
+    "demo.commentSend": "Send",
+    "demo.open": "open ↗",
+    // toasts
+    "toast.answerSaved": "Answer saved",
+    "toast.sentToAgent": "Sent to agent",
+    "toast.sentBatch": "Sent to agent ✓ Batch #",   // + n
+    "toast.submitFirst": "Press Send first — otherwise the agent won't see your choice",
+    "toast.planApproved": "Plan approved ✓",
+    "toast.reviewRequested": "Requested ",          // + kind + suffix
+    "toast.reviewRequestedSuffix": " — the agent will run it at a checkpoint",
+    // notification
+    "notif.title": "Task awaiting reply",
+    "notif.body": "Open the dashboard",
+    // changes tab
+    "changes.notGit": "Not a git repository — file changes unavailable.",
+    "changes.noneBase": "No changes yet",          // + " compared to <code>…</code>." or "."
+    "changes.comparedTo": "compared to",
+    "changes.tracked": "Tracked only",
+    "changes.all": "All",
+    "changes.compared": "Compared to",
+    "changes.files": "files",
+    "changes.selectFile": "Select a file to see the diff.",
+    "changes.noFilesMode": "No files in this mode.",
+    "changes.changedFiles": "Changed files",
+    "changes.noDiff": "— no diff content —",
+    "changes.runCodeReview": "Run code-review",
+    "changes.runSecReview": "Run security-review",
+    "changes.reviewHint": "The agent will run the check at the next checkpoint",
+    "changes.reviewTitle": "Code & security review",
+    "changes.noReviews": "No review runs yet. They appear automatically in the VERIFY phase or via the button.",
+    "review.running": "running",
+    "review.done": "done",
+    "review.failed": "failed",
+    // documentation tab
+    "docs.notCreated": "The knowledge base hasn't been created yet. It will appear in",
+    "docs.notCreatedTail": "as work progresses (IMPLEMENT phase).",
+    "docs.search": "Search files…",
+    "docs.legend.doc": "doc",
+    "docs.legend.code": "code",
+    "docs.legend.touched": "in this task",
+    "docs.selectDoc": "Select a document in the tree or a graph node.",
+    "docs.codeFile": "This is a code file. The graph shows which documents reference it.",
+    "docs.loading": "Loading…",
+    "docs.loadFail": "Failed to load the file.",
+    "docs.noLinks": "No links to display",
+    // tracing tab — summary / feed
+    "trace.empty": "No tracing data yet — the summary appears once sub-agents finish.",
+    "trace.feedEmpty": "No actions yet — the feed fills as agents start calling tools.",
+    "trace.feedTitle": "Live action feed",
+    "trace.live": "live",
+    "trace.orchestrator": "orchestrator",
+    "trace.session": "session",
+    "trace.action.one": "action",
+    "trace.action.many": "actions",
+    "trace.running": "running",
+    "trace.noActions": "no actions",
+    "trace.agentMessages": "Agent messages",
+    "trace.msgsLoading": "messages loading…",
+    "trace.msgsPending": "messages still loading…",
+    "trace.msgsNone": "no messages.",
+    "trace.actsLoading": "actions loading…",
+    "trace.actsPending": "actions still loading…",
+    "trace.actsNone": "no actions.",
+    "trace.sessionSummary": "Session summary",
+    "trace.subagents": "Sub-agents",
+    "trace.stat.sessions": "sessions",
+    "trace.stat.subagents": "sub-agents",
+    "trace.stat.outTokens": "output tokens",
+    "trace.stat.totalTime": "total time",
+    "trace.stat.peakContext": "peak context",
+    "trace.stat.cost": "≈ cost",
+    "trace.byModel.tok": "tok",
+    "trace.byModel.agents": "ag.",
+    "trace.actions": "Actions",
+    "trace.showMore": "show more",        // «show more N →»
+    "trace.legend.tool": "tools",
+    "trace.legend.bash": "bash",
+    "trace.legend.mcp": "mcp",
+    "trace.legend.subtask": "sub-tasks",
+    "trace.legend.hook": "hooks",
+    "trace.status.running": "running…",
+    "trace.status.err": "err",
+    "trace.status.ok": "ok",
+    // tracing — agent card
+    "card.contextWin": "window context",
+    "card.tag.bg": "background",
+    "card.tag.fail": "error",
+    "card.tag.noTokens": "no tokens",
+    "card.task": "task:",
+    "card.metric.time": "time",
+    "card.metric.out": "output",
+    "card.metric.cacheHit": "cache hit",
+    "card.metric.cost": "≈ cost",
+    "card.outTok": "tok",
+    // tracing — timeline
+    "gantt.title": "Timeline · sub-agent parallelism",
+    "gantt.noStart": "No intervals with a known start time.",
+    "gantt.hiddenOne": "record without startTs hidden",
+    "gantt.hiddenMany": "records without startTs hidden",
+    "gantt.roles": "roles",
+    "gantt.running": "running",
+    "gantt.error": "error",
+    "gantt.phasesBg": "phases (background)",
+    "gantt.wholeRun": "Whole run",
+    "gantt.intervals": "intervals",
+    "gantt.upTo": "up to",
+    "gantt.inLargestPhase": "agents in the largest phase",
+    "gantt.tokens": "tokens",
+    "gantt.emptyWin": "No intervals in the selected window.",
+    "gantt.hintTop": "Top — <b>token production over time</b> (height = tokens/time, aggregated rate: for each agent rate = out/duration, summed over active). ",
+    "gantt.hintPhases": "Bands on top — <b>workflow phases</b> (background = phase, not bar colour). Drag along the band to select a window (double-click — whole run). ",
+    "gantt.hintWin": "Window ≈ <b>",          // + tokens + suffix
+    "gantt.hintWinSuffix": "</b> tokens.",
+    "gantt.tip.noDesc": "no description",
+    "gantt.tip.error": "error",
+    "gantt.tip.running": "running…",
+    "gantt.tip.phase": "phase",
+    "gantt.tip.offPhase": "off-phase",
+    "gantt.tip.start": "start",
+    "gantt.tip.dur": "dur.",
+    "gantt.tip.model": "model",
+    "gantt.tip.tokens": "tokens",
+    "gantt.tip.context": "context",
+    "gantt.tip.cost": "≈ cost",
+    "phase.offPhase": "off-phase",
+    "gantt.agShort": "ag",
+    // duration units (fmtDur / fmtDurH)
+    "dur.s": "s",
+    "dur.m": "m",
+    "dur.h": "h",
+  },
+  ru: {
+    "header.allRuns": "← Все запуски",
+    "header.task": "Задача",
+    "header.toggleTheme": "Сменить тему",
+    "header.toggleLang": "Сменить язык",
+    "theme.toLight": "Тёмная тема — переключить на светлую",
+    "theme.toDark": "Светлая тема — переключить на тёмную",
+    "header.chat": "Чат",
+    "header.chatWithAgent": "Чат с агентом",
+    "header.jumpThreads": "Перейти к ветке, ждущей ответа",
+    "header.iteration": "итерация",
+    "header.awaitingInput": "ждёт ваши правки",
+    "header.agentWorking": "агент работает",
+    "header.now": "Сейчас:",
+    "tab.work": "Рабочий процесс",
+    "tab.changes": "Изменения",
+    "tab.docs": "Документация",
+    "tab.trace": "Трейсинг",
+    "loading.work": "Загрузка…",
+    "loading.changes": "Загрузка изменений…",
+    "loading.docs": "Загрузка документации…",
+    "loading.trace": "Загрузка трейсинга…",
+    "pop.placeholder": "Комментарий к выделенному…",
+    "pop.hint": "Enter — отправить · Esc — отмена",
+    "pop.send": "Отправить",
+    "actionbar.hint": "Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.",
+    "actionbar.queue": "Очередь правок:",
+    "actionbar.approve": "Утвердить план",
+    "actionbar.submit": "Отправить агенту на доработку",
+    "chat.title": "Чат с агентом",
+    "chat.subtitle": "стиринг на чекпоинтах",
+    "chat.close": "Закрыть",
+    "chat.empty": "Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.",
+    "chat.inputPlaceholder": "Сообщение агенту… (Enter — отправить)",
+    "chat.send": "Отправить",
+    "card.summary": "Сводка задачи",
+    "card.codebaseMap": "Карта кодовой базы",
+    "card.demo": "Демо решения",
+    "card.plan": "План",
+    "card.questions": "Открытые вопросы",
+    "card.workstreams": "Work-streams",
+    "card.ownAnswer": "Или свой ответ:",
+    "card.ownAnswerPlaceholder": "Свой вариант ответа…",
+    "card.answerPlaceholder": "Ваш ответ…",
+    "card.empty": "Агент ещё не наполнил дашборд.",
+    "thread.who.agent": "агент",
+    "thread.who.you": "вы",
+    "thread.needsReply": "нужен ваш ответ",
+    "thread.handled": "✓ учтено агентом",
+    "thread.replyPlaceholder": "Ответить в этой ветке… (Enter — отправить)",
+    "thread.awaiting.one": "ждёт ответа",
+    "thread.awaiting.many": "ждут ответа",
+    "ws.todo": "к работе",
+    "ws.in_progress": "в работе",
+    "ws.done": "готово",
+    "ws.summary.done": "готово",
+    "ws.summary.inProgress": "в работе",
+    "ws.summary.queued": "в очереди",
+    "age.s": "с назад",
+    "age.m": "м назад",
+    "age.h": "ч назад",
+    "demo.commentLabel": "💬 Комментарий к этому варианту:",
+    "demo.commentPlaceholder": "Поправить именно этот вариант…",
+    "demo.commentSend": "Отправить",
+    "demo.open": "открыть ↗",
+    "toast.answerSaved": "Ответ сохранён",
+    "toast.sentToAgent": "Отправлено агенту",
+    "toast.sentBatch": "Отправлено агенту ✓ Пачка #",
+    "toast.submitFirst": "Сначала нажмите «Отправить» — иначе агент не увидит выбор",
+    "toast.planApproved": "План утверждён ✓",
+    "toast.reviewRequested": "Запрошен ",
+    "toast.reviewRequestedSuffix": " — агент запустит на чекпоинте",
+    "notif.title": "Задача ждёт ответа",
+    "notif.body": "Откройте дашборд",
+    "changes.notGit": "Это не git-репозиторий — изменения файлов недоступны.",
+    "changes.noneBase": "Пока нет изменений",
+    "changes.comparedTo": "относительно",
+    "changes.tracked": "Только tracked",
+    "changes.all": "Все",
+    "changes.compared": "Сравнение с",
+    "changes.files": "файлов",
+    "changes.selectFile": "Выберите файл, чтобы увидеть diff.",
+    "changes.noFilesMode": "Нет файлов в этом режиме.",
+    "changes.changedFiles": "Изменённые файлы",
+    "changes.noDiff": "— нет содержимого diff —",
+    "changes.runCodeReview": "Запустить code-review",
+    "changes.runSecReview": "Запустить security-review",
+    "changes.reviewHint": "Агент запустит проверку на ближайшем чекпоинте",
+    "changes.reviewTitle": "Ревью кода и безопасности",
+    "changes.noReviews": "Прогонов ревью ещё нет. Они появляются автоматически в фазе VERIFY или по кнопке.",
+    "review.running": "выполняется",
+    "review.done": "готово",
+    "review.failed": "ошибка",
+    "docs.notCreated": "База знаний ещё не создана. Она появится в",
+    "docs.notCreatedTail": "по мере работы (фаза IMPLEMENT).",
+    "docs.search": "Поиск по файлам…",
+    "docs.legend.doc": "документ",
+    "docs.legend.code": "код",
+    "docs.legend.touched": "в этой задаче",
+    "docs.selectDoc": "Выберите документ в дереве или узел графа.",
+    "docs.codeFile": "Это файл кода. Граф показывает, какие документы на него ссылаются.",
+    "docs.loading": "Загрузка…",
+    "docs.loadFail": "Не удалось загрузить файл.",
+    "docs.noLinks": "Нет связей для отображения",
+    "trace.empty": "Пока нет данных трейсинга — сводка появится, когда отработают сабагенты.",
+    "trace.feedEmpty": "Пока нет действий — лента наполнится, когда агенты начнут вызывать инструменты.",
+    "trace.feedTitle": "Живая лента действий",
+    "trace.live": "в реальном времени",
+    "trace.orchestrator": "оркестратор",
+    "trace.session": "сессия",
+    "trace.action.one": "действие",
+    "trace.action.many": "действий",
+    "trace.running": "идёт",
+    "trace.noActions": "нет действий",
+    "trace.agentMessages": "Сообщения агента",
+    "trace.msgsLoading": "сообщения загружаются…",
+    "trace.msgsPending": "сообщения ещё подгружаются…",
+    "trace.msgsNone": "сообщений нет.",
+    "trace.actsLoading": "действия загружаются…",
+    "trace.actsPending": "действия ещё подгружаются…",
+    "trace.actsNone": "действий нет.",
+    "trace.sessionSummary": "Сводка сессии",
+    "trace.subagents": "Сабагенты",
+    "trace.stat.sessions": "сессий",
+    "trace.stat.subagents": "сабагентов",
+    "trace.stat.outTokens": "выходных токенов",
+    "trace.stat.totalTime": "общее время",
+    "trace.stat.peakContext": "пиковый контекст",
+    "trace.stat.cost": "≈ стоимость",
+    "trace.byModel.tok": "ток",
+    "trace.byModel.agents": "аг.",
+    "trace.actions": "Действия",
+    "trace.showMore": "показать ещё",
+    "trace.legend.tool": "инструменты",
+    "trace.legend.bash": "bash",
+    "trace.legend.mcp": "mcp",
+    "trace.legend.subtask": "под-задачи",
+    "trace.legend.hook": "hooks",
+    "trace.status.running": "идёт…",
+    "trace.status.err": "err",
+    "trace.status.ok": "ok",
+    "card.contextWin": "контекст окна",
+    "card.tag.bg": "фон",
+    "card.tag.fail": "ошибка",
+    "card.tag.noTokens": "нет токенов",
+    "card.task": "задача:",
+    "card.metric.time": "время",
+    "card.metric.out": "выход",
+    "card.metric.cacheHit": "кэш-хит",
+    "card.metric.cost": "≈ стоимость",
+    "card.outTok": "ток",
+    "gantt.title": "Таймлайн · параллелизм сабагентов",
+    "gantt.noStart": "Нет интервалов с известным временем старта.",
+    "gantt.hiddenOne": "запись без startTs скрыта",
+    "gantt.hiddenMany": "записей без startTs скрыто",
+    "gantt.roles": "роли",
+    "gantt.running": "идёт",
+    "gantt.error": "ошибка",
+    "gantt.phasesBg": "фазы (фон)",
+    "gantt.wholeRun": "Весь прогон",
+    "gantt.intervals": "интервалов",
+    "gantt.upTo": "до",
+    "gantt.inLargestPhase": "аг в крупнейшей фазе",
+    "gantt.tokens": "токенов",
+    "gantt.emptyWin": "В выбранном окне нет интервалов.",
+    "gantt.hintTop": "Верх — <b>производство токенов во времени</b> (высота = токены/время, агрегированный темп: для каждого агента rate = out/длительность, суммарно по активным). ",
+    "gantt.hintPhases": "Полосы сверху — <b>фазы workflow</b> (фон = фаза, не цвет бара). Тяните по полосе, чтобы выбрать окно (двойной клик — весь прогон). ",
+    "gantt.hintWin": "В окне ≈ <b>",
+    "gantt.hintWinSuffix": "</b> токенов.",
+    "gantt.tip.noDesc": "без описания",
+    "gantt.tip.error": "ошибка",
+    "gantt.tip.running": "идёт…",
+    "gantt.tip.phase": "фаза",
+    "gantt.tip.offPhase": "вне фазы",
+    "gantt.tip.start": "старт",
+    "gantt.tip.dur": "длит.",
+    "gantt.tip.model": "модель",
+    "gantt.tip.tokens": "токены",
+    "gantt.tip.context": "контекст",
+    "gantt.tip.cost": "≈ стоим.",
+    "phase.offPhase": "вне фазы",
+    "gantt.agShort": "аг",
+    "dur.s": "с",
+    "dur.m": "м",
+    "dur.h": "ч",
+  },
+};
+let lang = (function(){ const l = localStorage.getItem("lang"); return l === "ru" ? "ru" : "en"; })();
+function t(key){
+  const d = STR[lang] || STR.en;
+  if(d[key] != null) return d[key];
+  if(STR.en[key] != null) return STR.en[key];   // фолбэк на en, затем — на сам ключ
+  return key;
+}
+function storedLang(){ const l = localStorage.getItem("lang"); return (l === "en" || l === "ru") ? l : null; }
+function resolveLang(){ return storedLang() || "en"; }   // жёсткий en-дефолт (без navigator.language)
+// Проставляет <html lang>, контрол (метка = ТЕКУЩИЙ язык, как в макете v1) и статичные строки шапки/чата/actionbar.
+function applyLang(){
+  lang = resolveLang();
+  document.documentElement.setAttribute("lang", lang);
+  const lbl = $("#lang-label"); if(lbl) lbl.textContent = lang.toUpperCase();
+  const lb = $("#lang-btn");
+  if(lb) lb.title = lang === "ru" ? "Switch to English" : "Switch to Russian";
+  applyStaticStrings();
+}
+// Статика вне рендер-функций (узлы, существующие в разметке). Динамику рисует render()/renderTrace и пр.
+function applyStaticStrings(){
+  const set = (sel, val, attr) => { const el = $(sel); if(el){ if(attr) el.setAttribute(attr, val); else el.textContent = val; } };
+  set("#hub-link", t("header.allRuns"));
+  set("#theme-btn", t("header.toggleTheme"), "title"); set("#theme-btn", t("header.toggleTheme"), "aria-label");
+  set("#btn-chat-toggle", t("header.chatWithAgent"), "title");
+  set("#chat-toggle-label", t("header.chat"));
+  set("#tab-work", t("tab.work")); set("#tab-changes", t("tab.changes"));
+  set("#tab-docs", t("tab.docs")); set("#tab-trace", t("tab.trace"));
+  set("#sel-input", t("pop.placeholder"), "placeholder");
+  set("#sel-popover .hint", t("pop.hint"));
+  set("#sel-send", t("pop.send"));
+  set(".actionbar-hint", t("actionbar.hint"));
+  set("#btn-approve", t("actionbar.approve"));
+  set("#btn-submit", t("actionbar.submit"));
+  set("#chat-text", t("chat.inputPlaceholder"), "placeholder");
+  set("#chat-send", t("chat.send"));
+  set("#chat-close", t("chat.close"), "title");
+  // queue-label «Edit queue:» — переписываем сохраняя <b id="queue-count">
+  const q = $(".queue"); if(q){ const c = q.querySelector("#queue-count"); q.textContent = t("actionbar.queue") + " "; if(c) q.appendChild(c); }
+  // chat-head: «Chat with agent» + подсказка
+  const ch = $(".chat-head"); if(ch){ const t1 = ch.querySelector("span"); if(t1 && !t1.classList.contains("chat-hint")) t1.textContent = t("chat.title"); const hint = ch.querySelector(".chat-hint"); if(hint) hint.textContent = t("chat.subtitle"); }
+}
+(function initLang(){
+  applyLang();
+  const btn = $("#lang-btn");
+  if(btn){
+    btn.addEventListener("click", () => {
+      const next = lang === "ru" ? "en" : "ru";
+      localStorage.setItem("lang", next);
+      applyLang();
+      pushLang(next);     // глобально: пишем в /settings.json (меняется кросс-страница)
+      relangAll();        // перерисовка всех динамических зон под новый язык
+    });
+  }
+  syncLang();   // источник истины — /settings.json (b1); подтягиваем при старте
+})();
+// синхронизация языка с глобальной настройкой (b1): при старте и периодически,
+// чтобы смена языка в хабе подхватывалась уже открытым дашбордом (кросс-страница).
+function syncLang(){
+  fetch("/settings.json").then(r => r.ok ? r.json() : null).then(s => {
+    if(!s) return;
+    const sl = (s.lang === "en" || s.lang === "ru") ? s.lang : "en";
+    if(sl !== resolveLang()){ localStorage.setItem("lang", sl); applyLang(); relangAll(); }
+    else { localStorage.setItem("lang", sl); }   // закрепляем кэш даже если совпало
+  }).catch(() => {});
+}
+// POST глобальной настройки (best-effort; контракт b1: {"lang": ...} без slug)
+function pushLang(l){
+  try { fetch("/settings", { method:"POST", body: JSON.stringify({ lang: l }) }).catch(() => {}); } catch(e){}
+}
+// Перерисовать все динамические зоны под текущий язык (строки берутся из словаря на каждом рендере).
+function relangAll(){
+  if(lastData) rerender();
+  setTitleBadge((lastData && (lastData.status === "awaiting-batch")) || false);
+  if(lastChanges && (lastChanges.files || lastChanges.notGit !== undefined || lastChanges.base)) renderChanges(lastChanges, lastReviews);
+  // сбрасываем sig/empty-кэш, чтобы пере-локализовать и заполненные, и пустые зоны трейсинга
+  const sh = $("#trace-feed"); if(sh) sh.dataset.empty = "";
+  const sum = $("#trace-summary"); if(sum) sum.dataset.empty = "";
+  // gantt skeleton (title + legend) is built only when its sig changes; clear it so
+  // a language switch re-localizes the timeline title and legend, not just the bars.
+  const gh = $("#trace-gantt"); if(gh) gh.dataset.sig = "";
+  if(lastTrace && (lastTrace.agents || []).length){ lastTraceSig = ""; lastFeedSig = ""; renderTraceSummary(); renderFeed(); }
+  if(kbData) renderDocs();
+  renderChat();
+}
 
 // --- markdown -> html (GFM: headings h1-h4, ul/ol, table, blockquote, hr, code, bold, italic, links) ---
 function md(src){
@@ -815,23 +1314,23 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("sh
 // ----- rendering -----
 function render(data, replies){
   lastData = data; lastReplies = replies;
-  $("#title").textContent = data.title || "Задача";
+  $("#title").textContent = data.title || t("header.task");
   $("#phase").textContent = data.phase || "—";
-  $("#iter").textContent = data.iteration ? ("итерация " + data.iteration) : "";
+  $("#iter").textContent = data.iteration ? (t("header.iteration") + " " + data.iteration) : "";
   const st = $("#status"), stt = $("#status-text");
   // детект перехода в awaiting — только по фронту (анти-спам: первый render задаёт базовый статус
   // без сигнала, поэтому уже-awaiting задача при открытии вкладки не уведомляет даже свёрнутой)
   const enter = prevStatus !== null && prevStatus !== "awaiting-batch" && data.status === "awaiting-batch";
   prevStatus = data.status;
   if((data.status||"working") === "awaiting-batch"){
-    st.className="status awaiting"; stt.textContent="ждёт ваши правки";
+    st.className="status awaiting"; stt.textContent=t("header.awaitingInput");
     // фоновой сигнал: браузер-уведомление при переходе + бейдж в заголовке вкладки (грейсфул)
     if(enter && document.hidden && "Notification" in window && Notification.permission === "granted"){
-      try { new Notification("Задача ждёт ответа", {body: data.title || "Откройте дашборд"}); } catch(e){}
+      try { new Notification(t("notif.title"), {body: data.title || t("notif.body")}); } catch(e){}
     }
     setTitleBadge(true);
   } else {
-    st.className="status working"; stt.textContent="агент работает";
+    st.className="status working"; stt.textContent=t("header.agentWorking");
     setTitleBadge(false);
   }
   $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
@@ -850,10 +1349,10 @@ function render(data, replies){
   const threadsByAnchor = anchoredThreads();
 
   let h = "";
-  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock, threadsByAnchor));
-  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock, threadsByAnchor));
+  if(data.summary) h += card(t("card.summary"), region("summary", md(data.summary), repliesByBlock, threadsByAnchor));
+  if(data.codebaseMap) h += card(t("card.codebaseMap"), region("codebaseMap", md(data.codebaseMap), repliesByBlock, threadsByAnchor));
 
-  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock, threadsByAnchor));
+  if(data.demo && (data.demo.variants||[]).length) h += card(t("card.demo"), renderDemo(data.demo, repliesByBlock, threadsByAnchor));
 
   if((data.planBlocks||[]).length){
     let b = "";
@@ -866,7 +1365,7 @@ function render(data, replies){
         ${regionFooter(blk.id, repliesByBlock, threadsByAnchor)}
       </div>`;
     }
-    h += card("План", b);
+    h += card(t("card.plan"), b);
   }
 
   if((data.questions||[]).length){
@@ -881,18 +1380,18 @@ function render(data, replies){
         const opts = item.options.map(o =>
           `<label class="opt"><input type="radio" name="q-${esc(item.id)}" value="${esc(o)}" ${ans&&ans.text===o?"checked":""}> ${esc(o)}</label>`).join("");
         input = opts + `<div class="own-answer">
-          <span class="own-lbl">Или свой ответ:</span>
-          <textarea data-answer="${esc(item.id)}" placeholder="Свой вариант ответа…">${esc(ownText)}</textarea>
+          <span class="own-lbl">${esc(t("card.ownAnswer"))}</span>
+          <textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.ownAnswerPlaceholder"))}">${esc(ownText)}</textarea>
         </div>`;
       } else {
-        input = `<textarea data-answer="${esc(item.id)}" placeholder="Ваш ответ…">${esc(ans?ans.text:"")}</textarea>`;
+        input = `<textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.answerPlaceholder"))}">${esc(ans?ans.text:"")}</textarea>`;
       }
       q += `<div class="question ${ans?'answered':''}" data-question="${esc(item.id)}" data-kind="${esc(item.kind||'open')}">
         <div class="q-text">${esc(item.text)}</div>${input}
-        ${reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")}
+        ${reps.map(r=>`<div class="reply"><div class="who">${esc(t("thread.who.agent"))}</div>${md(r.text)}</div>`).join("")}
       </div>`;
     }
-    h += card("Открытые вопросы", q);
+    h += card(t("card.questions"), q);
   }
 
   if((data.workstreams||[]).length){
@@ -900,11 +1399,11 @@ function render(data, replies){
     for(const ws of data.workstreams){
       w += `<div class="ws"><span class="chip ${ws.status||'todo'}">${labelWs(ws.status)}</span><span>${esc(ws.title||"")}</span></div>`;
     }
-    h += card("Work-streams", w);
+    h += card(t("card.workstreams"), w);
   }
 
   const __snap = captureActiveInput();
-  $("#content").innerHTML = h || `<p class="empty">Агент ещё не наполнил дашборд.</p>`;
+  $("#content").innerHTML = h || `<p class="empty">${esc(t("card.empty"))}</p>`;
   wireBlocks();
   restoreActiveInput(__snap);
   updateQueue();
@@ -922,8 +1421,8 @@ function render(data, replies){
   if(otBtn){
     if(openAnchors.length){
       otBtn.hidden = false;
-      const verb = openAnchors.length === 1 ? "ждёт" : "ждут";
-      otBtn.textContent = "🔸 " + openAnchors.length + " " + verb + " ответа";
+      const phrase = openAnchors.length === 1 ? t("thread.awaiting.one") : t("thread.awaiting.many");
+      otBtn.textContent = "🔸 " + openAnchors.length + " " + phrase;
       otBtn.onclick = () => {
         const first = document.querySelector('#content .thread-open');
         if(first) first.scrollIntoView({ behavior:"smooth", block:"center" });
@@ -937,9 +1436,9 @@ function nowAge(ts){
   return Math.max(0, (Date.now() - t) / 1000);
 }
 function fmtAge(sec){
-  if(sec < 60) return Math.round(sec) + "с назад";
-  if(sec < 3600) return Math.round(sec/60) + "м назад";
-  return Math.round(sec/3600) + "ч назад";
+  if(sec < 60) return Math.round(sec) + t("age.s");
+  if(sec < 3600) return Math.round(sec/60) + t("age.m");
+  return Math.round(sec/3600) + t("age.h");
 }
 function renderNow(data){
   const el = $("#now-line"); if(!el) return;
@@ -949,7 +1448,7 @@ function renderNow(data){
   const age = nowAge(data.nowAt);
   const stale = age != null && age > 90;
   el.classList.toggle("stale", stale);
-  el.innerHTML = "Сейчас: <b>" + esc(now) + "</b>" + (age != null && !stale ? " · " + esc(fmtAge(age)) : "");
+  el.innerHTML = esc(t("header.now")) + " <b>" + esc(now) + "</b>" + (age != null && !stale ? " · " + esc(fmtAge(age)) : "");
 }
 function wsCounts(list){
   const c = { done:0, in_progress:0, todo:0, total:(list||[]).length };
@@ -966,7 +1465,7 @@ function renderWsSummary(data){
   el.innerHTML =
     '<span class="bar"><i class="done" style="width:' + pct(c.done) + '%"></i>' +
     '<i class="in_progress" style="width:' + pct(c.in_progress) + '%"></i></span>' +
-    '<span><b>' + c.done + '/' + c.total + '</b> готово · ' + c.in_progress + ' в работе · ' + c.todo + ' в очереди</span>';
+    '<span><b>' + c.done + '/' + c.total + '</b> ' + esc(t("ws.summary.done")) + ' · ' + c.in_progress + ' ' + esc(t("ws.summary.inProgress")) + ' · ' + c.todo + ' ' + esc(t("ws.summary.queued")) + '</span>';
 }
 // Bucket chat messages that carry an `anchor` into per-anchor threads (ordered as stored).
 function anchoredThreads(){
@@ -978,8 +1477,8 @@ function threadTurns(msgs){
   let html = "";
   for(const m of msgs){
     const quote = m.quote ? '<div class="th-quote">' + esc(m.quote) + '</div>' : "";
-    const needs = (m.role === "agent" && m.needsAnswer) ? ' <span class="th-needs">нужен ваш ответ</span>' : "";
-    const who = (m.role === "agent" ? "агент" : "вы") + needs;
+    const needs = (m.role === "agent" && m.needsAnswer) ? ' <span class="th-needs">' + esc(t("thread.needsReply")) + '</span>' : "";
+    const who = (m.role === "agent" ? esc(t("thread.who.agent")) : esc(t("thread.who.you"))) + needs;
     const text = m.role === "agent" ? md(m.text) : esc(m.text);
     html += '<div class="th-turn ' + (m.role === "agent" ? "agent" : "human") + '">' +
             quote + '<div class="th-who">' + who + '</div><div class="th-text">' + text + '</div></div>';
@@ -988,7 +1487,7 @@ function threadTurns(msgs){
   const last = msgs[msgs.length - 1];
   const hadHuman = msgs.some(x => x.role === "human");
   if(last && last.role === "agent" && !last.needsAnswer && hadHuman){
-    html += '<div class="th-status">✓ учтено агентом</div>';
+    html += '<div class="th-status">' + esc(t("thread.handled")) + '</div>';
   }
   return html;
 }
@@ -1021,8 +1520,8 @@ function regionFooter(anchor, repliesByBlock, threadsByAnchor){
   const reps = (repliesByBlock||{})[anchor] || [];        // legacy replies.json (kept for back-compat)
   const msgs = (threadsByAnchor||{})[anchor] || [];
   const thread = msgs.length ? `<div class="thread">${threadTurns(msgs)}</div>` : "";
-  const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="Ответить в этой ветке… (Enter — отправить)"></textarea></div>`;
-  return reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")
+  const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="${esc(t("thread.replyPlaceholder"))}"></textarea></div>`;
+  return reps.map(r=>`<div class="reply"><div class="who">${esc(t("thread.who.agent"))}</div>${md(r.text)}</div>`).join("")
        + thread + input;
 }
 function cmtCard(d){
@@ -1041,15 +1540,15 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
     // caption (when present) stays select-to-commentable, but footer is rendered once below
     const cap = vr.caption ? `<div class="region" data-anchor="${esc(vr.id)}"><div class="md">${md(vr.caption)}</div></div>` : "";
     const comment = `<div class="v-comment">
-        <span class="own-lbl">💬 Комментарий к этому варианту:</span>
-        <textarea data-comment-variant="${esc(vr.id)}" placeholder="Поправить именно этот вариант…"></textarea>
-        <div class="v-comment-row"><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">Отправить</button></div>
+        <span class="own-lbl">${esc(t("demo.commentLabel"))}</span>
+        <textarea data-comment-variant="${esc(vr.id)}" placeholder="${esc(t("demo.commentPlaceholder"))}"></textarea>
+        <div class="v-comment-row"><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">${esc(t("demo.commentSend"))}</button></div>
       </div>`;
     v += `<div class="variant ${sel?'sel':''}" data-variant="${esc(vr.id)}">
       <label class="variant-head">
         <input type="radio" name="demo-${esc(sid)}" value="${esc(vr.id)}" data-demo-select="${esc(sid)}" ${sel?"checked":""}>
         <span class="v-title">${esc(vr.title||vr.id)}</span>
-        <a class="open" href="${url}" target="_blank" rel="noopener">открыть ↗</a>
+        <a class="open" href="${url}" target="_blank" rel="noopener">${esc(t("demo.open"))}</a>
       </label>
       <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
       <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor)}</div>
@@ -1058,7 +1557,7 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
   const intro = demo.intro ? `<div class="md demo-intro">${md(demo.intro)}</div>` : "";
   return intro + `<div class="variants">${v}</div>`;
 }
-function labelWs(s){ return {todo:"к работе", in_progress:"в работе", done:"готово"}[s||"todo"] || s; }
+function labelWs(s){ return {todo:t("ws.todo"), in_progress:t("ws.in_progress"), done:t("ws.done")}[s||"todo"] || s; }
 
 // ----- interactions -----
 function wireBlocks(){
@@ -1137,7 +1636,7 @@ function rerender(){ if(lastData) render(lastData, lastReplies || { replies: [] 
 async function saveAnswer(qid, val){
   if(!val || !val.trim()) return;
   await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"answer", questionId:qid, text: val.trim() }) });
-  await loadDraft(); toast("Ответ сохранён");
+  await loadDraft(); toast(t("toast.answerSaved"));
 }
 async function removeDraft(id){
   await api("/draft/remove", { method:"POST", body: JSON.stringify({ slug:SLUG, id }) });
@@ -1241,13 +1740,13 @@ async function saveVariantComment(variantId, value, ta){
 }
 // One path for every anchored turn (select-to-comment, variant comment, thread reply).
 async function postAnchored(anchor, text, quote){
-  const t = (text || "").trim();
-  if(!t || !anchor) return;
-  const body = { slug:SLUG, anchor, text:t, phase:(lastData&&lastData.phase)||"" };
+  const txt = (text || "").trim();
+  if(!txt || !anchor) return;
+  const body = { slug:SLUG, anchor, text:txt, phase:(lastData&&lastData.phase)||"" };
   if(quote) body.quote = quote;
   await api("/chat", { method:"POST", body: JSON.stringify(body) });
   await chatTick();
-  toast("Отправлено агенту");
+  toast(t("toast.sentToAgent"));
 }
 
 // action bar
@@ -1255,18 +1754,18 @@ $("#btn-submit").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(!draftItems.length) return;
   const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
-  if(r.ok){ draftItems = []; rerender(); toast("Отправлено агенту ✓ Пачка #" + r.submission); }
+  if(r.ok){ draftItems = []; rerender(); toast(t("toast.sentBatch") + r.submission); }
 };
 $("#btn-approve").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(draftItems.length){
-    toast("Сначала нажмите «Отправить» — иначе агент не увидит выбор");
+    toast(t("toast.submitFirst"));
     const sb = $("#btn-submit");
     if(sb){ sb.classList.remove("flash"); void sb.offsetWidth; sb.classList.add("flash"); setTimeout(() => sb.classList.remove("flash"), 1200); }
     return;
   }
   await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
-  toast("План утверждён ✓");
+  toast(t("toast.planApproved"));
 };
 
 // ----- tabs + trace -----
@@ -1325,11 +1824,11 @@ function renderChanges(ch, rv){
   let reviewHtml = renderReviews(rv);
 
   if(ch.notGit){
-    $("#changes").innerHTML = reviewHtml + `<p class="empty">Это не git-репозиторий — изменения файлов недоступны.</p>`;
+    $("#changes").innerHTML = reviewHtml + `<p class="empty">${esc(t("changes.notGit"))}</p>`;
     return;
   }
   if(!files.length){
-    $("#changes").innerHTML = reviewHtml + `<p class="empty">Пока нет изменений${ch.base?` относительно <code>${esc(ch.base.slice(0,8))}</code>`:""}.</p>`;
+    $("#changes").innerHTML = reviewHtml + `<p class="empty">${esc(t("changes.noneBase"))}${ch.base?` ${esc(t("changes.comparedTo"))} <code>${esc(ch.base.slice(0,8))}</code>`:""}.</p>`;
     return;
   }
   // toggle "только tracked / все": untracked === true means new 0-byte/untracked noise.
@@ -1339,20 +1838,20 @@ function renderChanges(ch, rv){
 
   const tree = buildFileTree(visible);
   const treeHtml = (tree.children || []).map(c => renderChangeTree(c, 0)).join("")
-    || `<p class="empty" style="font-size:12px;margin:6px">Нет файлов в этом режиме.</p>`;
+    || `<p class="empty" style="font-size:12px;margin:6px">${esc(t("changes.noFilesMode"))}</p>`;
 
-  const lang = selectedFile ? langFromPath(selectedFile) : "";
+  const dlang = selectedFile ? langFromPath(selectedFile) : "";
   const diff = selectedFile
-    ? `<div class="diff">${renderDiff(selectedDiff, lang)}</div>`
-    : `<p class="empty">Выберите файл, чтобы увидеть diff.</p>`;
+    ? `<div class="diff">${renderDiff(selectedDiff, dlang)}</div>`
+    : `<p class="empty">${esc(t("changes.selectFile"))}</p>`;
 
   const head = `<div class="changes-head">
-      ${ch.base ? `<span class="base">Сравнение с <code>${esc(ch.base.slice(0,8))}</code> · ${visible.length} файлов</span>` : ""}
+      ${ch.base ? `<span class="base">${esc(t("changes.compared"))} <code>${esc(ch.base.slice(0,8))}</code> · ${visible.length} ${esc(t("changes.files"))}</span>` : ""}
       <span class="seg" id="changes-seg">
-        <button data-all="0" class="${changesShowAll?'':'on'}">Только tracked</button><button data-all="1" class="${changesShowAll?'on':''}">Все</button>
+        <button data-all="0" class="${changesShowAll?'':'on'}">${esc(t("changes.tracked"))}</button><button data-all="1" class="${changesShowAll?'on':''}">${esc(t("changes.all"))}</button>
       </span>
     </div>`;
-  $("#changes").innerHTML = reviewHtml + card("Изменённые файлы", head + `<div class="changes-grid">
+  $("#changes").innerHTML = reviewHtml + card(t("changes.changedFiles"), head + `<div class="changes-grid">
       <div class="filetree">${treeHtml}</div>
       ${diff}
     </div>`);
@@ -1427,7 +1926,7 @@ function statLetter(s){ return {added:"A",modified:"M",deleted:"D",renamed:"R"}[
 
 // b8: render a unified diff with line-number gutter + sign column, syntax-highlighting code lines.
 function renderDiff(text, lang){
-  if(!text) return `<pre><span class="dl meta">— нет содержимого diff —</span></pre>`;
+  if(!text) return `<pre><span class="dl meta">${esc(t("changes.noDiff"))}</span></pre>`;
   let oldLn = 0, newLn = 0;
   const rows = String(text).split("\n").map(ln => {
     // meta / hunk lines are never highlighted
@@ -1455,13 +1954,13 @@ function renderDiff(text, lang){
 function renderReviews(rv){
   const runs = (rv && rv.runs) || [];
   const btns = `<div class="review-bar">
-    <button class="ghost" id="btn-codereview">Запустить code-review</button>
-    <button class="ghost" id="btn-secreview">Запустить security-review</button>
-    <span class="muted" style="font-size:12px">Агент запустит проверку на ближайшем чекпоинте</span>
+    <button class="ghost" id="btn-codereview">${esc(t("changes.runCodeReview"))}</button>
+    <button class="ghost" id="btn-secreview">${esc(t("changes.runSecReview"))}</button>
+    <span class="muted" style="font-size:12px">${esc(t("changes.reviewHint"))}</span>
   </div>`;
   let body;
   if(!runs.length){
-    body = btns + `<p class="empty">Прогонов ревью ещё нет. Они появляются автоматически в фазе VERIFY или по кнопке.</p>`;
+    body = btns + `<p class="empty">${esc(t("changes.noReviews"))}</p>`;
   } else {
     const cards = runs.slice().reverse().map(run => {
       const findings = (run.findings || []).map(f =>
@@ -1480,13 +1979,13 @@ function renderReviews(rv){
     }).join("");
     body = btns + cards;
   }
-  return card("Ревью кода и безопасности", body);
+  return card(t("changes.reviewTitle"), body);
 }
-function statusLabel(s){ return {running:"выполняется",done:"готово",failed:"ошибка"}[s] || s || "готово"; }
+function statusLabel(s){ return {running:t("review.running"),done:t("review.done"),failed:t("review.failed")}[s] || s || t("review.done"); }
 
 async function triggerReview(kind){
   await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"run-"+kind }) });
-  toast("Запрошен " + kind + " — агент запустит на чекпоинте");
+  toast(t("toast.reviewRequested") + kind + t("toast.reviewRequestedSuffix"));
 }
 // delegated handlers for review buttons (re-rendered each tick)
 $("#changes").addEventListener("click", e => {
@@ -1578,7 +2077,7 @@ function feedLanes(){
   lanes.forEach(g => {
     g.actions.sort((a,b) => (ep(a.startTs)||0) - (ep(b.startTs)||0) || a.order - b.order);
     g.firstTs = g.actions.length ? ep(g.actions[0].startTs) : null;
-    g.label = g.key === "orchestrator" ? "оркестратор" : (g.role || g.key);
+    g.label = g.key === "orchestrator" ? t("trace.orchestrator") : (g.role || g.key);
   });
   // orchestrator last, agents ordered by first activity
   return [...lanes.values()].sort((a,b) => {
@@ -1614,7 +2113,7 @@ function feedActionRow(m, t0){
   const rel = (m.startTs != null && t0 != null) ? Math.max(0, (ep(m.startTs)||0) - t0) : null;
   const tcell = rel == null ? "" : fmtDur(rel);
   const dur = m.running
-    ? `<span class="feed-dur run">идёт…</span>`
+    ? `<span class="feed-dur run">${esc(t("trace.status.running"))}</span>`
     : `<span class="feed-dur">${fmtDur(m.startTs!=null&&m.endTs!=null ? (ep(m.endTs)-ep(m.startTs)) : null)}</span>`;
   const cls = (m.running ? "running" : (m.ok === false ? "err" : "")) + " " + type;
   return `<div class="feed-row ${cls}" data-span="${esc(m.spanId)}">
@@ -1633,16 +2132,16 @@ function feedAgentSection(g){
   const rows = g.actions.map(m => feedActionRow(m, t0)).join("");
   const color = roleColor(g.label);
   const sub = g.key === "orchestrator"
-    ? (g.session ? `сессия ${esc(String(g.session).slice(0,8))}` : "")
+    ? (g.session ? `${esc(t("trace.session"))} ${esc(String(g.session).slice(0,8))}` : "")
     : "";
-  const meta = `${g.count} ${g.count===1?"действие":"действий"}${g.running?" · идёт":""}`;
+  const meta = `${g.count} ${g.count===1?t("trace.action.one"):t("trace.action.many")}${g.running?" · "+t("trace.running"):""}`;
   const msgOpen = expandedSpans.has(g.key);
   const md_state = feedMsgs.get(g.key);
   let msgBlock = "";
   if(msgOpen){
-    if(!md_state || md_state.loading){ msgBlock = `<div class="feed-empty">сообщения загружаются…</div>`; }
-    else if(md_state.pending){ msgBlock = `<div class="feed-empty">сообщения ещё подгружаются…</div>`; }
-    else if(!md_state.messages || !md_state.messages.length){ msgBlock = `<div class="feed-empty">сообщений нет.</div>`; }
+    if(!md_state || md_state.loading){ msgBlock = `<div class="feed-empty">${esc(t("trace.msgsLoading"))}</div>`; }
+    else if(md_state.pending){ msgBlock = `<div class="feed-empty">${esc(t("trace.msgsPending"))}</div>`; }
+    else if(!md_state.messages || !md_state.messages.length){ msgBlock = `<div class="feed-empty">${esc(t("trace.msgsNone"))}</div>`; }
     else {
       msgBlock = `<div class="feed-msgs">` + md_state.messages.map(msg =>
         `<div class="feed-msg"><span class="feed-t">+${esc(fmtDur(msg.relMs))}</span><div class="md">${md(msg.text||"")}</div></div>`
@@ -1657,8 +2156,8 @@ function feedAgentSection(g){
       <span class="feed-agent-meta">${esc(meta)}</span>
     </div>
     <div class="feed-body">
-      <div class="feed-timeline">${rows || `<div class="feed-empty">нет действий</div>`}</div>
-      <div class="feed-msgbtn ${msgOpen?"open":""}"><span class="feed-mcaret">▸</span>Сообщения агента</div>
+      <div class="feed-timeline">${rows || `<div class="feed-empty">${esc(t("trace.noActions"))}</div>`}</div>
+      <div class="feed-msgbtn ${msgOpen?"open":""}"><span class="feed-mcaret">▸</span>${esc(t("trace.agentMessages"))}</div>
       ${msgBlock}
     </div>
   </div>`;
@@ -1675,7 +2174,7 @@ function renderFeed(){
   const lanes = feedLanes();
   if(!lanes.length){
     if(feed.dataset.empty !== "1"){
-      feed.innerHTML = card("Живая лента действий", `<p class="empty">Пока нет действий — лента наполнится, когда агенты начнут вызывать инструменты.</p>`);
+      feed.innerHTML = card(t("trace.feedTitle"), `<p class="empty">${esc(t("trace.feedEmpty"))}</p>`);
       feed.dataset.empty = "1"; lastFeedSig = "";
     }
     return;
@@ -1688,9 +2187,9 @@ function renderFeed(){
   if(sig === lastFeedSig && feed.dataset.empty === "0") return;
   lastFeedSig = sig;
   feed.dataset.empty = "0";
-  const live = `<span class="feed-live"><span class="feed-dot"></span>в реальном времени</span>`;
+  const live = `<span class="feed-live"><span class="feed-dot"></span>${esc(t("trace.live"))}</span>`;
   const sections = lanes.map(feedAgentSection).join("");
-  feed.innerHTML = `<section class="card">${live}<h2>Живая лента действий</h2>${sections}</section>`;
+  feed.innerHTML = `<section class="card">${live}<h2>${esc(t("trace.feedTitle"))}</h2>${sections}</section>`;
 }
 
 // Lazily load agent messages for a lane (spanId or "orchestrator"/role).
@@ -1802,10 +2301,10 @@ $("#trace").addEventListener("click", e => {
 });
 
 function fmtTok(n){ if(n==null) return "—"; if(n<1000) return ""+n; if(n<1e6) return (n/1000).toFixed(n<10000?1:0)+"k"; return (n/1e6).toFixed(2)+"M"; }
-function fmtDur(ms){ if(ms==null) return "—"; const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60), r=s%60; return r?`${m}м ${r}с`:`${m}м`; }
+function fmtDur(ms){ if(ms==null) return "—"; const s=Math.round(ms/1000); if(s<60) return s+t("dur.s"); const m=Math.floor(s/60), r=s%60; return r?`${m}${t("dur.m")} ${r}${t("dur.s")}`:`${m}${t("dur.m")}`; }
 // fmtDur c часами — для оси/тултипа таймлайна на длинных прогонах (fmtDur часы не умеет).
 function fmtDurH(ms){ if(ms==null) return "—"; let s=Math.round(ms/1000); const h=Math.floor(s/3600); s-=h*3600; const m=Math.floor(s/60); s-=m*60;
-  if(h) return m?`${h}ч ${m}м`:`${h}ч`; if(m) return s?`${m}м ${s}с`:`${m}м`; return s+"с"; }
+  if(h) return m?`${h}${t("dur.h")} ${m}${t("dur.m")}`:`${h}${t("dur.h")}`; if(m) return s?`${m}${t("dur.m")} ${s}${t("dur.s")}`:`${m}${t("dur.m")}`; return s+t("dur.s"); }
 function fmtUsd(v){ if(v==null) return "—"; return "≈$"+(v<0.01?v.toFixed(4):v.toFixed(2)); }
 function fmtPct(v){ return v==null?"—":v+"%"; }
 function clock(ts){ const d=new Date(ts); return String(d.getUTCHours()).padStart(2,"0")+":"+String(d.getUTCMinutes()).padStart(2,"0"); }
@@ -1816,7 +2315,7 @@ function roleKey(r){ return (r||"").split(":").pop().replace(/^wf-/,""); }
 function roleLabel(r){ const k=roleKey(r); return k==="general-purpose"?"general":k; }
 const ROLE_COLORS = {
   explorer:"#0ea5e9", planner:"#8b5cf6", coder:"#10b981", reviewer:"#f59e0b",
-  documenter:"#ec4899", "оркестратор":"#64748b", Explore:"#06b6d4", "general-purpose":"#64748b"
+  documenter:"#ec4899", "оркестратор":"#64748b", orchestrator:"#64748b", Explore:"#06b6d4", "general-purpose":"#64748b"
 };
 function roleColor(r){ const k=roleKey(r); if(ROLE_COLORS[k]) return ROLE_COLORS[k];
   let h=0; for(const c of k) h=(h*31+c.charCodeAt(0))%360; return `hsl(${h} 58% 46%)`; }
@@ -1827,8 +2326,10 @@ const PHASE_META = {
   ELABORATE: {label:"ELABORATE", bg:"var(--ph-elaborate)", line:"var(--ph-elaborate-line)"},
   IMPLEMENT: {label:"IMPLEMENT", bg:"var(--ph-implement)", line:"var(--ph-implement-line)"},
   VERIFY:    {label:"VERIFY",    bg:"var(--ph-verify)",    line:"var(--ph-verify-line)"},
-  [PHASE_NONE]: {label:"вне фазы", bg:"var(--ph-none)",    line:"var(--ph-none-line)"},
+  [PHASE_NONE]: {label:"off-phase", lkey:"phase.offPhase", bg:"var(--ph-none)",    line:"var(--ph-none-line)"},
 };
+// фаза-лейбл: канонические имена фаз — как есть; «вне фазы» — локализуем через lkey.
+function phaseLabel(m){ return m && m.lkey ? t(m.lkey) : (m ? m.label : ""); }
 const PHASE_ORDER = ["EXPLORE","ELABORATE","IMPLEMENT","VERIFY",PHASE_NONE];
 function ep(ts){ const v = Date.parse(ts||""); return isNaN(v)?null:v; }
 
@@ -1862,7 +2363,7 @@ function renderTraceSummary(){
   const tr = lastTrace;
   const agents = tr.agents || [];
   if(!agents.length){
-    if(summary.dataset.empty !== "1"){ summary.innerHTML = `<p class="empty">Пока нет данных трейсинга — сводка появится, когда отработают сабагенты.</p>`; summary.dataset.empty = "1"; gantt.innerHTML = ""; gantt.dataset.sig = ""; lastTraceSig = ""; }
+    if(summary.dataset.empty !== "1"){ summary.innerHTML = `<p class="empty">${esc(t("trace.empty"))}</p>`; summary.dataset.empty = "1"; gantt.innerHTML = ""; gantt.dataset.sig = ""; lastTraceSig = ""; }
     return;
   }
   const subs = agents.filter(a => a.kind === "subagent");
@@ -1893,15 +2394,15 @@ function renderTraceSummary(){
 
   // --- summary ---
   const byModel = Object.entries(T.byModel || {})
-    .map(([m,d]) => `${esc(m)}: ${fmtTok(d.out)} ток · ${fmtUsd(d.costUsd)} · ${d.agents} аг.`).join(" · ");
-  let h = card("Сводка сессии", `
+    .map(([m,d]) => `${esc(m)}: ${fmtTok(d.out)} ${t("trace.byModel.tok")} · ${fmtUsd(d.costUsd)} · ${d.agents} ${t("trace.byModel.agents")}`).join(" · ");
+  let h = card(t("trace.sessionSummary"), `
     <div class="stats">
-      ${stat(tr.sessions ? tr.sessions.length : 0, "сессий")}
-      ${stat(T.agents||0, "сабагентов")}
-      ${stat(fmtTok(T.out), "выходных токенов")}
-      ${stat(fmtDur(T.durationMs), "общее время")}
-      ${stat(fmtTok(T.contextPeak), "пиковый контекст")}
-      ${stat(fmtUsd(T.costUsd), "≈ стоимость")}
+      ${stat(tr.sessions ? tr.sessions.length : 0, t("trace.stat.sessions"))}
+      ${stat(T.agents||0, t("trace.stat.subagents"))}
+      ${stat(fmtTok(T.out), t("trace.stat.outTokens"))}
+      ${stat(fmtDur(T.durationMs), t("trace.stat.totalTime"))}
+      ${stat(fmtTok(T.contextPeak), t("trace.stat.peakContext"))}
+      ${stat(fmtUsd(T.costUsd), t("trace.stat.cost"))}
     </div>${byModel?`<div class="bymodel">${byModel}</div>`:""}`);
 
   // --- timeline (gantt) renders into its own stable #trace-gantt container above (see renderGantt) ---
@@ -1915,31 +2416,31 @@ function renderTraceSummary(){
     body += `<div class="phase-h">${esc(p)}</div>`;
     subs.filter(a => (a.phase||"—") === p).forEach(a => body += agentCard(a, tr.window));
   });
-  h += card("Сабагенты", body);
+  h += card(t("trace.subagents"), body);
 
   summary.innerHTML = h;
 }
 
 // Legend chips counting actions by type (textual/unicode glyphs, no CDN).
 const ACT_TYPE_META = {
-  tool:    { label: "инструменты", glyph: "🔧", c: "var(--t-tool)" },
-  bash:    { label: "bash",        glyph: "⌨",  c: "var(--t-bash)" },
-  mcp:     { label: "mcp",         glyph: "🔌", c: "var(--t-mcp)" },
-  subtask: { label: "под-задачи",  glyph: "🧩", c: "var(--t-subtask)" },
-  hook:    { label: "hooks",       glyph: "⚙",  c: "var(--t-hook)" },
+  tool:    { lkey: "trace.legend.tool",    glyph: "🔧", c: "var(--t-tool)" },
+  bash:    { lkey: "trace.legend.bash",    glyph: "⌨",  c: "var(--t-bash)" },
+  mcp:     { lkey: "trace.legend.mcp",     glyph: "🔌", c: "var(--t-mcp)" },
+  subtask: { lkey: "trace.legend.subtask", glyph: "🧩", c: "var(--t-subtask)" },
+  hook:    { lkey: "trace.legend.hook",    glyph: "⚙",  c: "var(--t-hook)" },
 };
 function actLegend(counts){
   const chips = ["tool","bash","mcp","subtask","hook"]
-    .filter(t => (counts && counts[t]) > 0)
-    .map(t => { const meta = ACT_TYPE_META[t];
-      return `<span class="lchip"><span class="ldot" style="background:${meta.c}"></span>${meta.glyph} ${counts[t]}</span>`; })
+    .filter(ty => (counts && counts[ty]) > 0)
+    .map(ty => { const meta = ACT_TYPE_META[ty];
+      return `<span class="lchip"><span class="ldot" style="background:${meta.c}"></span>${meta.glyph} ${esc(t(meta.lkey))} ${counts[ty]}</span>`; })
     .join("");
   return chips ? `<div class="legend">${chips}</div>` : "";
 }
 function actStatusChip(status){
-  if(status === "running") return `<span class="run-status running">идёт…</span>`;
-  if(status === "error")   return `<span class="run-status failed">err</span>`;
-  return `<span class="run-status done">ok</span>`;
+  if(status === "running") return `<span class="run-status running">${esc(t("trace.status.running"))}</span>`;
+  if(status === "error")   return `<span class="run-status failed">${esc(t("trace.status.err"))}</span>`;
+  return `<span class="run-status done">${esc(t("trace.status.ok"))}</span>`;
 }
 // One chronological action row inside a post-mortem card (single timeline, colour-typed by type).
 function actRow(a){
@@ -1957,23 +2458,23 @@ function actRow(a){
 // Render the "Действия" sub-section body for a card (legend + chronological timeline + "показать ещё").
 function cardActionsBody(spanId){
   const st = cardActions.get(spanId);
-  if(!st || st.loading) return `<div class="feed-empty">действия загружаются…</div>`;
-  if(st.pending) return `<div class="feed-empty">действия ещё подгружаются…</div>`;
+  if(!st || st.loading) return `<div class="feed-empty">${esc(t("trace.actsLoading"))}</div>`;
+  if(st.pending) return `<div class="feed-empty">${esc(t("trace.actsPending"))}</div>`;
   const acts = st.actions || [];
-  if(!acts.length) return `<div class="feed-empty">действий нет.</div>`;
+  if(!acts.length) return `<div class="feed-empty">${esc(t("trace.actsNone"))}</div>`;
   const limit = cardActionLimit.get(spanId) || CARD_ACTIONS_STEP;
   const shown = acts.slice(0, limit);
   const rows = shown.map(actRow).join("");
   const rest = acts.length - shown.length;
-  const more = rest > 0 ? `<div class="act-more" data-card-more="${esc(spanId)}">показать ещё ${rest > CARD_ACTIONS_STEP ? CARD_ACTIONS_STEP : rest} →</div>` : "";
+  const more = rest > 0 ? `<div class="act-more" data-card-more="${esc(spanId)}">${esc(t("trace.showMore"))} ${rest > CARD_ACTIONS_STEP ? CARD_ACTIONS_STEP : rest} →</div>` : "";
   return actLegend(st.counts) + `<div class="act-timeline">${rows}</div>` + more;
 }
 // Render the "Сообщения агента" sub-section body for a card (reuses /trace/messages + md()).
 function cardMsgsBody(spanId){
   const st = cardMsgs.get(spanId);
-  if(!st || st.loading) return `<div class="feed-empty">сообщения загружаются…</div>`;
-  if(st.pending) return `<div class="feed-empty">сообщения ещё подгружаются…</div>`;
-  if(!st.messages || !st.messages.length) return `<div class="feed-empty">сообщений нет.</div>`;
+  if(!st || st.loading) return `<div class="feed-empty">${esc(t("trace.msgsLoading"))}</div>`;
+  if(st.pending) return `<div class="feed-empty">${esc(t("trace.msgsPending"))}</div>`;
+  if(!st.messages || !st.messages.length) return `<div class="feed-empty">${esc(t("trace.msgsNone"))}</div>`;
   return `<div class="feed-msgs">` + st.messages.map(msg =>
     `<div class="feed-msg"><span class="feed-t">+${esc(fmtDur(msg.relMs))}</span><div class="md">${md(msg.text||"")}</div></div>`
   ).join("") + `</div>`;
@@ -2054,13 +2555,13 @@ function renderGantt(host, subs, tr){
   if(!gHasWin || gBs < T0 || gBe > T1 || gBe - gBs < 1){ gBs = T0; gBe = T1; gHasWin = false; }
 
   if(!items.length){
-    host.innerHTML = card("Таймлайн · параллелизм сабагентов",
-      `<p class="empty">Нет интервалов с известным временем старта.${skipped?` (${skipped} запись без startTs скрыта)`:""}</p>`);
+    host.innerHTML = card(t("gantt.title"),
+      `<p class="empty">${esc(t("gantt.noStart"))}${skipped?` (${skipped} ${esc(skipped===1?t("gantt.hiddenOne"):t("gantt.hiddenMany"))})`:""}</p>`);
     return;
   }
 
   // каркас (структура из mockups/v3.html, адаптирована к живому card())
-  host.innerHTML = card("Таймлайн · параллелизм сабагентов", `
+  host.innerHTML = card(t("gantt.title"), `
     <div class="legend g-legend" id="g-legend"></div>
     <div class="legend ph g-legend" id="g-legend-ph"></div>
     <p class="sub" id="g-ovsub"></p>
@@ -2088,26 +2589,26 @@ function tokTotalWin(){
 function legendGantt(){
   const leg = $("#g-legend", gGanttHost); if(!leg) return;
   const roles = [...new Set(gItems.map(x => roleKey(x.a.role)))];
-  leg.innerHTML = `<span class="legtitle">роли</span>`+
+  leg.innerHTML = `<span class="legtitle">${esc(t("gantt.roles"))}</span>`+
     roles.map(k => `<span class="lchip"><span class="ldot" style="background:${ROLE_COLORS[k]||roleColor(k)}"></span>${esc(k==="general-purpose"?"general":k)}</span>`).join("")+
-    `<span class="lchip"><span class="ldot run"></span>идёт</span>`+
-    `<span class="lchip"><span class="ldot err"></span>ошибка</span>`;
+    `<span class="lchip"><span class="ldot run"></span>${esc(t("gantt.running"))}</span>`+
+    `<span class="lchip"><span class="ldot err"></span>${esc(t("gantt.error"))}</span>`;
   const legPh = $("#g-legend-ph", gGanttHost);
-  legPh.innerHTML = `<span class="legtitle">фазы (фон)</span>`+
+  legPh.innerHTML = `<span class="legtitle">${esc(t("gantt.phasesBg"))}</span>`+
     gPhases.map(r => { const m = PHASE_META[r.p] || PHASE_META[PHASE_NONE];
-      return `<span class="lchip"><span class="lbar" style="background:${m.bg};border-color:${m.line}"></span>${esc(m.label)} · ${r.n}</span>`; }).join("");
+      return `<span class="lchip"><span class="lbar" style="background:${m.bg};border-color:${m.line}"></span>${esc(phaseLabel(m))} · ${r.n}</span>`; }).join("");
   const totOut = gItems.reduce((s,x) => s+(x.a.out||0), 0);
   const maxN = gPhases.length ? Math.max(...gPhases.map(p => p.n)) : 0;
   $("#g-ovsub", gGanttHost).textContent =
-    `Весь прогон: ${clock(gT0)}–${clock(gT1)} UTC · ${gItems.length} интервалов · до ${maxN} аг в крупнейшей фазе · ≈${fmtTok(totOut)} токенов`+
-    (gSkipped?` · ${gSkipped} запись без startTs скрыта`:``)+`.`;
+    `${t("gantt.wholeRun")}: ${clock(gT0)}–${clock(gT1)} UTC · ${gItems.length} ${t("gantt.intervals")} · ${t("gantt.upTo")} ${maxN} ${t("gantt.inLargestPhase")} · ≈${fmtTok(totOut)} ${t("gantt.tokens")}`+
+    (gSkipped?` · ${gSkipped} ${gSkipped===1?t("gantt.hiddenOne"):t("gantt.hiddenMany")}`:``)+`.`;
 }
 
 function drawOverview(){
   const host = gGanttHost; if(!host) return;
   const svg = $("#g-ovsvg", host); if(!svg) return;
   const W = svg.clientWidth || 1100, H = 78;
-  const px = t => (t-gT0)/gSpan*W;
+  const px = tt => (tt-gT0)/gSpan*W;
   // площадь по токен-темпу (по бакетам)
   let path = `M0,${H} `;
   for(let b = 0; b < gNbuck; b++){
@@ -2122,32 +2623,31 @@ function drawOverview(){
   const ovp = $("#g-ovphases", host); let ph = ""; const rowEnds = [];
   gPhases.forEach(r => { const l = px(r.s), w = Math.max(2, px(r.e)-px(r.s)); const m = PHASE_META[r.p] || PHASE_META[PHASE_NONE];
     let row = rowEnds.findIndex(e => e <= l-2); if(row < 0){ row = rowEnds.length; rowEnds.push(l+w); } else rowEnds[row] = l+w;
-    ph += `<div class="ov-phband" style="top:${row*16}px;left:${l}px;width:${w}px;background:${m.bg};border-left-color:${m.line}" title="${esc(m.label)}: ${r.n} аг · ${fmtTok(r.out)} ток">${esc(m.label)}</div>`; });
+    ph += `<div class="ov-phband" style="top:${row*16}px;left:${l}px;width:${w}px;background:${m.bg};border-left-color:${m.line}" title="${esc(phaseLabel(m))}: ${r.n} ${esc(t("gantt.agShort"))} · ${fmtTok(r.out)} ${esc(t("trace.byModel.tok"))}">${esc(phaseLabel(m))}</div>`; });
   const phRows = Math.max(1, rowEnds.length); ovp.style.height = (phRows*16)+"px"; ovp.innerHTML = ph;
   // ось обзора (абсолютное HH:MM UTC) с делениями
   const step = tickStepMs(gSpan, 8); const ax = $("#g-ovaxis", host); let html = "";
-  for(let t = Math.ceil(gT0/step)*step; t <= gT1; t += step) html += `<span class="ov-tick" style="left:${px(t)}px">${clock(t)}</span>`;
+  for(let tk = Math.ceil(gT0/step)*step; tk <= gT1; tk += step) html += `<span class="ov-tick" style="left:${px(tk)}px">${clock(tk)}</span>`;
   ax.innerHTML = html;
   // brush — под полосой фаз, поверх токен-svg
   const b = $("#g-brush", host);
   b.style.top = ovp.offsetHeight+"px"; b.style.height = H+"px";
   b.style.left = px(gBs)+"px"; b.style.width = Math.max(6, px(gBe)-px(gBs))+"px";
   $("#g-ovhint", host).innerHTML =
-    `Верх — <b>производство токенов во времени</b> (высота = токены/время, агрегированный темп: для каждого агента rate = out/длительность, суммарно по активным). `+
-    `Полосы сверху — <b>фазы workflow</b> (фон = фаза, не цвет бара). Тяните по полосе, чтобы выбрать окно (двойной клик — весь прогон). `+
-    `В окне ≈ <b>${fmtTok(tokTotalWin())}</b> токенов.`;
+    t("gantt.hintTop") + t("gantt.hintPhases") +
+    t("gantt.hintWin") + fmtTok(tokTotalWin()) + t("gantt.hintWinSuffix");
 }
 
 function drawDetail(){
   const host = gGanttHost; if(!host) return;
   const det = $("#g-det", host); if(!det) return;
   const win = gItems.filter(x => x.e >= gBs && x.s <= gBe);
-  if(!win.length){ det.style.width = ""; det.innerHTML = `<div class="det-empty">В выбранном окне нет интервалов.</div>`; return; }
+  if(!win.length){ det.style.width = ""; det.innerHTML = `<div class="det-empty">${esc(t("gantt.emptyWin"))}</div>`; return; }
   const w0 = gBs, w1 = gBe, wspan = Math.max(1, w1-w0);
   const wrap = host.querySelector(".det-wrap");
   const Wd = Math.max(640, (wrap ? wrap.clientWidth : 1100)-2);
   det.style.width = Wd+"px";
-  const px = t => (Math.max(w0, Math.min(w1, t))-w0)/wspan*Wd;
+  const px = tt => (Math.max(w0, Math.min(w1, tt))-w0)/wspan*Wd;
   // lane-packing внутри окна
   const arr = win.slice().sort((a,b) => a.s-b.s); const laneEnds = [];
   arr.forEach(x => { let li = laneEnds.findIndex(e => e <= x.s); if(li < 0){ li = laneEnds.length; laneEnds.push(x.e); } else laneEnds[li] = x.e; x.dl = li; });
@@ -2161,10 +2661,10 @@ function drawDetail(){
   gPhases.forEach(r => { const s = Math.max(w0, r.s), e = Math.min(w1, r.e); if(e <= s) return;
     const l = px(s), w = Math.max(2, px(e)-px(s)); const m = PHASE_META[r.p] || PHASE_META[PHASE_NONE];
     let row = hdrEnds.findIndex(en => en <= l-2); if(row < 0){ row = hdrEnds.length; hdrEnds.push(l+w); } else hdrEnds[row] = l+w;
-    phhdr += `<div class="det-phband" style="top:${row*16}px;left:${l}px;width:${w}px;background:${m.bg};border-left-color:${m.line}">${esc(m.label)}</div>`; });
+    phhdr += `<div class="det-phband" style="top:${row*16}px;left:${l}px;width:${w}px;background:${m.bg};border-left-color:${m.line}">${esc(phaseLabel(m))}</div>`; });
   const hdrH = Math.max(1, hdrEnds.length)*16;
   const step = tickStepMs(wspan, 7); let axis = "";
-  for(let t = Math.ceil(w0/step)*step; t <= w1; t += step) axis += `<span class="det-tick" style="left:${px(t)}px">${clock(t)}</span>`;
+  for(let tk = Math.ceil(w0/step)*step; tk <= w1; tk += step) axis += `<span class="det-tick" style="left:${px(tk)}px">${clock(tk)}</span>`;
   let lanes = "";
   for(let li = 0; li < laneEnds.length; li++){
     let bars = "";
@@ -2174,7 +2674,7 @@ function drawDetail(){
       // микро-интервал (<4px) → точка-маркер вместо нулевого бара (b6)
       if(w < 4){ bars += `<div class="det-dot" data-span="${esc(a.spanId)}" style="left:${l}px;background:${c}"></div>`; return; }
       bars += `<div class="det-bar ${a.ok===false?'err':''} ${x.running?'running':''}" data-span="${esc(a.spanId)}" style="left:${l}px;width:${w}px;background:${c}">`+
-        (w>60?`<span>${esc(roleLabel(a.role))}</span>`:``)+(w>36?`<span class="du">${esc(dur)}${x.running?' · идёт':''}</span>`:``)+`</div>`;
+        (w>60?`<span>${esc(roleLabel(a.role))}</span>`:``)+(w>36?`<span class="du">${esc(dur)}${x.running?' · '+esc(t("trace.running")):''}</span>`:``)+`</div>`;
     });
     lanes += `<div class="det-lane">${bars}</div>`;
   }
@@ -2215,15 +2715,15 @@ function bindGanttDeleg(){
     if(!el){ tip.style.display = "none"; return; }
     const it = findItem(el.dataset.span); if(!it){ tip.style.display = "none"; return; }
     const a = it.a;
-    tip.innerHTML = `<div class="h">${esc(roleLabel(a.role))}${a.ok===false?' · ⚠ ошибка':(it.running?' · идёт…':'')}</div>`+
-      `<div class="s">${esc(a.summary||"без описания")}</div><div class="kv">`+
-      `<span class="k">фаза</span><span class="v">${esc(a.phase||"вне фазы")}</span>`+
-      `<span class="k">старт</span><span class="v">${a.startTs?clock(ep(a.startTs))+" UTC":"—"}</span>`+
-      `<span class="k">длит.</span><span class="v">${fmtDurH(a.durationMs!=null?a.durationMs:(it.e-it.s))}</span>`+
-      `<span class="k">модель</span><span class="v">${esc(a.model||"—")}</span>`+
-      `<span class="k">токены</span><span class="v">${fmtTok(a.out)}</span>`+
-      `<span class="k">контекст</span><span class="v">${fmtPct(a.contextPct)}</span>`+
-      `<span class="k">≈ стоим.</span><span class="v">${fmtUsd(a.costUsd)}</span></div>`;
+    tip.innerHTML = `<div class="h">${esc(roleLabel(a.role))}${a.ok===false?' · ⚠ '+esc(t("gantt.tip.error")):(it.running?' · '+esc(t("gantt.tip.running")):'')}</div>`+
+      `<div class="s">${esc(a.summary||t("gantt.tip.noDesc"))}</div><div class="kv">`+
+      `<span class="k">${esc(t("gantt.tip.phase"))}</span><span class="v">${esc(a.phase||t("gantt.tip.offPhase"))}</span>`+
+      `<span class="k">${esc(t("gantt.tip.start"))}</span><span class="v">${a.startTs?clock(ep(a.startTs))+" UTC":"—"}</span>`+
+      `<span class="k">${esc(t("gantt.tip.dur"))}</span><span class="v">${fmtDurH(a.durationMs!=null?a.durationMs:(it.e-it.s))}</span>`+
+      `<span class="k">${esc(t("gantt.tip.model"))}</span><span class="v">${esc(a.model||"—")}</span>`+
+      `<span class="k">${esc(t("gantt.tip.tokens"))}</span><span class="v">${fmtTok(a.out)}</span>`+
+      `<span class="k">${esc(t("gantt.tip.context"))}</span><span class="v">${fmtPct(a.contextPct)}</span>`+
+      `<span class="k">${esc(t("gantt.tip.cost"))}</span><span class="v">${fmtUsd(a.costUsd)}</span></div>`;
     tip.style.display = "block";
     let x = e.clientX+14, y = e.clientY+14;
     if(x+340 > innerWidth) x = e.clientX-340; if(y+200 > innerHeight) y = e.clientY-200;
@@ -2243,30 +2743,30 @@ function agentCard(a, window){
   const ctxPct = a.contextPct != null ? a.contextPct : null;
   const hot = ctxPct != null && ctxPct >= 80;
   const ctx = ctxPct == null ? "" : `
-    <div class="metric"><div class="k">контекст окна</div>
+    <div class="metric"><div class="k">${esc(t("card.contextWin"))}</div>
       <div class="v">${fmtTok(a.peakContext)} <span class="muted">(${ctxPct}%)</span></div>
       <div class="ctxbar"><div class="${hot?'hot':''}" style="width:${Math.min(100,ctxPct)}%"></div></div></div>`;
   const tags = [
-    a.bg ? `<span class="tag bg">фон</span>` : "",
-    a.ok === false ? `<span class="tag fail">ошибка</span>` : "",
-    !a.hasUsage ? `<span class="tag">нет токенов</span>` : "",
+    a.bg ? `<span class="tag bg">${esc(t("card.tag.bg"))}</span>` : "",
+    a.ok === false ? `<span class="tag fail">${esc(t("card.tag.fail"))}</span>` : "",
+    !a.hasUsage ? `<span class="tag">${esc(t("card.tag.noTokens"))}</span>` : "",
   ].join("");
   const span = a.spanId || "";
   // a span without a tool-use id ("span-" / "") cannot resolve a transcript — keep that card flat
   const expandable = span && span !== "span-";
   const open = expandable && expandedCards.has(span);
   const desc = a.summary
-    ? `<span class="agent-desc"><span class="lbl">задача:</span> ${esc(a.summary)}</span>` : "";
+    ? `<span class="agent-desc"><span class="lbl">${esc(t("card.task"))}</span> ${esc(a.summary)}</span>` : "";
   // expandable body: "Действия" (lazy /trace/actions) + "Сообщения агента" (lazy /trace/messages)
   const actOpen = expandedCardActions.has(span);
   const msgOpen = expandedCardMsgs.has(span);
   const body = expandable ? `<div class="agent-body">
       <div class="card-sub">
-        <div class="card-subbtn ${actOpen?"open":""}" data-card-actions="${esc(span)}"><span class="card-subcaret">▸</span>Действия</div>
+        <div class="card-subbtn ${actOpen?"open":""}" data-card-actions="${esc(span)}"><span class="card-subcaret">▸</span>${esc(t("trace.actions"))}</div>
         ${actOpen ? cardActionsBody(span) : ""}
       </div>
       <div class="card-sub">
-        <div class="card-subbtn ${msgOpen?"open":""}" data-card-msgs="${esc(span)}"><span class="card-subcaret">▸</span>Сообщения агента</div>
+        <div class="card-subbtn ${msgOpen?"open":""}" data-card-msgs="${esc(span)}"><span class="card-subcaret">▸</span>${esc(t("trace.agentMessages"))}</div>
         ${msgOpen ? cardMsgsBody(span) : ""}
       </div>
     </div>` : "";
@@ -2280,10 +2780,10 @@ function agentCard(a, window){
       ${desc}
     </div>
     <div class="metrics">
-      <div class="metric"><div class="k">время</div><div class="v">${fmtDur(a.durationMs)}</div></div>
-      <div class="metric"><div class="k">выход</div><div class="v">${fmtTok(a.out)} ток</div></div>
-      <div class="metric"><div class="k">кэш-хит</div><div class="v">${fmtPct(a.cacheHitPct)}</div></div>
-      <div class="metric"><div class="k">≈ стоимость</div><div class="v">${fmtUsd(a.costUsd)}</div></div>
+      <div class="metric"><div class="k">${esc(t("card.metric.time"))}</div><div class="v">${fmtDur(a.durationMs)}</div></div>
+      <div class="metric"><div class="k">${esc(t("card.metric.out"))}</div><div class="v">${fmtTok(a.out)} ${esc(t("card.outTok"))}</div></div>
+      <div class="metric"><div class="k">${esc(t("card.metric.cacheHit"))}</div><div class="v">${fmtPct(a.cacheHitPct)}</div></div>
+      <div class="metric"><div class="k">${esc(t("card.metric.cost"))}</div><div class="v">${fmtUsd(a.costUsd)}</div></div>
       ${ctx}
     </div>
     ${body}
@@ -2303,24 +2803,24 @@ async function docsTick(){
 function renderDocs(){
   const root = $("#docs");
   if(!kbData || !kbData.exists){
-    root.innerHTML = `<p class="empty">База знаний ещё не создана. Она появится в <code>docs/knowledge/</code> по мере работы (фаза IMPLEMENT).</p>`;
+    root.innerHTML = `<p class="empty">${esc(t("docs.notCreated"))} <code>docs/knowledge/</code> ${esc(t("docs.notCreatedTail"))}</p>`;
     return;
   }
   root.innerHTML = `<div class="docs-grid">
     <div class="doc-tree">
-      <input class="search" id="doc-search" placeholder="Поиск по файлам…">
+      <input class="search" id="doc-search" placeholder="${esc(t("docs.search"))}">
       <div id="doc-tree-body"></div>
     </div>
     <div class="doc-main">
       <div class="graph-card">
         <div class="graph-legend">
-          <span class="lk"><i style="background:#8b5cf6"></i>документ</span>
-          <span class="lk"><i style="background:#10b981"></i>код</span>
-          <span class="lk"><i style="background:var(--accent)"></i>в этой задаче</span>
+          <span class="lk"><i style="background:#8b5cf6"></i>${esc(t("docs.legend.doc"))}</span>
+          <span class="lk"><i style="background:#10b981"></i>${esc(t("docs.legend.code"))}</span>
+          <span class="lk"><i style="background:var(--accent)"></i>${esc(t("docs.legend.touched"))}</span>
         </div>
         <svg class="graph" id="kgraph" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
-      <div class="doc-viewer" id="doc-viewer"><p class="empty">Выберите документ в дереве или узел графа.</p></div>
+      <div class="doc-viewer" id="doc-viewer"><p class="empty">${esc(t("docs.selectDoc"))}</p></div>
     </div>
   </div>`;
   $("#doc-tree-body").innerHTML = renderTree(kbData.tree, 0);
@@ -2351,10 +2851,10 @@ async function openDoc(path){
   $("#doc-tree-body") && $("#doc-tree-body").querySelectorAll(".tnode.file").forEach(el => el.classList.toggle("active", el.dataset.path === path));
   const v = $("#doc-viewer"); if(!v) return;
   const head = `<div class="dv-head"><span class="dv-path">${esc(path)}</span></div>`;
-  if(!path.endsWith(".md")){ v.innerHTML = head + `<p class="empty">Это файл кода. Граф показывает, какие документы на него ссылаются.</p>`; return; }
-  v.innerHTML = `<p class="empty">Загрузка…</p>`;
+  if(!path.endsWith(".md")){ v.innerHTML = head + `<p class="empty">${esc(t("docs.codeFile"))}</p>`; return; }
+  v.innerHTML = `<p class="empty">${esc(t("docs.loading"))}</p>`;
   const r = await api("/knowledge?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(path));
-  v.innerHTML = head + (r && r.content != null ? `<div class="md">${md(r.content)}</div>` : `<p class="empty">Не удалось загрузить файл.</p>`);
+  v.innerHTML = head + (r && r.content != null ? `<div class="md">${md(r.content)}</div>` : `<p class="empty">${esc(t("docs.loadFail"))}</p>`);
 }
 
 // --- force-directed layout (vanilla SVG, animated with cooling) ---
@@ -2373,7 +2873,7 @@ function buildGraph(g){
   graphEdges.forEach(e => { deg[e.s.id]=(deg[e.s.id]||0)+1; deg[e.t.id]=(deg[e.t.id]||0)+1; });
   graphNodes.forEach(n => n.r = 6 + Math.min(8, (deg[n.id]||0)*1.6));
   const svg = $("#kgraph"); if(!svg) return;
-  if(!graphNodes.length){ svg.innerHTML = `<text x="500" y="310" text-anchor="middle" fill="var(--muted)">Нет связей для отображения</text>`; return; }
+  if(!graphNodes.length){ svg.innerHTML = `<text x="500" y="310" text-anchor="middle" fill="var(--muted)">${esc(t("docs.noLinks"))}</text>`; return; }
   let alpha = 1;
   function stepFrame(){
     alpha *= 0.985;
@@ -2470,10 +2970,10 @@ function updateChatUnread(){
 function renderChat(){
   const log = $("#chat-log");
   const global = chatMsgs.filter(m => !m.anchor);   // anchored messages live in their thread, not here
-  if(!global.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
+  if(!global.length){ log.innerHTML = `<p class="empty">${esc(t("chat.empty"))}</p>`; return; }
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.innerHTML = global.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
-    <div class="who">${m.role==='agent'?'агент':'вы'}</div>
+    <div class="who">${m.role==='agent'?esc(t("thread.who.agent")):esc(t("thread.who.you"))}</div>
     <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
     ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
   </div>`).join("");
@@ -2485,7 +2985,7 @@ async function sendChat(){
   ta.value = "";
   await api("/chat", { method:"POST", body: JSON.stringify({ slug:SLUG, text, phase: (lastData&&lastData.phase)||"" }) });
   await chatTick();
-  toast("Отправлено агенту");
+  toast(t("toast.sentToAgent"));
 }
 $("#chat-send").onclick = sendChat;
 $("#chat-text").addEventListener("keydown", e => {
@@ -2520,6 +3020,7 @@ async function tick(){
   setInterval(tick, 3000);
   chatTick();
   setInterval(chatTick, 5000);
+  setInterval(syncLang, 3000);   // подхватываем смену языка из хаба на лету
 })();
 </script>
 </body>

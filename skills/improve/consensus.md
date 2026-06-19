@@ -4,8 +4,10 @@ This is the heart of `/improve`. It turns a raw swarm of scout candidates into a
 top-K shortlist via a **voting panel** + **deterministic aggregation**, and then **seeds** the
 human-picked winners as parallel `/feature` runs. You — the orchestrator — drive every step and compute
 the ranking deterministically; the LLM agents only **propose** (scout) and **score** (vote). Everything
-human-facing (the cards, the gate text, the dispatch instructions) is **Russian**; these instructions
-are English.
+generated for the human (the cards, the gate text, the dispatch instructions) defaults to the **global
+plugin language** from `~/.claude/ai-pathfinder/settings.json` (default **English** when unset);
+human-facing reply channels (`chat.jsonl`, `replies.json`) instead follow the language of the human's
+message. These instructions stay English.
 
 "Consensus of a swarm" is realized exactly as in the judge panel of `/new-product` (ADR-0006/0007): a
 panel of independent scorers + a **deterministic aggregation by the orchestrator**, never "one agent

@@ -11,13 +11,18 @@ into them.
 Goal: capture the question and stand up the workspace.
 
 - Write the user's question into `brief.md` (from `templates/artifacts/brief.md`) **as a question, not a
-  spec**: the exact question, any scope the user gave (e.g. "только про дашборд"), and what to focus on.
+  spec**: the exact question, any scope the user gave (e.g. "dashboard only"), and what to focus on.
   Ask the user only for a real blocker you cannot infer — a question is light, not a task brief.
-- Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `kind: "ask"`. In a git repo,
-  record `baseCommit` = `git rev-parse HEAD`.
+- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
+  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
+  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt (it is the
+  **default** for generated chrome/knowledge; the answer and chat replies still follow the question's
+  language).
+- Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `kind: "ask"`, the resolved
+  `lang`. In a git repo, record `baseCommit` = `git rev-parse HEAD`.
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
-  `dashboard.json` (`title` = a short phrasing of the question, `status: "working"`, a one-line "ищу
-  ответ…" summary) and give the user the URL.
+  `dashboard.json` (`title` = a short phrasing of the question, `status: "working"`, a one-line
+  "researching the answer…" summary in the active language) and give the user the URL.
 - Advance to RESEARCH.
 
 ## 2. RESEARCH (autonomous — a mini-swarm)
@@ -25,19 +30,21 @@ Goal: capture the question and stand up the workspace.
 Goal: gather the evidence to answer, from every facet the question touches.
 
 - **Split the question into facets** — the disjoint angles it spans, typically a subset of:
-  1. **База знаний / доки** — what `docs/knowledge/` already says (always start here).
-  2. **Серверный код** — `scripts/server.py`, `scripts/_aipf.py`, hooks (the back-end behaviour).
-  3. **Дашборд / фронт** — `templates/dashboard.html` (the client-side render/UX).
-  4. **Тесты** — `tests/` (what behaviour is pinned, how to run it).
+  1. **Knowledge base / docs** — what `docs/knowledge/` already says (always start here).
+  2. **Server code** — `scripts/server.py`, `scripts/_aipf.py`, hooks (the back-end behaviour).
+  3. **Dashboard / front-end** — `templates/dashboard.html` (the client-side render/UX).
+  4. **Tests** — `tests/` (what behaviour is pinned, how to run it).
 - **Spawn `ask-researcher` in parallel, one per facet** — usually **2–4**; a narrow question needs only
   **1–2**. Keep the facets disjoint so researchers don't overlap. Each one **reads `INDEX.md` first**,
   then surveys its facet of the code with `path:line` evidence, writes its digest to `research/<n>.md`
-  (Russian, the fixed schema from `agents/ask-researcher.md`), and returns a short summary to you.
-- **Consolidate the digests yourself** into a single picture: merge the `## Ответ` theses, union the
-  `## Опорные источники`, order the `## Шаги рассуждения` into one reasoning path, collect the
-  `## Числа/связи` facts, and note any `## Уверенность/пробелы`. This consolidated picture is what you
-  synthesize from — researchers don't see each other.
-- Update `dashboard.json` (a short "собираю ответ…" summary), set `state.json.phase = "RESEARCH"`,
+  (prose in the global default language — `~/.claude/ai-pathfinder/settings.json`, default English; the
+  fixed-schema **headers stay English** per `agents/ask-researcher.md`), and returns a short summary to you.
+- **Consolidate the digests yourself** into a single picture: merge the `## Answer` theses, union the
+  `## Sources`, order the `## Reasoning steps` into one reasoning path, collect the `## Facts/relations`
+  facts, and note any `## Confidence/gaps`. This consolidated picture is what you synthesize from —
+  researchers don't see each other.
+- Update `dashboard.json` (a short "researching the answer…" summary in the active language), set
+  `state.json.phase = "RESEARCH"`,
   record each spawned researcher and its `research/<n>.md` file, advance to SYNTHESIZE.
 
 ## 3. SYNTHESIZE (autonomous — you do it yourself)
@@ -45,15 +52,17 @@ Goal: gather the evidence to answer, from every facet the question touches.
 Goal: turn the consolidated research into a visual answer. **You** write everything here — you are the
 only one with Write, and sub-agents cannot spawn sub-agents, so the synthesis never goes to an agent.
 
-- **Write the answer** into `dashboard.json.summary` (Russian markdown): a clear, scannable explanation
+- **Write the answer** into `dashboard.json.summary` (markdown in the **language of the question** —
+  auto-detect from the question text, since the answer *is* the reply to the human; this overrides the
+  global default): a clear, scannable explanation
   grounded in the `path:line` evidence from the digests. For a long answer, break it into `planBlocks`
   cards (stable ids) — one card per sub-topic — keeping `summary` as the lead.
 - **Draw the infographic** → `mockups/infographic.html`: KPIs/numbers/relations from the consolidated
-  `## Числа/связи` (key files, the data path, the headline numbers). Self-contained, inline CSS, **dark
-  dashboard style**, **no CDN**.
+  `## Facts/relations` (key files, the data path, the headline numbers). Self-contained, inline CSS,
+  **dark dashboard style**, **no CDN**.
 - **Draw the process diagram** → `mockups/process.svg`: how the answer was reached — read `INDEX`/docs →
-  found the files/lines → reasoning steps → answer — built from the consolidated `## Шаги рассуждения`
-  and `## Опорные источники`. **Static** (drawn by you from the digests, not from the live trace).
+  found the files/lines → reasoning steps → answer — built from the consolidated `## Reasoning steps`
+  and `## Sources`. **Static** (drawn by you from the digests, not from the live trace).
 - **Assemble the `demo`** with both files as variants (see `dashboard-guide.md` §the two visualizations
   for the exact `demo` shape).
 - Rewrite `dashboard.json` (the answer + the `demo`), set `state.json.phase = "SYNTHESIZE"`, advance to

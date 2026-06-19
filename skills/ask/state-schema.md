@@ -18,6 +18,7 @@ never has to carry them.
   "baseCommit": "8e53e98eeeae88a5e6b4c85e857340e83264ea2c",
   "serverPort": 8473,
   "lastSignalCount": 1,
+  "lang": "en",
   "kind": "ask",
   "questionLog": [
     { "q": "Как ответ агента попадает на дашборд?", "answeredAt": "2026-06-15T10:30:00", "researchFile": "research/1.md" }
@@ -36,9 +37,13 @@ Field notes (base):
   the `ANSWER` stage. Together with `phase` they tell a resumed session what to do next.
 - **`iteration`**: optional bookkeeping; `/ask` mostly tracks progress through `questionLog` instead.
 - **`baseCommit`**: the git `HEAD` captured at INTAKE. The companion server diffs the working tree
-  against it for the **«Изменения»** tab — `/ask` edits no code, so its own «Изменения» tab is usually
+  against it for the **Changes** tab — `/ask` edits no code, so its own Changes tab is usually
   empty. Absent in non-git projects (the server falls back to `HEAD`).
 - **`serverPort`**: the companion server port (mirrors `.workflow/server.json`).
+- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
+  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). It is the **default** language
+  for generated chrome/knowledge; the answer (`summary`/`planBlocks`) and chat replies still follow the
+  language of the question/message. Pass it to sub-agents in their spawn prompt.
 - **`lastSignalCount`**: how many `signals.json` entries you have already accounted for. Serves as the
   `/wait` long-poll baseline (`sinceSignal`) in the `ANSWER` chat loop and keeps you from re-processing
   old signals.
@@ -80,7 +85,8 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
 - **`.workflow/active.json`** — `{ slug, updatedAt }`, rewritten on every start/resume. Lets the
   telemetry hooks map a Claude Code session to the active task for session-level events.
 - **`.workflow/tasks/<slug>/research/<n>.md`** — the per-facet digests written by `ask-researcher`
-  (Russian, the fixed schema), consolidated by you at RESEARCH/ANSWER. Referenced by `questionLog`.
+  (prose in the global default language; fixed-schema headers stay English), consolidated by you at
+  RESEARCH/ANSWER. Referenced by `questionLog`.
 - **`.workflow/tasks/<slug>/mockups/`** — the self-contained `infographic.html` and `process.svg` you
   draw at SYNTHESIZE, served read-only by `GET /mockup`. Names must match `MOCKUP_RE`.
 - **`.workflow/tasks/<slug>/chat.jsonl`** — append-only chat thread `{ role, text, ts, phase }`; the

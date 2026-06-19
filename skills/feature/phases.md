@@ -16,8 +16,13 @@ Goal: capture the task and stand up the workspace.
   acceptance criteria, anything the user already specified. Ask the user only for blockers you truly
   cannot infer — keep it light; deeper questions come out of EXPLORE.
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `iteration: 0`. In a git repo,
-  record `baseCommit` = `git rev-parse HEAD` so the dashboard's **«Изменения»** tab can diff the task's
+  record `baseCommit` = `git rev-parse HEAD` so the dashboard's **Changes** tab can diff the task's
   work against the starting point.
+- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
+  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
+  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt — it is the
+  **default** output language for artifacts/dashboard/knowledge (chat/reply channels still follow the
+  human's message language).
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
 - If the task is being launched **in parallel** with another in-flight one, stand it up in its own

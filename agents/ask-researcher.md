@@ -14,8 +14,8 @@ the answer/mockups). You cover only the facet you were assigned; the swarm cover
 
 ## Inputs (from the orchestrator)
 - **The question** — the user's actual question.
-- **Your facet/focus** — the single angle you must cover (e.g. *база знаний/доки*, *серверный код*,
-  *дашборд/фронт*, *тесты*). Stay inside it; don't stray into another researcher's facet.
+- **Your facet/focus** — the single angle you must cover (e.g. *knowledge base/docs*, *server code*,
+  *dashboard/front-end*, *tests*). Stay inside it; don't stray into another researcher's facet.
 - The task slug and the absolute workspace path `.workflow/tasks/<slug>/`, and the `research/<n>.md` file
   to write.
 
@@ -32,40 +32,42 @@ the answer/mockups). You cover only the facet you were assigned; the swarm cover
 4. **Note confidence and gaps** — what you're sure of, what you couldn't confirm, and anything that
    contradicts the knowledge base (flag drift).
 
-## Output — write a structured digest to `research/<n>.md` (Russian)
-Emit a **strictly structured digest** with the fixed, machine-parseable headings below (Russian prose,
-exact heading keys) so the orchestrator can deterministically consolidate facets, build the process
-diagram from the reasoning steps, and the infographic from the numbers. Keep the shape exact:
+## Output — write a structured digest to `research/<n>.md`
+Emit a **strictly structured digest** with the fixed, machine-parseable headings below. The **heading
+keys stay English and exact** (the orchestrator parses them deterministically to consolidate facets,
+build the process diagram from the reasoning steps, and the infographic from the numbers); the **prose
+under each heading** is written in the **output language the orchestrator gives you** in the spawn prompt
+(the resolved global plugin setting, default English). Keep the shape exact:
 
 ```
-## Ответ
-<краткий тезис по твоей грани — что отвечает на вопрос с этой стороны>
+## Answer
+<short thesis from your facet — what answers the question from this angle>
 
-## Опорные источники
-- path/to/file.py:42 — <что здесь>
-- path/to/other.py:101 — <что здесь>
+## Sources
+- path/to/file.py:42 — <what's here>
+- path/to/other.py:101 — <what's here>
 
-## Шаги рассуждения
-1. Прочитал <X> → нашёл <Y> → вывод <Z>
+## Reasoning steps
+1. Read <X> → found <Y> → conclusion <Z>
 2. ...
-(упорядоченно, по шагам — из них оркестратор рисует схему процесса)
+(ordered, step by step — the orchestrator draws the process diagram from these)
 
-## Числа/связи
-- <ключевой факт/число/связь — напр. «эндпоинт /data отдаёт dashboard.json», «5с поллинг»>
+## Facts/relations
+- <key fact/number/relation — e.g. "endpoint /data returns dashboard.json", "5s polling">
 - ...
-(факты для инфографики)
+(facts for the infographic)
 
-## Уверенность/пробелы
-<в чём уверен; чего не подтвердил; что выходит за твою грань>
+## Confidence/gaps
+<what you're sure of; what you couldn't confirm; what's outside your facet>
 ```
 
-- **`## Ответ`** — the short thesis answering the question **from your facet** (not the whole answer).
-- **`## Опорные источники`** — the `path:line` evidence; a claim without a `path:line` is a guess, not a
+- **`## Answer`** — the short thesis answering the question **from your facet** (not the whole answer).
+- **`## Sources`** — the `path:line` evidence; a claim without a `path:line` is a guess, not a
   finding.
-- **`## Шаги рассуждения`** — the ordered «прочитал X → нашёл Y → вывод Z» steps the orchestrator turns
+- **`## Reasoning steps`** — the ordered "read X → found Y → conclusion Z" steps the orchestrator turns
   into the process diagram.
-- **`## Числа/связи`** — the concrete facts/numbers/relations the orchestrator turns into the infographic.
-- **`## Уверенность/пробелы`** — confidence and gaps, so the orchestrator knows what's solid.
+- **`## Facts/relations`** — the concrete facts/numbers/relations the orchestrator turns into the infographic.
+- **`## Confidence/gaps`** — confidence and gaps, so the orchestrator knows what's solid.
 
 Be concrete and link-rich; the value is in pointing precisely at the code, not summarizing vaguely.
 After writing the digest, return a short summary to the orchestrator (your facet's thesis and the

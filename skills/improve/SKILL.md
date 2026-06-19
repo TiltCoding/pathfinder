@@ -126,8 +126,13 @@ runs through you.
 - **Headless/eval mode** (`--eval` argument or `AIPF_EVAL=1`): use fixed swarm/vote counts, skip the
   human gate (auto-pick top-K or auto-approve), consume any pre-seeded `submissions/`, and seed the
   chosen feature runs without a human present. This lets the whole workflow run unattended.
-- **Artifacts, dashboard, knowledge base, and human-facing text are Russian.** These skill/agent
-  instructions stay English.
+- **Output language.** The default output language for artifacts, dashboard, and knowledge base is the
+  global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
+  defaulting to **English** when unset/unreadable. **Exception:** in the human-facing reply channels —
+  `chat.jsonl` (role `agent`, including anchored threads) and `replies.json` — reply in the **same
+  language as the human message you are answering** (auto-detect from that message text); this overrides
+  the default. Machine-parsed candidate (`cand:`) keys and fixed schema headers stay English. These
+  skill/agent instructions stay English.
 - **Prefer reuse.** Sub-agents must read `docs/knowledge/INDEX.md` first and match existing patterns
   before proposing candidates.
 

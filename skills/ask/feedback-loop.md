@@ -71,7 +71,8 @@ questions. This is what keeps the task **active** in the hub (a non-terminal `ph
    - If nothing new (a rare spurious return), re-park (repeat steps 1–2).
 3. **Handling a follow-up message** — two paths:
    - **A simple clarification** (rephrase, "что значит X", "а это где?") that the consolidated research
-     already covers → answer **inline**: append a `role:"agent"` line to `chat.jsonl` (Russian, short).
+     already covers → answer **inline**: append a `role:"agent"` line to `chat.jsonl` (short, in the
+     **same language as the human's message** — auto-detect).
      No new research, no `demo` change. Bump `dashboard.json.updatedAt` only if you also tweaked the
      answer text.
    - **A substantive new question** (a new angle the digests don't cover) → run a **new mini-swarm**: split
@@ -81,7 +82,10 @@ questions. This is what keeps the task **active** in the hub (a non-terminal `ph
      `updatedAt`; **`phase` stays `ANSWER`**. Append `{q, answeredAt, researchFile}` to
      `state.json.questionLog[]`. Then post a `role:"agent"` chat line summarizing the new answer and
      pointing at the updated visualizations.
-   - Keep chat replies short and in Russian. If a follow-up is large enough to reshape the whole answer,
+   - Keep chat replies short, and reply in the **same language as the human's chat message** (auto-detect;
+     the chat is a human-facing reply channel, so the message language overrides the global default).
+     When you update `summary`/`planBlocks` for a substantive follow-up, write them in the language of
+     that follow-up too (the answer *is* the reply). If a follow-up is large enough to reshape the whole answer,
      say so in chat and reflect it in `dashboard.json` rather than silently diverging.
 4. **The human asks unlimited follow-ups.** Re-park after each. The loop ends only on:
    - **Auto-DONE after ~24h with no new chat message** — the same window that keeps the task *active* in

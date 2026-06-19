@@ -6,7 +6,7 @@ description: >-
   this for "/ask", "как устроено…", "почему…", "где…", "как работает…", "explain", "how does … work",
   "what is …", "where is …", or whenever the user wants to *understand* the code/docs rather than
   change them. It spawns a small read-only researcher swarm that reads `docs/knowledge/` first then the
-  code, the orchestrator synthesizes a Russian markdown answer plus two self-contained visualizations,
+  code, the orchestrator synthesizes a markdown answer in the language of the question plus two self-contained visualizations,
   and keeps a chat open for further questions. It is **read-only Q&A** — it does **NOT** edit project
   code (use the **feature** skill to build or change something), it does **NOT** produce a prioritized
   improvement backlog (use the **improve** skill to audit and rank improvements), and it is **NOT** for
@@ -21,7 +21,7 @@ answer and draw the visualizations yourself**, keep a live HTML dashboard in syn
 so the human can keep asking.
 
 The whole point: take a question about the code/docs from "how does X work?" to a clear, visual answer
-on a live dashboard — a Russian markdown explanation, an **infographic** of the key facts/numbers, and
+on a live dashboard — a markdown explanation in the language of the question, an **infographic** of the key facts/numbers, and
 a **process diagram** of how the answer was reached — and then stay available for follow-up questions
 in chat. `/ask` produces **understanding**, not changes: it touches no project code, opens no plan
 gate, and queues no work.
@@ -97,7 +97,9 @@ draw the visualizations, and never spawn sub-agents. The orchestrator owns every
   narrow question needs only 1–2). Then **you consolidate** their `research/<n>.md` digests and **you**
   write the answer and draw both visualizations — researchers never draw and never synthesize. See
   `phases.md` for the fan-out and `dashboard-guide.md` for the `demo` contract.
-- **The answer is text + two visualizations.** The explanation goes into `summary` (Russian markdown),
+- **The answer is text + two visualizations.** The explanation goes into `summary` (markdown in the
+  language of the question — auto-detect from the question text, since the whole answer *is* the reply to
+  the human),
   optionally broken into `planBlocks` cards for a long answer. The two visualizations are served via the
   `demo` mechanism: a self-contained `infographic.html` (KPIs/numbers/relations, inline CSS, dark
   dashboard style) and a `process.svg` (knowledge → code → reasoning → answer). Both live in
@@ -107,8 +109,13 @@ draw the visualizations, and never spawn sub-agents. The orchestrator owns every
   a simple clarification is answered inline, a substantive new question triggers a new mini-swarm. The
   task auto-advances to `DONE` after ~24h of chat silence or on the human's explicit request. See
   `feedback-loop.md`.
-- **Artifacts, dashboard, knowledge base, and human-facing text are Russian.** These skill/agent
-  instructions stay English.
+- **Output language.** The default output language for the dashboard chrome and knowledge base is the
+  global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
+  defaulting to **English** when unset/unreadable. **Exception (overrides the default):** because `/ask`
+  *is* a reply to the human, write the whole answer — `summary`, `planBlocks`, and the `chat.jsonl`
+  (role `agent`) follow-ups — in the **same language as the question/chat message you are answering**
+  (auto-detect from that message text). Fixed schema keys and machine-parsed digest headers stay English.
+  These skill/agent instructions stay English.
 - **Headless/eval mode** (`--eval` argument or `AIPF_EVAL=1`): use a fixed small swarm, **skip the chat
   loop** — produce the first answer and advance straight to `DONE`. This lets the whole workflow run
   unattended.

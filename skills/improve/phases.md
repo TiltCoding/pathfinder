@@ -16,6 +16,11 @@ Goal: capture what we are auditing and stand up the workspace.
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `iteration: 0`. In a git repo,
   record `baseCommit` = `git rev-parse HEAD`. Seed `prisms[]` with the default prism list (below) — or
   the subset the brief constrains you to.
+- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
+  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
+  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt — it is the
+  **default** output language for artifacts/dashboard/knowledge (chat/reply channels still follow the
+  human's message language).
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
 - Advance to SCOUT.
@@ -25,13 +30,13 @@ Goal: capture what we are auditing and stand up the workspace.
 Goal: survey the app from every prism and gather raw improvement candidates.
 
 - Spawn **7 `wf-improver` agents in scout mode in parallel** — **one per prism**. The default prisms:
-  1. **UX/продукт** — usability, flows, missing affordances, friction.
-  2. **Производительность** — latency, big-O traps, wasteful work, payload size.
-  3. **Надёжность/устойчивость** — error handling, edge cases, failure modes, recovery.
-  4. **Качество кода/техдолг** — duplication, coupling, dead code, refactor opportunities.
+  1. **UX/product** — usability, flows, missing affordances, friction.
+  2. **Performance** — latency, big-O traps, wasteful work, payload size.
+  3. **Reliability/resilience** — error handling, edge cases, failure modes, recovery.
+  4. **Code quality/tech-debt** — duplication, coupling, dead code, refactor opportunities.
   5. **DX** — developer experience: build/test/run ergonomics, docs, scripts.
-  6. **Пробелы функциональности** — missing features users would reasonably expect.
-  7. **Доступность + безопасность** — a11y gaps and security exposure (one combined prism).
+  6. **Functionality gaps** — missing features users would reasonably expect.
+  7. **Accessibility + security** — a11y gaps and security exposure (one combined prism).
   (Narrow the set if the brief constrains scope; keep them disjoint so scouts don't overlap.)
 - Each scout **reads `docs/knowledge/INDEX.md` first** (reuse-first), then surveys the code from its
   prism, and returns a set of candidates in the structured per-candidate schema from `agents/wf-improver.md`
@@ -59,16 +64,21 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
 
 - Render the top-K into `dashboard.json` using the **feat-K contract** (see `dashboard-guide.md`
   §SELECT GATE): for each candidate `K`, write one `planBlocks[]` card and one
-  `questions[kind:"choice"]`, **both with the same `id = feat-K`** and `options:["Делаем","Пропускаем"]`.
+  `questions[kind:"choice"]`, **both with the same `id = feat-K`** and a two-option choice in the active
+  dashboard language — `options:["Do","Skip"]` (en) or `options:["Делаем","Пропускаем"]` (ru).
   The card `body` (markdown) carries: prism / problem / proposed change / size·risk·impact / affected
   files (clickable paths), **plus an obligatory one-line ranking from `state.json.votes[]`** — the
-  compact form `score X.XX · согласие N% · impact·effort·risk a·b·c` (numbers only, no vote-note) — so
+  compact form `score X.XX · agreement N% · impact·effort·risk a·b·c` (numbers only, no vote-note;
+  translate the label to the active language) — so
   the human sees how the panel scored each feature and the gate is not a black box. Set status
   `awaiting-batch`.
-- In the `summary`, tell the human the contract in plain Russian: pick «Делаем»/«Пропускаем» per
-  feature (or type a free-form note like «делаем, но без X»), then **«Отправить»** to record the choice,
-  then **«Утвердить план»** to dispatch the picked ones. State the defaults explicitly: **нет ответа =
-  Пропускаем**, and the order **Submit → Approve** is required (the draft is not readable before submit).
+- In the `summary`, tell the human the contract in the **global default language** (from
+  `~/.claude/ai-pathfinder/settings.json`, default English): pick the **Do / Skip** choice per feature
+  (or type a free-form note like "do it, but without X"), then **Submit** to record the choice, then
+  **Approve plan** to dispatch the picked ones. State the defaults explicitly: **no answer = Skip**, and
+  the order **Submit → Approve** is required (the draft is not readable before submit). The choice option
+  labels and gate texts you write into `dashboard.json` must match the dashboard's active language
+  (these are UI/content in the global default, not a reply to the human).
 - Park at the checkpoint and wait (see `feedback-loop.md`). On a new `submissions/<n>.json`: read every
   comment/answer, refine the cards if the human pushed back (bump `iteration`, re-park), and write a
   short `replies.json` entry per item keyed by `feat-K`. A free-form `answer.text` outside the options

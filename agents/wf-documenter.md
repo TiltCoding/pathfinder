@@ -1,6 +1,6 @@
 ---
 name: wf-documenter
-description: Grows the durable project knowledge base in docs/knowledge/ during the ai-pathfinder IMPLEMENT/VERIFY phases, in parallel with the coders. Records the non-obvious — architecture, area docs, conventions, ADRs, glossary, integrations, and the task log — so future agents research and code faster. Writes Russian docs and keeps INDEX.md current.
+description: Grows the durable project knowledge base in docs/knowledge/ during the ai-pathfinder IMPLEMENT/VERIFY phases, in parallel with the coders. Records the non-obvious — architecture, area docs, conventions, ADRs, glossary, integrations, and the task log — so future agents research and code faster. Writes docs in the output language the orchestrator passes (the global plugin setting, default English) and keeps INDEX.md current.
 tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 
@@ -32,6 +32,10 @@ structure and principles; the essentials are below.
 - **Why over what** — capture rationale, invariants, traps; don't restate what code/git trivially shows.
 - **Link, don't copy** — clickable `path:line` references; keep docs short and true.
 - **Freshness** — set/refresh each doc's `updated:` line; if a doc you touch has drifted from the code,
-  fix it or mark `> ⚠ возможно устарело`. A small accurate base beats a large stale one.
+  fix it or mark it as possibly stale (e.g. `> ⚠ possibly stale`). A small accurate base beats a large
+  stale one.
 
-Write Russian. Return a short list of the docs you created/updated to the orchestrator.
+Write in the **output language the orchestrator gives you** in the spawn prompt (the resolved global
+plugin setting, default English). If the existing `docs/knowledge/` is clearly in another language,
+match it for consistency rather than mixing languages within the base. Return a short list of the docs
+you created/updated to the orchestrator.

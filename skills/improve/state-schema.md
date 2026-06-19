@@ -26,6 +26,7 @@ section) — a single-task `/feature` run never has to carry them.
   "lastSubmission": 1,
   "lastSignalCount": 0,
   "lastChatTs": "2026-06-13T10:35:00",
+  "lang": "en",
   "serverPort": 8473
 }
 ```
@@ -43,10 +44,15 @@ Field notes:
 - **`lastSignalCount`**: how many `signals.json` entries you have already accounted for. Serves as the
   `/wait` long-poll baseline (`sinceSignal`) and keeps you from re-processing old signals.
 - **`baseCommit`**: the git `HEAD` captured at INTAKE. The companion server diffs the working tree
-  against it to populate the **«Изменения»** tab (`/changes`). Absent in non-git projects — the server
+  against it to populate the **Changes** tab (`/changes`). Absent in non-git projects — the server
   then falls back to `HEAD`.
+- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
+  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
+  generated artifacts/dashboard/knowledge (incl. gate cards and choice option labels); chat
+  (`chat.jsonl`) and `replies.json` instead follow the language of the human's message. Pass it to
+  sub-agents in their spawn prompt.
 - **`worktreePath`** (optional): the absolute path of the task's own git working tree, set only when
-  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **«Изменения»** tab
+  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **Changes** tab
   against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read
   by the server. Absent for ordinary tasks — the server falls back to its `--root` working tree.
 - **`branch`** (optional): the git branch the task's worktree is checked out on. Set alongside
@@ -73,12 +79,12 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
 ```json
 {
   "phase": "PROPOSE",
-  "prisms": ["UX/продукт", "производительность", "надёжность", "техдолг", "DX", "пробелы фич", "доступность+безопасность"],
+  "prisms": ["UX/product", "performance", "reliability", "tech-debt", "DX", "functionality gaps", "accessibility+security"],
   "candidates": [
-    { "id": "cand-1", "title": "Кэшировать /changes", "prism": "производительность",
-      "problem": "Полный git diff на каждый запрос (server.py:312).",
-      "change": "Кэш по baseCommit+mtime, TTL 2с.",
-      "areas": ["scripts/server.py"], "size": "S", "risk": "низкий" }
+    { "id": "cand-1", "title": "Cache /changes", "prism": "performance",
+      "problem": "Full git diff on every request (server.py:312).",
+      "change": "Cache by baseCommit+mtime, TTL 2s.",
+      "areas": ["scripts/server.py"], "size": "S", "risk": "low" }
   ],
   "votes": [
     { "candId": "cand-1", "impact": 2.3, "effort": 1.0, "risk": 0.7, "confidence": 2.7, "keep": 1.0, "score": 1.62 }

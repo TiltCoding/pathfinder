@@ -5,8 +5,11 @@ then a sequence of **iterations** until the phase resolves to PASS / STOP_* / ES
 is a hybrid gate: **frozen tests are the wall** (a phase never closes on red tests) and the **judge is
 the steering wheel** (it grades how well the slice satisfies the FRs, with evidence). You — the
 orchestrator — drive the loop and compute the verdict deterministically; the LLM agents only generate
-code and score. Everything human-facing (verdicts, scratchpad rendered to the dashboard, escalation
-questions) is **Russian**; these instructions are English.
+code and score. Everything generated for the human (verdicts, scratchpad rendered to the dashboard,
+escalation questions) defaults to the **global plugin language** from
+`~/.claude/ai-pathfinder/settings.json` (default **English** when unset); human-facing reply channels
+(`chat.jsonl`, `replies.json`) instead follow the language of the human's message. These instructions
+stay English.
 
 State you read/write lives in `state.build.phases[k]` (see `state-schema.md`):
 `frozenTests[]`, `budget.maxIterations`, `scratchpad`, `scoreHistory[]`, `status`.
@@ -93,8 +96,9 @@ then blocking, then PASS, then the three stop/escalate conditions.
 
 ## 5. PASS — close the phase
 
-- `git add -A && git commit` the phase's work (you are the only committer). Use a clear Russian commit
-  subject naming the phase.
+- `git add -A && git commit` the phase's work (you are the only committer). Use a clear commit subject
+  naming the phase, written in the **global default language** (`~/.claude/ai-pathfinder/settings.json`,
+  default English).
 - Set `phases[k].status = done`, mark the matching `workstreams[]` entry done, bump `progress`
   (phases done/total), and archive the phase's scratchpad in state.
 - **V1 gate policy:** advance straight to phase `k+1` with no human gate. If there is no next phase,

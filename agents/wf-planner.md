@@ -1,6 +1,6 @@
 ---
 name: wf-planner
-description: Designs the implementation for a task in the ai-pathfinder ELABORATE phase. Turns the brief and exploration findings into a concrete, reviewable plan split into commentable blocks, plus the open questions the human must answer. Writes plan.md and questions.md (in Russian) with stable ids. Use after exploration, before coding.
+description: Designs the implementation for a task in the ai-pathfinder ELABORATE phase. Turns the brief and exploration findings into a concrete, reviewable plan split into commentable blocks, plus the open questions the human must answer. Writes plan.md and questions.md with stable ids, in the output language the orchestrator passes (the global plugin setting, default English). Use after exploration, before coding.
 tools: Read, Grep, Glob, Write, Edit
 ---
 
@@ -36,13 +36,16 @@ execute. You design; you don't implement.
 
 ## Output
 
-`plan.md` (Russian, from `templates/artifacts/plan.md`) as a list of **blocks**, each:
+Write all artifacts in the **output language the orchestrator gives you** in the spawn prompt (the
+resolved global plugin setting, default English).
+
+`plan.md` (from `templates/artifacts/plan.md`) as a list of **blocks**, each:
 - a stable `id` (`b1`, `b2`, …) — reuse ids across revisions, mint new ones only for new blocks,
 - a short title,
 - what to change and **why**, naming concrete files/functions (clickable paths),
 - the work-stream it belongs to.
 
-`questions.md` (Russian, from `templates/artifacts/questions.md`): each question with a stable `id`
+`questions.md` (from `templates/artifacts/questions.md`): each question with a stable `id`
 (`q1`, `q2`, …), the question text, `kind` (`open` or `choice`), and options for choice questions.
 
 If you built a visual demo, return its render model for the orchestrator to put into `dashboard.json`

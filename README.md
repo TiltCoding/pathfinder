@@ -12,8 +12,8 @@ dashboard** and a single explicit approval gate (the plan).
   (reading the project knowledge base first), so planning is grounded.
 - **Human-friendly elaboration.** A per-task dashboard fills in as work proceeds. The human comments on
   individual plan blocks (Google-Docs style), answers open questions, queues up edits **in batches**,
-  and clicks **«Отправить агенту на доработку»** — the agent picks the batch up at its next checkpoint
-  and replies right in the page. One hard gate: **«Утвердить план»**.
+  and clicks **«Send to agent for revision»** — the agent picks the batch up at its next checkpoint
+  and replies right in the page. One hard gate: **«Approve plan»**.
 - **Visual demos.** When a task warrants it, the planner generates 2–3 self-contained visual variants of
   the solution — interface **mockups** for UI work, an architecture **diagram/infographic** for
   backend/CLI — rendered inline in the dashboard (sandboxed) so the human can preview and **pick one**
@@ -23,8 +23,8 @@ dashboard** and a single explicit approval gate (the plan).
 - **Verification.** A `wf-reviewer` runs tests/linters/build and reviews the diff — and, for web UIs,
   drives a real browser via the bundled **Playwright** MCP. In VERIFY the orchestrator also runs the
   `/code-review` and `/security-review` skills as gates (re-runnable from the dashboard).
-- **A control-panel dashboard.** Beyond the plan, the dashboard shows a **«Изменения»** tab (the task's
-  git diff per file + the review findings), a **«Документация»** tab (the `docs/knowledge/` tree beside a
+- **A control-panel dashboard.** Beyond the plan, the dashboard shows a **«Changes»** tab (the task's
+  git diff per file + the review findings), a **«Documentation»** tab (the `docs/knowledge/` tree beside a
   live force-directed graph of how docs and code files link together, with this task's files highlighted),
   and a **chat panel** for free-form steering the agent picks up at checkpoints.
 - **A flywheel.** Each task enriches `docs/knowledge/`, so the next task's exploration is faster.
@@ -50,7 +50,7 @@ Its stages are:
 
 — resumable via the same `.workflow/tasks/<slug>/state.json`. (A *stage* is a workflow step; a *phase*
 is a build slice inside BUILD.) On INTAKE the orchestrator bootstraps git for an empty repo (`git init`,
-empty-tree base commit) so the **«Изменения»** tab works from the very first commit.
+empty-tree base commit) so the **«Changes»** tab works from the very first commit.
 
 **How it differs from `/feature`:** `/feature` is for adding to or refactoring an **existing**
 codebase and gates once on the plan; `/new-product` is **greenfield** — it produces a PRD first, gates
@@ -101,8 +101,8 @@ sub-agents, so the consensus is manufactured by the orchestrator, not by one age
 **The one gate: pick which features to do.** Unlike `/feature` (gate = *approve the plan*) and
 `/new-product` (two gates: PRD then phase-plan), `/improve` has a single gate where the human **picks
 which candidate features to dispatch**. It reuses the dashboard's existing `choice` questions + the
-«Утвердить план» signal with **zero edits to the server or HTML**: each top-K candidate is one card + one
-«Делаем/Пропускаем» choice; the human submits, then approves; no answer means "skip".
+«Approve plan» signal with **zero edits to the server or HTML**: each top-K candidate is one card + one
+«Do / Skip» choice; the human submits, then approves; no answer means "skip".
 
 **Dispatch is queue-and-drain.** Rather than fanning out parallel worktrees you'd have to launch by
 hand, DISPATCH writes each picked feature's brief and appends it to a project-level queue
@@ -169,7 +169,7 @@ iterations/phase), a score plateau, or oscillation — which park for a human ch
 
 **Gate policy (V1).** Two human gates — **PRD-GATE** and **PLAN-GATE** — and then the build-loop is
 **autonomous**: phases advance without a per-phase gate, escalating to the human only when a stop
-condition fires. Both gates reuse the dashboard's existing **«Утвердить план»** signal; the
+condition fires. Both gates reuse the dashboard's existing **«Approve plan»** signal; the
 orchestrator interprets it by the current stage (PRD approved vs. phase-plan approved).
 
 ## Layout
@@ -184,7 +184,7 @@ skills/improve/   the /improve orchestrator skill + reference files (swarm → c
 skills/ask/       the /ask orchestrator skill + reference files (read-only Q&A → visual answer → chat)
 agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, wf-improver, ask-researcher, np-* (thinker, researcher, coder, judge)
 scripts/          server.py (feedback server) + telemetry_hook.py + _aipf.py (shared, stdlib)
-templates/        dashboard.html + Russian artifact & knowledge-base templates
+templates/        dashboard.html + artifact & knowledge-base templates
 evals/            fixtures, scenarios, rubrics for measuring the workflow
 ```
 
@@ -248,8 +248,11 @@ owns the server. Useful flags: `--port N` (prefer a specific port), `--no-browse
 
 ## Conventions
 
-- Artifacts, the dashboard, and the knowledge base are written in **Russian**; the skill/agent
-  instructions are in **English** (more reliable triggering).
+- **Language.** The dashboard and hub UI are **English-first** with an EN/RU toggle; the choice is a
+  global plugin setting stored in `~/.claude/ai-pathfinder/settings.json` and changed from the runs hub.
+  Artifacts and the knowledge base are written in the language of that global setting (default
+  **English**), while the agent's chat and inline replies answer in the **language of the human's
+  message**. The skill/agent instructions themselves stay **English** (more reliable triggering).
 - `${CLAUDE_PLUGIN_ROOT}` locates the server and templates at runtime.
 
 ## Telemetry & MCP
@@ -265,7 +268,7 @@ owns the server. Useful flags: `--port N` (prefer a specific port), `--no-browse
 sub-agents are siblings — the branching view), tagged with phase/iteration. The **trace id is the task
 slug**, so a task is one trace across sessions. Hooks only touch local disk (fast, never block tools).
 
-The dashboard's **«Трейсинг»** tab visualizes this per task: a session summary (sub-agents, output
+The dashboard's **«Tracing»** tab visualizes this per task: a session summary (sub-agents, output
 tokens, total time, peak context, ≈cost), a parallelism timeline (one lane per concurrent sub-agent),
 and a card per sub-agent with model, duration, tokens, context-window fill %, cache-hit %, and ≈cost.
 It is served by `GET /trace?slug=`, computed by joining the telemetry spans with per-sub-agent
@@ -284,22 +287,22 @@ when these env vars are set — otherwise it stays **local-only**:
 
 Disable forwarding explicitly with `server.py --no-forward`. **Note:** hook payloads carry no token
 data, so structure/timing/outcomes come from the hooks while per-sub-agent token & context numbers are
-recovered separately from the on-disk transcripts (see the «Трейсинг» tab above).
+recovered separately from the on-disk transcripts (see the «Tracing» tab above).
 
 ## Dashboard tabs
 
 The per-task page is a control panel, served by the stdlib companion server (no build step, no CDN):
 
-- **Рабочий процесс** — the plan, questions, visual demos and work-streams; the human comments and
+- **Workflow** — the plan, questions, visual demos and work-streams; the human comments and
   approves here.
-- **Изменения** — the task's changed files (working tree diffed against the `baseCommit` captured at
+- **Changes** — the task's changed files (working tree diffed against the `baseCommit` captured at
   INTAKE) with `+/−` counts and per-file unified diffs (`GET /changes`), plus the **code-review /
   security-review** runs (`reviews.json`) with ranked findings and buttons to re-run either skill.
-- **Документация** — the `docs/knowledge/` file tree beside a vanilla force-directed SVG graph
+- **Documentation** — the `docs/knowledge/` file tree beside a vanilla force-directed SVG graph
   (`GET /knowledge`) of how docs link to each other and to code files; nodes this task touched are
   highlighted, and clicking one opens the doc inline.
-- **Трейсинг** — the observability view (see below).
-- **💬 Чат** — a slide-in panel for free-form steering. Messages wake the agent via a `chat` signal and
+- **Tracing** — the observability view (see below).
+- **💬 Chat** — a slide-in panel for free-form steering. Messages wake the agent via a `chat` signal and
   are answered at the next checkpoint (it never interrupts a running coder).
 
 ## Evaluations

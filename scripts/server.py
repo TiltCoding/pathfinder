@@ -5,8 +5,8 @@ Stdlib only (no third-party deps). One server per project root. It serves the
 per-task HTML dashboard and provides a tiny JSON API so a human can:
 
   - accumulate comments on plan blocks and answers to questions (a *draft batch*),
-  - send the whole batch to the agent at once ("Отправить агенту на доработку"),
-  - approve the plan ("Утвердить план").
+  - send the whole batch to the agent at once ("Send to agent for revision"),
+  - approve the plan ("Approve plan").
 
 The agent never polls during active work. When it reaches a checkpoint it parks
 on the long-poll /wait endpoint (a background curl that blocks until a submission
@@ -135,6 +135,70 @@ def now_iso():
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
 
 
+# ---- global language setting (~/.claude/ai-pathfinder/settings.json) -----
+LANGS = ("en", "ru")
+DEFAULT_LANG = "en"
+
+
+def settings_path(base=None):
+    """Path to the global plugin settings file.
+
+    Mirrors _aipf._projects_dir: ~/.claude/... by convention; `base`
+    overrides the home root for test isolation (so tests never touch the
+    real ~/.claude/).
+    """
+    return os.path.join(base or os.path.expanduser("~"),
+                        ".claude", "ai-pathfinder", "settings.json")
+
+
+def read_lang(base=None):
+    """Read the global UI language, normalized to the whitelist.
+
+    Graceful: any error / missing file / unknown value -> DEFAULT_LANG.
+    """
+    try:
+        with open(settings_path(base), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        lang = data.get("lang")
+        if lang in LANGS:
+            return lang
+    except (OSError, ValueError, AttributeError):
+        pass
+    return DEFAULT_LANG
+
+
+def write_lang(lang, base=None):
+    """Persist the global UI language (atomic, best-effort).
+
+    Validates against the whitelist; returns the written value or
+    DEFAULT_LANG if `lang` is invalid / the write fails.
+    """
+    if lang not in LANGS:
+        return DEFAULT_LANG
+    path = settings_path(base)
+    # Per-process temp name: the settings file is global (one per machine), so
+    # servers of different project roots may write it concurrently. A shared
+    # ".tmp" name would let their byte streams collide; a pid-suffixed temp
+    # keeps each writer isolated and os.replace stays atomic (last-writer-wins).
+    tmp = path + ".%d.tmp" % os.getpid()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"lang": lang, "ts": now_iso()}, f,
+                      ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+        return lang
+    except OSError:
+        # Persist failed (read-only home, disk full, lock). Don't claim success:
+        # report the value actually on disk. Clean up any orphaned temp.
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        return read_lang(base)
+
+
 class Handler(BaseHTTPRequestHandler):
     workspace = None  # set on the server instance class
     server_port = None            # real bound port, set in main() after bind()
@@ -176,9 +240,12 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         raw = self.rfile.read(length)
         try:
-            return json.loads(raw.decode("utf-8"))
+            parsed = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return {}
+        # All POST routes treat the body as an object (body.get(...)); a non-object
+        # JSON body (list/str/number) would raise AttributeError → 500. Normalize.
+        return parsed if isinstance(parsed, dict) else {}
 
     def log_message(self, *args):
         pass  # keep the agent's terminal clean
@@ -272,12 +339,19 @@ class Handler(BaseHTTPRequestHandler):
                               "text/html; charset=utf-8")
         if path == "/queue.json":         # /improve dispatch queue (no slug)
             return self._json(200, self._queue())
+        if path == "/settings.json":      # global UI language (no slug, no cache)
+            return self._json(200, {"lang": read_lang()})
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_body()
+        if path == "/settings":           # global UI language (no slug)
+            lang = body.get("lang")
+            if lang not in LANGS:
+                return self._json(400, {"error": "invalid lang"})
+            return self._json(200, {"ok": True, "lang": write_lang(lang)})
         slug = safe_slug(body.get("slug", ""))
         if not slug:
             return self._json(400, {"error": "missing or invalid slug"})
@@ -311,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _landing(self, tasks):
         items = "".join(
-            f'<li><a href="/?slug={t}">{t}</a></li>' for t in tasks) or "<li>пока нет задач</li>"
+            f'<li><a href="/?slug={t}">{t}</a></li>' for t in tasks) or "<li>no tasks yet</li>"
         return INDEX_LANDING.replace("<!--TASKS-->", f"<ul>{items}</ul>")
 
     # ---- file serving --------------------------------------------------
@@ -566,7 +640,7 @@ class Handler(BaseHTTPRequestHandler):
         """Run a git command in `cwd` (default: the project root). Returns
         (rc, stdout, stderr). A task running in a git worktree records its own
         working tree in state.worktreePath; passing it as `cwd` lets the
-        Изменения tab diff that tree instead of main (see _task_root)."""
+        Changes tab diff that tree instead of main (see _task_root)."""
         try:
             p = subprocess.run(["git", "-C", cwd or self.workspace.root, *args],
                                capture_output=True, text=True, timeout=timeout,
@@ -1266,30 +1340,32 @@ INDEX_LANDING = """<!doctype html><meta charset=utf-8>
 <title>ai-pathfinder</title>
 <body style="font-family:system-ui;max-width:640px;margin:48px auto;color:#222">
 <h1>ai-pathfinder companion</h1>
-<p>Сервер запущен. Открывайте дашборд задачи по ссылке вида
-<code>/?slug=&lt;task-slug&gt;</code> — её печатает агент при старте задачи.</p>
-<p style="font-size:16px"><a href="/hub" style="font-weight:600">Открыть хаб всех запусков → /hub</a></p>
+<p>Server is running. Open a task dashboard via a link like
+<code>/?slug=&lt;task-slug&gt;</code> — the agent prints it when a task starts.</p>
+<p style="font-size:16px"><a href="/hub" style="font-weight:600">Open the runs hub → /hub</a></p>
 <!--TASKS-->
 </body>"""
 
 
 # The hub page: self-contained (inline <style>+<script>, no CDN). It is an
 # evolution of the landing page that fetches /hub.json and renders three
-# sections per the approved layout (variant A): Активные cards, История table,
-# Аналитика counters+bars. It polls every 3s, diffs on a serialized snapshot
+# sections per the approved layout (variant A): Active runs cards, History table,
+# Aggregate analytics counters+bars. It polls every 3s, diffs on a serialized snapshot
 # (like the dashboard's tick()), and swallows errors silently. Visual language
 # mirrors templates/dashboard.html (root tokens, phase/status/run-status badges).
 HUB_PAGE = r"""<!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ai-pathfinder — хаб запусков</title>
+<title>ai-pathfinder — runs hub</title>
 <script>
-  // theme bootstrap — runs before <style>/paint so there is no flash (FOUC).
-  // Same contract as the dashboard: two modes. localStorage['theme'] = 'light'|'dark'
+  // theme + language bootstrap — runs before <style>/paint so there is no flash (FOUC).
+  // Theme: same contract as the dashboard, two modes. localStorage['theme'] = 'light'|'dark'
   // (explicit choice); absent (or legacy 'system') = follow the OS. documentElement
   // carries the resolved data-theme ('light'|'dark').
+  // Language: english-first. localStorage['lang'] = 'en'|'ru' (shared with the dashboard);
+  // absent/unknown = hard 'en'. Resolve <html lang> early; render strings via the dictionary.
   (function(){
     try {
       var s = localStorage.getItem("theme");
@@ -1299,6 +1375,12 @@ HUB_PAGE = r"""<!doctype html>
       document.documentElement.setAttribute("data-theme", resolved);
     } catch (e) {
       document.documentElement.setAttribute("data-theme", "light");
+    }
+    try {
+      var l = localStorage.getItem("lang");
+      document.documentElement.setAttribute("lang", l === "ru" ? "ru" : "en");
+    } catch (e) {
+      document.documentElement.setAttribute("lang", "en");
     }
   })();
 </script>
@@ -1339,10 +1421,18 @@ HUB_PAGE = r"""<!doctype html>
   .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
   .status.working .dot { animation:pulse 1.2s ease-in-out infinite; }
   /* theme toggle — icon button (☀️/🌙), shares localStorage['theme'] with the dashboard */
-  .theme-btn { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; min-width:38px;
+  .theme-btn { display:inline-flex; align-items:center; justify-content:center; min-width:38px;
     background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px;
     padding:7px 10px; font-size:15px; line-height:1; cursor:pointer; }
   .theme-btn:hover { border-color:var(--accent); }
+  /* language toggle — icon button (EN⇄RU), shares localStorage['lang'] with the dashboard;
+     the hub is the writer of the global setting (POST /settings). Mirrors .theme-btn. */
+  .lang-btn { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; min-width:38px;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px;
+    padding:7px 10px; font-size:13px; font-weight:700; line-height:1; cursor:pointer; letter-spacing:.03em; }
+  .lang-btn:hover { border-color:var(--accent); }
+  /* the lang button takes the auto-margin so the pair stays right-aligned; theme follows it */
+  .lang-btn + .theme-btn { margin-left:0; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
   .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
   .progress > div { height:100%; background:var(--accent); transition:width .4s; }
@@ -1442,24 +1532,25 @@ HUB_PAGE = r"""<!doctype html>
 </head>
 <body>
 <header class="top"><div class="top-inner">
-  <h1 class="title">ai-pathfinder — хаб запусков</h1>
-  <span class="sub" id="updated">загрузка…</span>
-  <button class="theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему"><span id="theme-icon">☀️</span></button>
+  <h1 class="title">ai-pathfinder — runs hub</h1>
+  <span class="sub" id="updated">loading…</span>
+  <button class="lang-btn" id="lang-btn" title="Toggle language" aria-label="Toggle language"><span id="lang-label">EN</span></button>
+  <button class="theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"><span id="theme-icon">☀️</span></button>
 </div></header>
 
 <!-- static filter toolbar — sits OUTSIDE #root/#queue-root/#root-tail so render()'s
      innerHTML rewrites never touch it (input focus/caret survive the 3s poll). -->
 <div id="filter-bar">
   <div class="fpanel">
-    <input id="f-search" type="text" placeholder="Поиск по названию или slug…" autocomplete="off">
-    <div class="frow"><span class="glabel">фаза</span><span id="f-phase" class="frow" style="gap:7px"></span></div>
-    <div class="frow"><span class="glabel">тип</span><span id="f-kind" class="frow" style="gap:7px"></span></div>
-    <span id="f-count">найдено <b id="f-n">0</b> из <span id="f-m">0</span> · фильтр активен <span id="f-reset">сбросить</span></span>
+    <input id="f-search" type="text" placeholder="Search by title or slug…" autocomplete="off">
+    <div class="frow"><span class="glabel" id="f-phase-label">phase</span><span id="f-phase" class="frow" style="gap:7px"></span></div>
+    <div class="frow"><span class="glabel" id="f-kind-label">type</span><span id="f-kind" class="frow" style="gap:7px"></span></div>
+    <span id="f-count"><span id="f-count-pre"></span> <b id="f-n">0</b> <span id="f-count-mid"></span> <span id="f-m">0</span> <span id="f-count-post"></span> <span id="f-reset">reset</span></span>
   </div>
 </div>
 
 <div class="wrap" id="root">
-  <section class="card"><div class="empty">загрузка…</div></section>
+  <section class="card"><div class="empty">loading…</div></section>
 </div>
 <div class="wrap" id="queue-root"></div>
 <div class="wrap" id="root-tail"></div>
@@ -1469,6 +1560,201 @@ HUB_PAGE = r"""<!doctype html>
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => (
   {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
 
+// --- i18n: english-first dictionary + t(key) (theme pattern, ADR-0015) ---
+// Flat english keys. This dictionary is DUPLICATED from templates/dashboard.html (the
+// hub is a separate stream — functions are not shared; edits are synchronous, drift-prone).
+// SHARED keys (identical text to the dashboard, ws5 verifies parity): header.toggleTheme,
+// header.toggleLang. Hub-specific strings use the hub.* / hubq.* namespaces. Source of truth
+// for the language is the global /settings.json (b1); localStorage['lang'] is a cache and the
+// cross-page shared key. Hard 'en' default (no navigator.language). State (lang) lives in a
+// module var + <html lang>, outside #root/#queue-root (rewritten by the 3s poll). Dynamic
+// strings are read from the dictionary on EVERY render → a language switch re-renders.
+const STR = {
+  en: {
+    "header.toggleTheme": "Toggle theme",
+    "header.toggleLang": "Toggle language",
+    "theme.toLight": "Dark theme — switch to light",
+    "theme.toDark": "Light theme — switch to dark",
+    "hub.loading": "loading…",
+    "hub.search": "Search by title or slug…",
+    "hub.filterPhase": "phase",
+    "hub.filterKind": "type",
+    "hub.countPre": "",                 // «<n> of <m> shown · filter active reset»
+    "hub.countMid": "of",
+    "hub.countPost": "shown · filter active",
+    "hub.reset": "reset",
+    "hub.openDashboard": "open dashboard →",
+    "hub.open": "open",
+    "hub.nothingFound": "nothing found",
+    "hub.noActive": "no active runs",
+    "hub.histEmpty": "history is empty",
+    "hub.awaiting": "⏳ awaiting reply",
+    "hub.inProgress": "in progress",
+    "hub.colTask": "Task",
+    "hub.colPhase": "Phase",
+    "hub.colIter": "Iter.",
+    "hub.colDur": "Dur.",
+    "hub.colSubagents": "Sub-agents",
+    "hub.colSessions": "Sessions",
+    "hub.colUpdated": "Updated",
+    "hub.secActive": "Active runs",
+    "hub.secHistory": "History",
+    "hub.secAnalytics": "Aggregate analytics",
+    "hub.stat.total": "total tasks",
+    "hub.stat.active": "active",
+    "hub.stat.done": "completed",
+    "hub.stat.subagents": "sub-agents",
+    "hub.stat.sessions": "sessions",
+    "hub.stat.medianDur": "median dur.",
+    "hub.tokensNote": "Tokens and cost are not part of the cross-task aggregate (expensive and unavailable from a worktree) — they open lazily on the task dashboard.",
+    "hub.updated": "updated",
+    "hub.autoRefresh": "auto-refresh",
+    "hub.months": "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
+    // /improve dispatch queue
+    "hubq.title": "/improve queue",
+    "hubq.copied": "Command copied",
+    "hubq.copyDrain": "📋 Copy drain command",
+    "hubq.source": "source",
+    "hubq.remaining": "remaining",        // «remaining N»
+    "hubq.failureOne": "failure",
+    "hubq.failureMany": "failures",
+    "hubq.colFeature": "Feature",
+    "hubq.colPrism": "Prism",
+    "hubq.colStatus": "Status",
+    "hubq.status.done": "done",
+    "hubq.status.inProgress": "in progress",
+    "hubq.status.pending": "queued",
+    "hubq.status.skipped": "skipped",
+    "hubq.status.failed": "failed",
+    // duration units (fmtDur)
+    "dur.s": "s",
+    "dur.m": "m",
+    "dur.h": "h",
+  },
+  ru: {
+    "header.toggleTheme": "Сменить тему",
+    "header.toggleLang": "Сменить язык",
+    "theme.toLight": "Тёмная тема — переключить на светлую",
+    "theme.toDark": "Светлая тема — переключить на тёмную",
+    "hub.loading": "загрузка…",
+    "hub.search": "Поиск по названию или slug…",
+    "hub.filterPhase": "фаза",
+    "hub.filterKind": "тип",
+    "hub.countPre": "найдено",
+    "hub.countMid": "из",
+    "hub.countPost": "· фильтр активен",
+    "hub.reset": "сбросить",
+    "hub.openDashboard": "открыть дашборд →",
+    "hub.open": "открыть",
+    "hub.nothingFound": "ничего не найдено",
+    "hub.noActive": "нет активных запусков",
+    "hub.histEmpty": "история пуста",
+    "hub.awaiting": "⏳ ждёт ответа",
+    "hub.inProgress": "в работе",
+    "hub.colTask": "Задача",
+    "hub.colPhase": "Фаза",
+    "hub.colIter": "Итер.",
+    "hub.colDur": "Длит.",
+    "hub.colSubagents": "Под-агенты",
+    "hub.colSessions": "Сессии",
+    "hub.colUpdated": "Обновлено",
+    "hub.secActive": "Активные запуски",
+    "hub.secHistory": "История",
+    "hub.secAnalytics": "Обобщённая аналитика",
+    "hub.stat.total": "всего задач",
+    "hub.stat.active": "активных",
+    "hub.stat.done": "завершено",
+    "hub.stat.subagents": "под-агентов",
+    "hub.stat.sessions": "сессий",
+    "hub.stat.medianDur": "медиана длит.",
+    "hub.tokensNote": "Токены и стоимость не входят в кросс-задачный агрегат (дорого и недоступно из worktree) — открываются лениво на дашборде задачи.",
+    "hub.updated": "обновлено",
+    "hub.autoRefresh": "автообновление",
+    "hub.months": "янв,фев,мар,апр,мая,июн,июл,авг,сен,окт,ноя,дек",
+    "hubq.title": "Очередь /improve",
+    "hubq.copied": "Команда скопирована",
+    "hubq.copyDrain": "📋 Копировать команду дренажа",
+    "hubq.source": "источник",
+    "hubq.remaining": "осталось",
+    "hubq.failureOne": "сбой",
+    "hubq.failureMany": "сбоев",
+    "hubq.colFeature": "Фича",
+    "hubq.colPrism": "Призма",
+    "hubq.colStatus": "Статус",
+    "hubq.status.done": "done",
+    "hubq.status.inProgress": "в работе",
+    "hubq.status.pending": "в очереди",
+    "hubq.status.skipped": "пропущено",
+    "hubq.status.failed": "сбой",
+    "dur.s": "с",
+    "dur.m": "м",
+    "dur.h": "ч",
+  },
+};
+let lang = (function(){ const l = localStorage.getItem("lang"); return l === "ru" ? "ru" : "en"; })();
+function t(key){
+  const d = STR[lang] || STR.en;
+  if(d[key] != null) return d[key];
+  if(STR.en[key] != null) return STR.en[key];   // fallback to en, then the key itself
+  return key;
+}
+function storedLang(){ const l = localStorage.getItem("lang"); return (l === "en" || l === "ru") ? l : null; }
+function resolveLang(){ return storedLang() || "en"; }   // hard en default (no navigator.language)
+// Apply <html lang>, the control label (= CURRENT language, like the v1 mockup) and the
+// static header/filter strings; the dynamic sections are redrawn by render()/renderQueue().
+function applyLang(){
+  lang = resolveLang();
+  document.documentElement.setAttribute("lang", lang);
+  const lbl = document.getElementById("lang-label"); if(lbl) lbl.textContent = lang.toUpperCase();
+  const lb = document.getElementById("lang-btn");
+  if(lb) lb.title = lang === "ru" ? "Switch to English" : "Switch to Russian";
+  applyStaticStrings();
+}
+// Static nodes that exist in the markup (header + filter toolbar); the polled sections
+// (#root/#queue-root) read the dictionary on each render(), no need to touch them here.
+function applyStaticStrings(){
+  const set = (id, val, attr) => { const el = document.getElementById(id); if(el){ if(attr) el.setAttribute(attr, val); else el.textContent = val; } };
+  set("theme-btn", t("header.toggleTheme"), "title"); set("theme-btn", t("header.toggleTheme"), "aria-label");
+  set("f-search", t("hub.search"), "placeholder");
+  set("f-phase-label", t("hub.filterPhase"));
+  set("f-kind-label", t("hub.filterKind"));
+  set("f-count-pre", t("hub.countPre"));
+  set("f-count-mid", t("hub.countMid"));
+  set("f-count-post", t("hub.countPost"));
+  set("f-reset", t("hub.reset"));
+}
+// Re-render every dynamic zone under the current language (strings come from the dictionary
+// on each render). Cached payloads (lastData/lastQueue) are re-rendered; the diff stamps are
+// reset so a switch with unchanged data still repaints.
+function relangAll(){
+  if(lastData){ last = ""; render(lastData); }
+  // queue is an independent poll: repaint from its cache and reset the diff stamp
+  if(lastQueueData){ lastQueue = ""; renderQueue(lastQueueData); }
+}
+// POST the global setting (best-effort; b1 contract: {"lang": ...} with no slug). The hub is
+// the writer of the global language — this is what makes it "change from the hub".
+function pushLang(l){
+  try { fetch("/settings", { method:"POST", body: JSON.stringify({ lang: l }) }).catch(() => {}); } catch(e){}
+}
+(function initLang(){
+  applyLang();
+  const btn = document.getElementById("lang-btn");
+  if(btn) btn.addEventListener("click", function(){
+    const next = lang === "ru" ? "en" : "ru";       // flip EN⇄RU
+    localStorage.setItem("lang", next);             // shared cross-page key
+    applyLang();
+    pushLang(next);                                 // write the global /settings.json (b1)
+    relangAll();                                    // repaint dynamic zones under the new language
+  });
+  // source of truth — /settings.json (b1); pull on start and sync the localStorage cache.
+  fetch("/settings.json").then(r => r.ok ? r.json() : null).then(s => {
+    if(!s) return;
+    const sl = (s.lang === "en" || s.lang === "ru") ? s.lang : "en";
+    if(sl !== resolveLang()){ localStorage.setItem("lang", sl); applyLang(); relangAll(); }
+    else { localStorage.setItem("lang", sl); }      // pin the cache even when it already matches
+  }).catch(() => {});
+})();
+
 // --- theme toggle: two modes (light/dark), icon button; shares localStorage['theme']
 // with the dashboard. Bootstrap in <head> already set data-theme before paint; here we
 // wire the button, persist the explicit choice, and follow the OS until one is made.
@@ -1476,12 +1762,12 @@ const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
 function storedTheme(){ var s = localStorage.getItem("theme"); return (s === "light" || s === "dark") ? s : null; }
 function resolveTheme(){ return storedTheme() || (themeMql.matches ? "dark" : "light"); }
 function applyTheme(){
-  var t = resolveTheme();
-  document.documentElement.setAttribute("data-theme", t);
+  var th = resolveTheme();
+  document.documentElement.setAttribute("data-theme", th);
   var icon = document.getElementById("theme-icon");
-  if(icon) icon.textContent = t === "dark" ? "🌙" : "☀️";
+  if(icon) icon.textContent = th === "dark" ? "🌙" : "☀️";
   var btn = document.getElementById("theme-btn");
-  if(btn) btn.title = t === "dark" ? "Тёмная тема — переключить на светлую" : "Светлая тема — переключить на тёмную";
+  if(btn) btn.title = th === "dark" ? t("theme.toLight") : t("theme.toDark");
 }
 var themeBtn = document.getElementById("theme-btn");
 if(themeBtn) themeBtn.addEventListener("click", function(){
@@ -1503,26 +1789,27 @@ function runStatusClass(phase){
 function statusBadge(status){
   const s = String(status||"");
   if(s === "awaiting-batch" || s === "awaiting")
-    return '<span class="status awaiting"><span class="dot"></span>⏳ ждёт ответа</span>';
-  return '<span class="status working"><span class="dot"></span>в работе</span>';
+    return '<span class="status awaiting"><span class="dot"></span>'+esc(t("hub.awaiting"))+'</span>';
+  return '<span class="status working"><span class="dot"></span>'+esc(t("hub.inProgress"))+'</span>';
 }
 
 function fmtDur(ms){
   if(ms==null) return "—";
   const s=Math.round(ms/1000);
-  if(s<60) return s+"с";
+  if(s<60) return s+t("dur.s");
   const m=Math.floor(s/60);
-  if(m<60){ const r=s%60; return r?`${m}м ${r}с`:`${m}м`; }
-  const h=Math.floor(m/60), rm=m%60; return rm?`${h}ч ${rm}м`:`${h}ч`;
+  if(m<60){ const r=s%60; return r?`${m}${t("dur.m")} ${r}${t("dur.s")}`:`${m}${t("dur.m")}`; }
+  const h=Math.floor(m/60), rm=m%60; return rm?`${h}${t("dur.h")} ${rm}${t("dur.m")}`:`${h}${t("dur.h")}`;
 }
 
-const MONTHS=["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+// month abbreviations come from the dictionary (comma-joined per language)
+function months(){ return t("hub.months").split(","); }
 function fmtDate(ts){
   if(!ts) return "—";
   const d=new Date(String(ts).replace(" ","T"));
   if(isNaN(d)) return esc(ts);
   const pad=n=>String(n).padStart(2,"0");
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getDate()} ${months()[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function progressPct(p){
@@ -1545,7 +1832,7 @@ function runCard(r){
     ${r.title ? `<div class="desc">${esc(r.title)}</div>` : ""}
     <div class="progress"><div style="width:${pct}%"></div></div>
     ${meta}
-    <a class="open" href="/?slug=${encodeURIComponent(r.slug)}">открыть дашборд →</a>
+    <a class="open" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.openDashboard"))}</a>
   </div>`;
 }
 
@@ -1559,7 +1846,7 @@ function histRow(r){
     <td class="mono">${r.subagents==null?"—":esc(r.subagents)}</td>
     <td class="mono">${r.sessions==null?"—":esc(r.sessions)}</td>
     <td class="mono">${fmtDate(r.updatedAt)}</td>
-    <td><a href="/?slug=${encodeURIComponent(r.slug)}">открыть</a></td>
+    <td><a href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.open"))}</a></td>
   </tr>`;
 }
 
@@ -1607,11 +1894,11 @@ function render(data){
   buildChips(runs);
   updateCount(shown.length, runs.length);
 
-  // empty text depends on whether a filter is active: "ничего не найдено" when the
+  // empty text depends on whether a filter is active: "nothing found" when the
   // user filtered everything out, else the default section-empty message.
   const filtered = filterActive();
-  const activeEmpty = filtered ? "ничего не найдено" : "нет активных запусков";
-  const histEmpty = filtered ? "ничего не найдено" : "история пуста";
+  const activeEmpty = filtered ? t("hub.nothingFound") : t("hub.noActive");
+  const histEmpty = filtered ? t("hub.nothingFound") : t("hub.histEmpty");
 
   const activeHtml = active.length
     ? `<div class="cards">${active.map(runCard).join("")}</div>`
@@ -1619,44 +1906,43 @@ function render(data){
 
   const histHtml = history.length
     ? `<table class="hist"><thead><tr>
-        <th>Задача</th><th>Фаза</th><th>Итер.</th><th>Длит.</th>
-        <th>Под-агенты</th><th>Сессии</th><th>Обновлено</th><th></th>
+        <th>${esc(t("hub.colTask"))}</th><th>${esc(t("hub.colPhase"))}</th><th>${esc(t("hub.colIter"))}</th><th>${esc(t("hub.colDur"))}</th>
+        <th>${esc(t("hub.colSubagents"))}</th><th>${esc(t("hub.colSessions"))}</th><th>${esc(t("hub.colUpdated"))}</th><th></th>
       </tr></thead><tbody>${history.map(histRow).join("")}</tbody></table>`
     : `<div class="empty">${histEmpty}</div>`;
 
   const stats = [
-    [a.total, "всего задач"],
-    [a.active, "активных"],
-    [a.done, "завершено"],
-    [a.subagents, "под-агентов"],
-    [a.sessions, "сессий"],
-    [fmtDur(a.medianDurationMs), "медиана длит."],
+    [a.total, t("hub.stat.total")],
+    [a.active, t("hub.stat.active")],
+    [a.done, t("hub.stat.done")],
+    [a.subagents, t("hub.stat.subagents")],
+    [a.sessions, t("hub.stat.sessions")],
+    [fmtDur(a.medianDurationMs), t("hub.stat.medianDur")],
   ].map(([n,l])=>`<div class="stat"><div class="n">${n==null?"—":esc(n)}</div>`+
     `<div class="l">${esc(l)}</div></div>`).join("");
 
   // #root holds active runs; #queue-root (filled by tickQueue) sits between;
   // #root-tail holds history + analytics. Splitting keeps the queue section
-  // visually between "Активные" and "История" while #root is overwritten every
+  // visually between "Active runs" and "History" while #root is overwritten every
   // /hub.json diff without ever touching the independent #queue-root node.
   document.getElementById("root").innerHTML = `
     <section class="card">
-      <h2>Активные запуски <span class="count">${active.length}</span></h2>
+      <h2>${esc(t("hub.secActive"))} <span class="count">${active.length}</span></h2>
       ${activeHtml}
     </section>`;
   document.getElementById("root-tail").innerHTML = `
     <section class="card">
-      <h2>История <span class="count">${history.length}</span></h2>
+      <h2>${esc(t("hub.secHistory"))} <span class="count">${history.length}</span></h2>
       ${histHtml}
     </section>
     <section class="card">
-      <h2>Обобщённая аналитика</h2>
+      <h2>${esc(t("hub.secAnalytics"))}</h2>
       <div class="stats">${stats}</div>
       <div class="phasebars" style="margin-top:16px">${phaseBars(a.phases)}</div>
-      <p class="sub" style="margin-top:14px">Токены и стоимость не входят в кросс-задачный
-      агрегат (дорого и недоступно из worktree) — открываются лениво на дашборде задачи.</p>
+      <p class="sub" style="margin-top:14px">${esc(t("hub.tokensNote"))}</p>
     </section>`;
   document.getElementById("updated").textContent =
-    "обновлено " + fmtDate(new Date().toISOString()) + " · автообновление";
+    t("hub.updated") + " " + fmtDate(new Date().toISOString()) + " · " + t("hub.autoRefresh");
 }
 
 // Build phase/kind chips dynamically from the data (the kind list is {ask,null}
@@ -1760,6 +2046,20 @@ async function tick(){
 tick();
 setInterval(tick, 3000);
 
+// --- cross-page language sync (every 3s, like the dashboard) ---
+// The shared localStorage['lang'] only syncs within the same origin/tab lifetime; polling
+// /settings.json keeps the hub in step when the language is changed on the dashboard (or in
+// another hub tab). Independent of the /hub.json diff so a no-op poll is cheap.
+async function tickLang(){
+  try {
+    const res = await fetch("/settings.json");
+    const s = await res.json();
+    const sl = (s && (s.lang === "en" || s.lang === "ru")) ? s.lang : "en";
+    if(sl !== resolveLang()){ localStorage.setItem("lang", sl); applyLang(); relangAll(); }
+  } catch (e) { /* server may be restarting — swallow and retry next tick */ }
+}
+setInterval(tickLang, 3000);
+
 // --- toast (ported from templates/dashboard.html) ---
 function toast(msg){
   const t = document.getElementById("toast");
@@ -1773,7 +2073,7 @@ function toast(msg){
 // non-secure contexts (navigator.clipboard needs a secure origin).
 const DRAIN_CMD = "/loop /feature";
 function copyDrainCmd(){
-  const done = () => toast("Команда скопирована");
+  const done = () => toast(t("hubq.copied"));
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(DRAIN_CMD).then(done).catch(() => fallbackCopy(DRAIN_CMD) && done());
     return;
@@ -1804,18 +2104,19 @@ function queueStatusClass(status){
   if(s === "pending") return "pending";
   return "running"; // in-progress and anything unknown
 }
-const QSTATUS_RU = { done:"done", "in-progress":"в работе", pending:"в очереди",
-  skipped:"пропущено", failed:"сбой" };
+// queue status -> dictionary key (localized via t() on each render)
+const QSTATUS_KEY = { done:"hubq.status.done", "in-progress":"hubq.status.inProgress",
+  pending:"hubq.status.pending", skipped:"hubq.status.skipped", failed:"hubq.status.failed" };
 function queueStatusLabel(status){
   const s = String(status||"");
-  return QSTATUS_RU[s] || s || "—";
+  return QSTATUS_KEY[s] ? t(QSTATUS_KEY[s]) : (s || "—");
 }
 function queueRow(it){
   const cls = queueStatusClass(it.status);
   const trCls = (cls === "failed" || cls === "skipped") ? ` class="${cls}"` : "";
   const prism = it.prism ? esc(it.prism) : (it.candId ? esc(it.candId) : "—");
   const link = it.slug
-    ? `<a href="/?slug=${encodeURIComponent(it.slug)}">открыть</a>`
+    ? `<a href="/?slug=${encodeURIComponent(it.slug)}">${esc(t("hub.open"))}</a>`
     : "";
   return `<tr${trCls}>
     <td class="n">${it.n==null?"":esc(it.n)}</td>
@@ -1835,21 +2136,21 @@ function renderQueue(data){
   const failed = items.filter(i => i.status === "failed").length;
   const pct = total ? Math.round(done/total*100) : 0;
   const src = data.source
-    ? `источник <code class="cmd">${esc(data.source)}</code> · ` : "";
-  const failMeta = failed ? ` · ${failed} ${failed===1?"сбой":"сбоев"}` : "";
-  const meta = `${src}осталось ${total - done}${failMeta}`;
+    ? `${t("hubq.source")} <code class="cmd">${esc(data.source)}</code> · ` : "";
+  const failMeta = failed ? ` · ${failed} ${failed===1?t("hubq.failureOne"):t("hubq.failureMany")}` : "";
+  const meta = `${src}${t("hubq.remaining")} ${total - done}${failMeta}`;
   root.innerHTML = `
     <section class="card">
-      <h2>Очередь /improve <span class="count">${done} / ${total}</span></h2>
+      <h2>${esc(t("hubq.title"))} <span class="count">${done} / ${total}</span></h2>
       <div class="q-head">
         <div class="progress"><div style="width:${pct}%"></div></div>
         <span class="meta">${meta}</span>
         <div class="q-actions">
-          <button class="copy primary" id="queue-copy">📋 Копировать команду дренажа</button>
+          <button class="copy primary" id="queue-copy">${esc(t("hubq.copyDrain"))}</button>
         </div>
       </div>
       <table class="queue">
-        <thead><tr><th>#</th><th>Фича</th><th>Призма</th><th>Статус</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>${esc(t("hubq.colFeature"))}</th><th>${esc(t("hubq.colPrism"))}</th><th>${esc(t("hubq.colStatus"))}</th><th></th></tr></thead>
         <tbody>${items.map(queueRow).join("")}</tbody>
       </table>
     </section>`;
@@ -1858,10 +2159,12 @@ function renderQueue(data){
 }
 
 let lastQueue = "";
+let lastQueueData = null; // cache so a language switch can repaint without a fetch
 async function tickQueue(){
   try {
     const res = await fetch("/queue.json");
     const data = await res.json();
+    lastQueueData = data;
     const stamp = JSON.stringify(data);
     if(stamp !== lastQueue){ lastQueue = stamp; renderQueue(data); }
   } catch (e) { /* swallow — independent of /hub.json, retry next tick */ }

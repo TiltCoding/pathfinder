@@ -60,7 +60,8 @@ The dashboard renders from `dashboard.json` and `replies.json`, which **you** wr
 
 **Judge verdicts** (new — written each scored iteration in BUILD and once at SHIP). A judge entry is a
 `runs[]` item with `kind: "judge"` and a deterministic id `judge-<phase>-i<iter>` (SHIP uses
-`judge-ship`). Its `summary` is **Russian markdown** carrying the **merged** verdict: the
+`judge-ship`). Its `summary` is **markdown in the global default language**
+(`~/.claude/ai-pathfinder/settings.json`, default English) carrying the **merged** verdict: the
 `weighted_total` (0–100), the per-dimension score table, and the test pass/fail line; `findings` are the
 judges' `actionable_critique` ranked by severity (a `blocking_issue` maps to `severity: "high"`):
 
@@ -114,8 +115,10 @@ escalates (`loop.md` §STOP / ESCALATE).
    (`summary` / `codebaseMap`); `selectedText` is the exact fragment the human highlighted — use it to
    locate what they mean. At a gate, route content edits through `np-thinker` (it revises `prd.md` /
    `phase-plan.md`); at an escalation, fold the chosen option into the loop. Then append a reply to
-   `replies.json` keyed by the same `blockId`/`questionId` with a one- to two-sentence Russian note on
-   what you did. Update `lastSubmission`, bump `iteration`, rewrite `dashboard.json` (status back to
+   `replies.json` keyed by the same `blockId`/`questionId` with a one- to two-sentence note on what you
+   did, written in the **same language as the comment/answer you are replying to** (auto-detect; this is
+   a human-facing reply channel, so the message language overrides the global default).
+   Update `lastSubmission`, bump `iteration`, rewrite `dashboard.json` (status back to
    `working`, then to `awaiting-batch` for the next round).
 
 `replies.json` shape:
@@ -130,8 +133,9 @@ escalates (`loop.md` §STOP / ESCALATE).
 ## Loop escalation = a choice-question in `questions[]`
 
 When the build loop hits a stop-condition, you surface it as a **choice-question** (not a gate). Add it
-to `questions[]` with `kind: "choice"` and a stable id (e.g. `q-esc-<phase>`), options **«+N
-итераций» / «Re-scope фазы» / «Принять как есть» / «Прервать»**, and put the best attempt + scratchpad
+to `questions[]` with `kind: "choice"` and a stable id (e.g. `q-esc-<phase>`), options (in the global
+default language) **"+N iterations" / "Re-scope the phase" / "Accept as-is" / "Abort"**, and put the
+best attempt + scratchpad
 + score history into the dashboard `summary` so the human can decide. The human's pick comes back as a
 normal `answer` keyed to that question id on the next batch; you apply it per `loop.md` §STOP. This
 reuses the existing answer channel — no new server endpoint.
@@ -150,7 +154,9 @@ else.
   **appending your own `role:"agent"` line** to `chat.jsonl`, and if it asks for a change, fold it into
   the PRD / phase plan / remaining phases just like a steering batch. Then set `lastChatTs` to the
   newest message ts.
-- Keep replies short and in Russian. If a request is large enough to reshape the PRD or phase plan, say
+- Keep replies short, and reply in the **same language as the human's chat message** (auto-detect from
+  that message text; the chat is a human-facing reply channel, so the message language overrides the
+  global default). If a request is large enough to reshape the PRD or phase plan, say
   so in chat and reflect it in `dashboard.json` rather than silently diverging.
 - In headless/eval mode there is no chat; skip it.
 

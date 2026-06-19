@@ -86,7 +86,9 @@ When you reach a checkpoint (end of an iteration where you want human input, or 
    — use it to locate what they mean. Учти также, что `answer` по `questionId` может содержать **свободный
    текст вне `options`** (человек ответил своей формулировкой на choice-вопрос) — прими его как ответ, не
    отбраковывай. Then append a reply to `replies.json` keyed by
-   the same `blockId`/`questionId` with a one- to two-sentence Russian note on what you did. Update `lastSubmission`, bump `iteration`,
+   the same `blockId`/`questionId` with a one- to two-sentence note on what you did, written in the **same
+   language as the comment/answer you are replying to** (auto-detect; this is a human-facing reply
+   channel, so the message language overrides the global default). Update `lastSubmission`, bump `iteration`,
    rewrite `dashboard.json` (status back to `working`, then to `awaiting-batch` for the next round).
 
 `replies.json` shape:
@@ -112,7 +114,9 @@ it does **not** interrupt running coders. Handle it at checkpoints, the same cad
   state.json.lastChatTs`. For each: answer it by **appending your own `role:"agent"` line** to
   `chat.jsonl` (the panel renders it), and if it asks for a change, fold it into the remaining
   work-streams / `plan.md` just like a steering batch. Then set `lastChatTs` to the newest message ts.
-- Keep replies short and in Russian. If a request is large enough to reshape the plan, say so in chat
+- Keep replies short, and reply in the **same language as the human's chat message** (auto-detect from
+  that message text; the chat is a human-facing reply channel, so the message language overrides the
+  global default). If a request is large enough to reshape the plan, say so in chat
   and reflect it in `dashboard.json` rather than silently diverging.
 - In headless/eval mode there is no chat; skip it.
 

@@ -109,10 +109,15 @@ the feature workflow unchanged.
   in `loop.md`.
 - **Greenfield-git.** At INTAKE: if there is no repository, `git init`. If `git rev-parse HEAD` fails
   (zero commits), set `state.json.baseCommit = 4b825dc642cb6eb9a060e54bf8d69288fbee4904` (the empty-tree
-  hash) so the dashboard's **«Изменения»** tab diffs against an empty baseline from commit zero.
-- **Russian artifacts, English instructions.** Everything human-facing — the PRD, the phase plan, the
-  dashboard, gate texts, judge summaries, the product's knowledge base — is **Russian**. These
-  skill/agent instruction files stay **English**.
+  hash) so the dashboard's **Changes** tab diffs against an empty baseline from commit zero.
+- **Output language.** The default output language for everything generated — the PRD, the phase plan,
+  the dashboard, gate texts, judge summaries, commit messages, the product README, and its knowledge
+  base — is the global plugin setting read from `~/.claude/ai-pathfinder/settings.json`
+  (`{"lang":"en"|"ru"}`), defaulting to **English** when unset/unreadable. **Exception:** in the
+  human-facing reply channels — `chat.jsonl` (role `agent`, including anchored threads) and
+  `replies.json` — reply in the **same language as the human message you are answering** (auto-detect
+  from that message text); this overrides the default. Machine-parsed digest headers and fixed schema
+  keys stay English. These skill/agent instruction files stay **English**.
 - **Keep the dashboard the source of truth for the human.** After every stage/iteration, rewrite
   `dashboard.json`. Status is `working` while you act and `awaiting-batch` while parked at a gate or
   escalation.

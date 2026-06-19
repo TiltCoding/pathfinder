@@ -81,7 +81,9 @@ When you reach a checkpoint (the SELECT GATE, where you want the human to pick f
    что `answer` по `questionId` может содержать **свободный текст вне `options`** (человек написал свою
    формулировку, напр. «делаем, но без X») — прими его как ответ и как уточнение к брифу этой фичи, не
    отбраковывай. Then append a reply to `replies.json` keyed by the same `blockId`/`questionId` with a
-   one- to two-sentence Russian note on what you did. Update `lastSubmission`, bump `iteration`, rewrite
+   one- to two-sentence note on what you did, written in the **same language as the comment/answer you
+   are replying to** (auto-detect; this is a human-facing reply channel, so the message language overrides
+   the global default). Update `lastSubmission`, bump `iteration`, rewrite
    `dashboard.json` (status back to `working`, then to `awaiting-batch` for the next round).
 
 `replies.json` shape:
@@ -106,7 +108,9 @@ batches. Handle it at checkpoints, the same cadence as everything else.
   **appending your own `role:"agent"` line** to `chat.jsonl` (the panel renders it), and if it asks for a
   change, fold it into the top-K cards just like a steering batch. Then set `lastChatTs` to the newest
   message ts.
-- Keep replies short and in Russian. If a request is large enough to reshape the shortlist, say so in
+- Keep replies short, and reply in the **same language as the human's chat message** (auto-detect from
+  that message text; the chat is a human-facing reply channel, so the message language overrides the
+  global default). If a request is large enough to reshape the shortlist, say so in
   chat and reflect it in `dashboard.json` rather than silently diverging.
 - In headless/eval mode there is no chat; skip it.
 

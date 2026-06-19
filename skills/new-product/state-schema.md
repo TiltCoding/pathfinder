@@ -78,6 +78,7 @@ This is the feature schema plus the greenfield fields the evolutionary build-loo
   "lastSubmission": 2,
   "lastSignalCount": 1,
   "lastChatTs": "2026-06-12T11:15:00",
+  "lang": "en",
   "serverPort": 8473
 }
 ```
@@ -97,6 +98,10 @@ This is the feature schema plus the greenfield fields the evolutionary build-loo
   resumed session knows what is in flight. In BUILD the `workstream` is the **build-phase id** (`p2`).
 - **`questions`**: keep ids stable and store the resolved `answer` once known — this is your record of
   decisions (also feed notable ones to the knowledge base as ADRs).
+- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
+  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
+  the PRD/phase-plan/dashboard/knowledge/commits/product README; chat (`chat.jsonl`) and `replies.json`
+  instead follow the language of the human's message. Pass it to sub-agents in their spawn prompt.
 
 ## Workflow stages (`phase`)
 
@@ -152,7 +157,7 @@ with zero commits:
 - **No repository** → run `git init` (in `projectRoot`), then proceed as below.
 - **`git rev-parse HEAD` fails** (a repo exists but has **0 commits**) → set
   `baseCommit = 4b825dc642cb6eb9a060e54bf8d69288fbee4904` (the git **empty-tree** hash). The server then
-  diffs the working tree against the empty tree, so «Изменения» works from the very first commit.
+  diffs the working tree against the empty tree, so the Changes tab works from the very first commit.
 - **Otherwise** (commits exist) → `baseCommit = git rev-parse HEAD`, exactly as `/feature` does.
 
 This empty-tree case is the one the feature schema does not cover — it is the mandatory greenfield fix.

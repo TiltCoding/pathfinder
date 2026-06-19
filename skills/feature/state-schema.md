@@ -28,6 +28,7 @@ changes (phase transition, new iteration, work-stream status, a consumed submiss
   "lastSubmission": 2,
   "lastSignalCount": 1,
   "lastChatTs": "2026-06-09T22:35:00",
+  "lang": "en",
   "serverPort": 8473
 }
 ```
@@ -45,10 +46,14 @@ Field notes:
 - **`lastSignalCount`**: how many `signals.json` entries you have already accounted for. Serves as the
   `/wait` long-poll baseline (`sinceSignal`) and keeps you from re-processing old signals.
 - **`baseCommit`**: the git `HEAD` captured at INTAKE. The companion server diffs the working tree
-  against it to populate the **«Изменения»** tab (`/changes`). Absent in non-git projects — the server
+  against it to populate the **Changes** tab (`/changes`). Absent in non-git projects — the server
   then falls back to `HEAD`.
+- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
+  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
+  generated artifacts/dashboard/knowledge; chat (`chat.jsonl`) and `replies.json` instead follow the
+  language of the human's message. Pass it to sub-agents in their spawn prompt.
 - **`worktreePath`** (optional): the absolute path of the task's own git working tree, set only when
-  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **«Изменения»** tab
+  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **Changes** tab
   against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read
   by the server. Absent for ordinary tasks — the server falls back to its `--root` working tree.
 - **`branch`** (optional): the git branch the task's worktree is checked out on. Set alongside
