@@ -86,6 +86,29 @@ questions. This is what keeps the task **active** in the hub (a non-terminal `ph
      than ~24h, advance to DONE (see `phases.md` §DONE).
    - **An explicit wrap-up request** from the human ("спасибо, всё", "можно закрывать") — advance to DONE.
 
+### Anchored discussion (ветки на блоках)
+
+A `chat.jsonl` message may carry an **`anchor`** — a `planBlocks[].id` (`ans-K`), the literal `summary`,
+or a demo-variant id (`process` / `infographic`) — plus an optional **`quote`** (the exact fragment the
+human selected). Such a message renders as a **threaded discussion under that block/region/variant**
+instead of in the free-form chat panel. This is now the **per-block discussion channel** — it replaces
+the old draft-comment cards, so the human can pin a follow-up to a specific part of the answer.
+
+- **Reply in context** by appending your own `chat.jsonl` line with the **same `anchor`** — your reply
+  lands in that thread:
+
+  ```json
+  {"role":"agent","text":"Да, поток данных именно через server.py:223.","anchor":"ans-1","ts":"<iso>"}
+  ```
+
+- **If your reply is a question back to the human** (e.g. you need them to narrow the follow-up), add
+  **`"needsAnswer": true`**. The page marks that block as having an open thread and raises a header
+  counter «🔸 N ждут ответа», which stays up until the human posts a later turn on that anchor. Omit
+  `needsAnswer` for a plain reply — the page then shows «✓ учтено агентом».
+- `needsAnswer` is **agent-only**: the human's POST never sets it (it only appears on a `role:"agent"`
+  line). So a block is "ждёт ответа" exactly when your latest anchored turn asked something and the human
+  hasn't answered yet.
+
 ## Don't busy-wait
 
 The `/wait` long-poll is already the no-busy-wait path: you block on a background curl and are

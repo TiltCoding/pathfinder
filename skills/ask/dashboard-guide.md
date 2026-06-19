@@ -39,6 +39,12 @@ Field notes:
   the `ANSWER` stage, waiting for a follow-up). The header badge reflects this, so keep it honest — it's
   how the human knows whether a chat message will be seen promptly.
 - **`phase`**: one of INTAKE / RESEARCH / SYNTHESIZE / ANSWER / DONE.
+- **`now`** / **`nowAt`** (optional, back-compatible): a one-line **human** description of what you are
+  doing right now (e.g. `"рой читает server.py"`, `"рисую инфографику"`) plus an ISO timestamp. The
+  header shows it as «Сейчас: …». Update both whenever your activity changes so the line stays live; the
+  page greys it out after ~90s stale (`nowAt`) and hides it entirely while `status:"awaiting-batch"`
+  (you're parked on the chat, not researching). Omit both to leave the line off — old `dashboard.json`
+  without these fields renders unchanged.
 - **Markdown** is supported in `summary` and block `body` (headings, lists, `code`, **bold**, links).
   Keep the answer self-contained and scannable, with clickable `path:line` references — the human can
   select any text and comment, so write prose worth quoting.

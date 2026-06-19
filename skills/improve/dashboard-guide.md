@@ -34,6 +34,12 @@ Field notes:
   header badge reflects this, so keep it honest — it's how the human knows whether a click will be seen.
 - **`phase`**: one of INTAKE / SCOUT / CONSENSUS / PROPOSE / DISPATCH / DONE.
 - **`progress`**: optional; `/improve` may use it at DISPATCH as dispatched/total feature runs.
+- **`now`** / **`nowAt`** (optional, back-compatible): a one-line **human** description of what you are
+  doing right now (e.g. `"рой сканирует UX"`, `"диспетчу feat-3"`) plus an ISO timestamp. The header
+  shows it as «Сейчас: …». Update both whenever your activity changes so the line stays live; the page
+  greys it out after ~90s stale (`nowAt`) and hides it entirely while `status:"awaiting-batch"` (you're
+  parked, not acting). Omit both to leave the line off — old `dashboard.json` without these fields renders
+  unchanged.
 - **Markdown** is supported in `summary` and block `body` (headings, lists, `code`, **bold**, links).
   Keep feature cards self-contained and scannable — the human comments by selecting any text and typing
   a note, so write prose worth quoting.
