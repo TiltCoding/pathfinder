@@ -1105,6 +1105,12 @@ $("#btn-submit").onclick = async () => {
 };
 $("#btn-approve").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
+  if(draftItems.length){
+    toast("Сначала нажмите «Отправить» — иначе агент не увидит выбор");
+    const sb = $("#btn-submit");
+    if(sb){ sb.classList.remove("flash"); void sb.offsetWidth; sb.classList.add("flash"); setTimeout(() => sb.classList.remove("flash"), 1200); }
+    return;
+  }
   await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
   toast("План утверждён ✓");
 };
