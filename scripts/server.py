@@ -1974,10 +1974,13 @@ def write_server_info(workspace, port, pid):
 def process_alive(pid):
     """True if a process with ``pid`` looks alive (conservative on errors).
 
-    Pure/offline: uses signal 0 only, never touches the network. Unknown or
-    non-numeric pids are treated as dead. On platforms where ``os.kill`` is
-    unsupported (e.g. Windows) we stay conservative and report alive so a
-    working server is never thrown away over a probe limitation.
+    Pure/offline: probes the OS, never touches the network. Unknown or
+    non-numeric pids are treated as dead. On POSIX uses ``os.kill(pid, 0)``;
+    on Windows (where ``os.kill`` cannot send a 0-probe) it asks the kernel via
+    ``OpenProcess`` so a genuinely dead pid is reported dead — see
+    ``_process_alive_windows``. On any unexpected probe error we stay
+    conservative and report alive, so a working server is never thrown away
+    over a probe limitation.
     """
     try:
         pid = int(pid)
@@ -1985,6 +1988,8 @@ def process_alive(pid):
         return False
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return _process_alive_windows(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -1994,6 +1999,37 @@ def process_alive(pid):
     except OSError:
         return True  # unsupported / unknown — don't reject a live server
     return True
+
+
+def _process_alive_windows(pid):
+    """Windows pid liveness via ``OpenProcess`` (ctypes, stdlib only).
+
+    ``os.kill(pid, 0)`` is not a liveness probe on Windows (it would terminate
+    the target), so we open the process for a minimal-rights query instead. A
+    handle means it exists; failure with ERROR_INVALID_PARAMETER (87) means no
+    such process → dead; ERROR_ACCESS_DENIED (5) means it exists but we lack
+    rights → alive. Any other failure stays conservative (alive)."""
+    import ctypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    ERROR_INVALID_PARAMETER = 87
+    ERROR_ACCESS_DENIED = 5
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    except OSError:
+        return True  # ctypes/kernel32 unavailable — don't reject a live server
+    if handle:
+        kernel32.CloseHandle(handle)
+        return True
+    err = ctypes.get_last_error()
+    if err == ERROR_INVALID_PARAMETER:
+        return False  # no process with this pid
+    if err == ERROR_ACCESS_DENIED:
+        return True   # exists, but not enough rights to open it
+    return True       # unknown failure — stay conservative
 
 
 def read_server_info(workspace):
