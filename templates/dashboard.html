@@ -74,6 +74,9 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
   .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 10px; }
   .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  .now-line { font-size: 12px; color: var(--muted); margin-top: 6px; padding: 0 2px; }
+  .now-line.stale { opacity: .5; }
+  .now-line b { color: var(--ink); font-weight: 600; }
 
   section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
   section.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
@@ -469,6 +472,7 @@
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
   <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
+  <div class="top-inner"><div class="now-line" id="now-line" hidden></div></div>
   <div class="top-inner"><nav class="tabbar">
     <button class="tab active" id="tab-work" data-tab="work">Рабочий процесс</button>
     <button class="tab" id="tab-changes" data-tab="changes">Изменения</button>
@@ -811,6 +815,7 @@ function render(data, replies){
     setTitleBadge(false);
   }
   $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
+  renderNow(data);
   const pr = data.progress || {done:0,total:0};
   $("#progress-bar").style.width = (pr.total ? Math.round(100*pr.done/pr.total) : 0) + "%";
 
@@ -880,6 +885,26 @@ function render(data, replies){
   restoreActiveInput(__snap);
   highlightComments();
   updateQueue();
+}
+function nowAge(ts){
+  if(!ts) return null;
+  const t = Date.parse(ts); if(isNaN(t)) return null;
+  return Math.max(0, (Date.now() - t) / 1000);
+}
+function fmtAge(sec){
+  if(sec < 60) return Math.round(sec) + "с назад";
+  if(sec < 3600) return Math.round(sec/60) + "м назад";
+  return Math.round(sec/3600) + "ч назад";
+}
+function renderNow(data){
+  const el = $("#now-line"); if(!el) return;
+  const now = (data.now || "").trim();
+  if((data.status||"working") === "awaiting-batch" || !now){ el.hidden = true; return; }
+  el.hidden = false;
+  const age = nowAge(data.nowAt);
+  const stale = age != null && age > 90;
+  el.classList.toggle("stale", stale);
+  el.innerHTML = "Сейчас: <b>" + esc(now) + "</b>" + (age != null && !stale ? " · " + esc(fmtAge(age)) : "");
 }
 function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
 // a commentable prose region (summary / codebase map)
@@ -2353,8 +2378,9 @@ async function tick(){
       api("/data?slug=" + encodeURIComponent(SLUG)),
       api("/replies?slug=" + encodeURIComponent(SLUG)),
     ]);
-    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, (replies.replies||[]).length]);
+    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now, (replies.replies||[]).length]);
     if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
+    else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
   } catch(e){ /* server may be restarting */ }
 }
 (async function init(){
