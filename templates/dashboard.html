@@ -74,6 +74,15 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
   .progress { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 10px; }
   .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  .now-line { font-size: 12px; color: var(--muted); margin-top: 6px; padding: 0 2px; }
+  .now-line.stale { opacity: .5; }
+  .now-line b { color: var(--ink); font-weight: 600; }
+  .ws-summary { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .ws-summary .bar { display: inline-flex; height: 8px; width: 84px; border-radius: 999px; overflow: hidden; background: var(--line); flex: none; }
+  .ws-summary .bar > i { height: 100%; display: block; }
+  .ws-summary .bar > i.done { background: var(--ok); }
+  .ws-summary .bar > i.in_progress { background: var(--accent); }
+  .ws-summary b { color: var(--ink); font-weight: 600; }
 
   section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; box-shadow: var(--shadow); }
   section.card > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
@@ -417,6 +426,16 @@
   .msg.human { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
   .msg.agent { align-self: flex-start; background: var(--chip); color: var(--ink); border-bottom-left-radius: 4px; }
   .msg .ts { font-size: 10px; opacity: .6; margin-top: 3px; }
+  .thread { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .th-turn { max-width: 92%; padding: 7px 10px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  .th-turn.human { align-self: flex-end; background: var(--accent-soft); }
+  .th-turn.agent { align-self: flex-start; background: var(--chip); }
+  .th-turn .th-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; opacity: .7; margin-bottom: 2px; }
+  .th-turn .th-quote { color: var(--muted); border-left: 3px solid var(--accent); padding: 1px 8px; margin-bottom: 4px; white-space: pre-wrap; }
+  .th-needs { color: var(--warn); font-weight: 700; }
+  .th-status { font-size: 11px; color: var(--ok); margin-top: 2px; }
+  .th-reply textarea { min-height: 38px; margin-top: 6px; }
+  .block.thread-open, .region.thread-open, .variant.thread-open { box-shadow: inset 3px 0 0 var(--warn); }
   .chat-input { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
   .chat-input textarea { min-height: 38px; }
   .chat-input button.primary { padding: 8px 14px; white-space: nowrap; }
@@ -466,9 +485,14 @@
     <button class="ghost theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему">
       <span id="theme-icon">☀️</span>
     </button>
+    <button class="ghost" id="open-threads" hidden title="Перейти к ветке, ждущей ответа"></button>
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
-  <div class="top-inner"><div class="progress" style="flex:1"><div id="progress-bar"></div></div></div>
+  <div class="top-inner">
+    <div class="progress" style="flex:1"><div id="progress-bar"></div></div>
+    <span class="ws-summary" id="ws-summary" hidden></span>
+  </div>
+  <div class="top-inner"><div class="now-line" id="now-line" hidden></div></div>
   <div class="top-inner"><nav class="tabbar">
     <button class="tab active" id="tab-work" data-tab="work">Рабочий процесс</button>
     <button class="tab" id="tab-changes" data-tab="changes">Изменения</button>
@@ -811,20 +835,25 @@ function render(data, replies){
     setTitleBadge(false);
   }
   $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
-  const pr = data.progress || {done:0,total:0};
+  renderNow(data);
+  const wl = data.workstreams || [];
+  const pr = wl.length ? (() => { const c = wsCounts(wl); return {done:c.done, total:c.total}; })()
+                       : (data.progress || {done:0, total:0});
   $("#progress-bar").style.width = (pr.total ? Math.round(100*pr.done/pr.total) : 0) + "%";
+  renderWsSummary(data);
 
   const repliesByBlock = {}, repliesByQ = {};
   (replies.replies || []).forEach(r => {
     if(r.blockId){ (repliesByBlock[r.blockId] = repliesByBlock[r.blockId] || []).push(r); }
     if(r.questionId){ (repliesByQ[r.questionId] = repliesByQ[r.questionId] || []).push(r); }
   });
+  const threadsByAnchor = anchoredThreads();
 
   let h = "";
-  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock));
-  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock));
+  if(data.summary) h += card("Сводка задачи", region("summary", md(data.summary), repliesByBlock, threadsByAnchor));
+  if(data.codebaseMap) h += card("Карта кодовой базы", region("codebaseMap", md(data.codebaseMap), repliesByBlock, threadsByAnchor));
 
-  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock));
+  if(data.demo && (data.demo.variants||[]).length) h += card("Демо решения", renderDemo(data.demo, repliesByBlock, threadsByAnchor));
 
   if((data.planBlocks||[]).length){
     let b = "";
@@ -834,7 +863,7 @@ function render(data, replies){
         <div class="block-head"><span class="block-title">${esc(blk.title||"")}</span>
           <span class="block-id">${esc(blk.id)}</span></div>
         <div class="md block-body">${md(blk.body||"")}</div>
-        ${regionFooter(blk.id, repliesByBlock)}
+        ${regionFooter(blk.id, repliesByBlock, threadsByAnchor)}
       </div>`;
     }
     h += card("План", b);
@@ -878,31 +907,130 @@ function render(data, replies){
   $("#content").innerHTML = h || `<p class="empty">Агент ещё не наполнил дашборд.</p>`;
   wireBlocks();
   restoreActiveInput(__snap);
-  highlightComments();
   updateQueue();
+
+  const openAnchors = openThreadAnchors(threadsByAnchor);
+  const openSet = new Set(openAnchors);
+  document.querySelectorAll("#content [data-anchor],#content [data-variant]").forEach(el => {
+    // a captioned variant has both a .variant[data-variant] wrapper and a nested
+    // .region[data-anchor] caption with the same id — mark only the outer variant
+    if(el.hasAttribute("data-anchor") && el.closest("[data-variant]")) return;
+    const a = el.getAttribute("data-anchor") || el.getAttribute("data-variant");
+    el.classList.toggle("thread-open", openSet.has(a));
+  });
+  const otBtn = $("#open-threads");
+  if(otBtn){
+    if(openAnchors.length){
+      otBtn.hidden = false;
+      const verb = openAnchors.length === 1 ? "ждёт" : "ждут";
+      otBtn.textContent = "🔸 " + openAnchors.length + " " + verb + " ответа";
+      otBtn.onclick = () => {
+        const first = document.querySelector('#content .thread-open');
+        if(first) first.scrollIntoView({ behavior:"smooth", block:"center" });
+      };
+    } else { otBtn.hidden = true; }
+  }
+}
+function nowAge(ts){
+  if(!ts) return null;
+  const t = Date.parse(ts); if(isNaN(t)) return null;
+  return Math.max(0, (Date.now() - t) / 1000);
+}
+function fmtAge(sec){
+  if(sec < 60) return Math.round(sec) + "с назад";
+  if(sec < 3600) return Math.round(sec/60) + "м назад";
+  return Math.round(sec/3600) + "ч назад";
+}
+function renderNow(data){
+  const el = $("#now-line"); if(!el) return;
+  const now = (data.now || "").trim();
+  if((data.status||"working") === "awaiting-batch" || !now){ el.hidden = true; return; }
+  el.hidden = false;
+  const age = nowAge(data.nowAt);
+  const stale = age != null && age > 90;
+  el.classList.toggle("stale", stale);
+  el.innerHTML = "Сейчас: <b>" + esc(now) + "</b>" + (age != null && !stale ? " · " + esc(fmtAge(age)) : "");
+}
+function wsCounts(list){
+  const c = { done:0, in_progress:0, todo:0, total:(list||[]).length };
+  for(const ws of (list||[])){ const s = ws.status||"todo"; if(c[s]!=null) c[s]++; else c.todo++; }
+  return c;
+}
+function renderWsSummary(data){
+  const el = $("#ws-summary"); if(!el) return;
+  const list = data.workstreams || [];
+  if(!list.length){ el.hidden = true; return; }
+  const c = wsCounts(list);
+  const pct = n => c.total ? Math.round(100 * n / c.total) : 0;
+  el.hidden = false;
+  el.innerHTML =
+    '<span class="bar"><i class="done" style="width:' + pct(c.done) + '%"></i>' +
+    '<i class="in_progress" style="width:' + pct(c.in_progress) + '%"></i></span>' +
+    '<span><b>' + c.done + '/' + c.total + '</b> готово · ' + c.in_progress + ' в работе · ' + c.todo + ' в очереди</span>';
+}
+// Bucket chat messages that carry an `anchor` into per-anchor threads (ordered as stored).
+function anchoredThreads(){
+  const by = {};
+  for(const m of chatMsgs){ if(m.anchor){ (by[m.anchor] = by[m.anchor] || []).push(m); } }
+  return by;
+}
+function threadTurns(msgs){
+  let html = "";
+  for(const m of msgs){
+    const quote = m.quote ? '<div class="th-quote">' + esc(m.quote) + '</div>' : "";
+    const needs = (m.role === "agent" && m.needsAnswer) ? ' <span class="th-needs">нужен ваш ответ</span>' : "";
+    const who = (m.role === "agent" ? "агент" : "вы") + needs;
+    const text = m.role === "agent" ? md(m.text) : esc(m.text);
+    html += '<div class="th-turn ' + (m.role === "agent" ? "agent" : "human") + '">' +
+            quote + '<div class="th-who">' + who + '</div><div class="th-text">' + text + '</div></div>';
+  }
+  // "учтено агентом": last turn is an agent reply (not itself a question) following a human turn
+  const last = msgs[msgs.length - 1];
+  const hadHuman = msgs.some(x => x.role === "human");
+  if(last && last.role === "agent" && !last.needsAnswer && hadHuman){
+    html += '<div class="th-status">✓ учтено агентом</div>';
+  }
+  return html;
+}
+// An anchor's thread is "open" when the agent's latest needsAnswer turn has no
+// human turn after it.
+function openThreadAnchors(threadsByAnchor){
+  const open = [];
+  for(const a of Object.keys(threadsByAnchor||{})){
+    const msgs = threadsByAnchor[a];
+    let lastNeed = -1, lastHuman = -1;
+    msgs.forEach((m, i) => {
+      if(m.role === "agent" && m.needsAnswer) lastNeed = i;
+      if(m.role === "human") lastHuman = i;
+    });
+    if(lastNeed >= 0 && lastHuman < lastNeed) open.push(a);
+  }
+  return open;
 }
 function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
 // a commentable prose region (summary / codebase map)
-function region(anchor, innerHtml, repliesByBlock){
+function region(anchor, innerHtml, repliesByBlock, threadsByAnchor){
   const has = draftItems.some(i => i.blockId === anchor);
   return `<div class="region ${has?'has-draft':''}" data-anchor="${esc(anchor)}">
     <div class="md">${innerHtml}</div>
-    ${regionFooter(anchor, repliesByBlock)}
+    ${regionFooter(anchor, repliesByBlock, threadsByAnchor)}
   </div>`;
 }
 // agent replies + the human's left comments, keyed to one anchor
-function regionFooter(anchor, repliesByBlock){
-  const reps = (repliesByBlock||{})[anchor] || [];
-  const drafts = draftItems.filter(i => i.blockId === anchor);
+function regionFooter(anchor, repliesByBlock, threadsByAnchor){
+  const reps = (repliesByBlock||{})[anchor] || [];        // legacy replies.json (kept for back-compat)
+  const msgs = (threadsByAnchor||{})[anchor] || [];
+  const thread = msgs.length ? `<div class="thread">${threadTurns(msgs)}</div>` : "";
+  const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="Ответить в этой ветке… (Enter — отправить)"></textarea></div>`;
   return reps.map(r=>`<div class="reply"><div class="who">агент</div>${md(r.text)}</div>`).join("")
-       + drafts.map(d=>cmtCard(d)).join("");
+       + thread + input;
 }
 function cmtCard(d){
   const quote = d.selectedText ? `<div class="cmt-quote" data-cid="${esc(d.id)}">${esc(d.selectedText)}</div>` : "";
   return `<div class="cmt" data-cid="${esc(d.id)}">${quote}<div class="cmt-row"><span class="cmt-text">${esc(d.text)}</span><span class="x" data-remove="${esc(d.id)}">✕</span></div></div>`;
 }
 // visual-demo variants: previewed in sandboxed iframes, picked via the edit queue
-function renderDemo(demo, repliesByBlock){
+function renderDemo(demo, repliesByBlock, threadsByAnchor){
   const sid = demo.selectionId || "demo";
   const ans = draftItems.find(i => i.kind==="answer" && i.questionId===sid);
   const chosen = ans ? ans.text : (demo.selected || "");
@@ -924,7 +1052,7 @@ function renderDemo(demo, repliesByBlock){
         <a class="open" href="${url}" target="_blank" rel="noopener">открыть ↗</a>
       </label>
       <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
-      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock)}</div>
+      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor)}</div>
     </div>`;
   }
   const intro = demo.intro ? `<div class="md demo-intro">${md(demo.intro)}</div>` : "";
@@ -963,6 +1091,13 @@ function wireBlocks(){
       if(e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault();
         saveVariantComment(ta.getAttribute("data-comment-variant"), ta.value, ta); }
     });
+  document.querySelectorAll("textarea[data-thread]").forEach(ta =>
+    ta.onkeydown = (e) => {
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault();
+        const anchor = ta.getAttribute("data-thread"), val = ta.value;
+        ta.value = "";   // clear before posting so the re-render's focus-restore doesn't re-fill it
+        postAnchored(anchor, val, ""); }
+    });
   // click a comment's quote -> scroll to & flash its highlight in the prose
   document.querySelectorAll(".cmt-quote[data-cid]").forEach(q =>
     q.onclick = () => flashTo(`mark.commented[data-cid="${cssesc(q.getAttribute("data-cid"))}"]`));
@@ -975,6 +1110,7 @@ function captureActiveInput(){
   let attr = null;
   if(el.getAttribute("data-answer") !== null) attr = "data-answer";
   else if(el.getAttribute("data-comment-variant") !== null) attr = "data-comment-variant";
+  else if(el.getAttribute("data-thread") !== null) attr = "data-thread";
   if(!attr) return null;
   return { attr, key: el.getAttribute(attr), value: el.value, start: el.selectionStart, end: el.selectionEnd };
 }
@@ -1094,16 +1230,24 @@ $("#sel-send").onclick = sendComment;
 async function sendComment(){
   const text = popInput.value.trim();
   if(!text || !selTarget) return;
-  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"comment", blockId: selTarget.anchor, selectedText: selTarget.text, text }) });
-  hidePopover(); await loadDraft(); toast("Добавлено в очередь");
+  await postAnchored(selTarget.anchor, text, selTarget.text);
+  hidePopover();
 }
-// explicit per-variant comment: same contract as sendComment, anchored to the variant id
 async function saveVariantComment(variantId, value, ta){
   const text = (value || "").trim();
   if(!text || !variantId) return;
-  if(ta) ta.value = "";  // clear field so several comments can be left on one variant
-  await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"comment", blockId: variantId, selectedText: "", text }) });
-  await loadDraft(); toast("Добавлено в очередь");
+  if(ta) ta.value = "";
+  await postAnchored(variantId, text, "");
+}
+// One path for every anchored turn (select-to-comment, variant comment, thread reply).
+async function postAnchored(anchor, text, quote){
+  const t = (text || "").trim();
+  if(!t || !anchor) return;
+  const body = { slug:SLUG, anchor, text:t, phase:(lastData&&lastData.phase)||"" };
+  if(quote) body.quote = quote;
+  await api("/chat", { method:"POST", body: JSON.stringify(body) });
+  await chatTick();
+  toast("Отправлено агенту");
 }
 
 // action bar
@@ -2295,7 +2439,7 @@ function toggleChat(open){
   chatOpen = open != null ? open : !chatOpen;
   $("#chat-panel").hidden = !chatOpen;
   if(chatOpen){
-    chatSeen = chatMsgs.length;
+    chatSeen = chatMsgs.filter(m => !m.anchor).length;
     $("#chat-unread").hidden = true;
     renderChat();
     setTimeout(() => { const l = $("#chat-log"); l.scrollTop = l.scrollHeight; $("#chat-text").focus(); }, 0);
@@ -2311,22 +2455,24 @@ async function chatTick(){
     const next = (r && r.messages) || [];
     const changed = next.length !== chatMsgs.length;
     chatMsgs = next;
-    if(changed) renderChat();
+    if(changed){ renderChat(); rerender(); }
     updateChatUnread();
   } catch(e){ /* server may be restarting */ }
 }
 function updateChatUnread(){
   const b = $("#chat-unread");
-  if(chatOpen){ chatSeen = chatMsgs.length; b.hidden = true; return; }
-  const unread = Math.max(0, chatMsgs.length - chatSeen);
+  const globalCount = chatMsgs.filter(m => !m.anchor).length;
+  if(chatOpen){ chatSeen = globalCount; b.hidden = true; return; }
+  const unread = Math.max(0, globalCount - chatSeen);
   if(unread > 0){ b.hidden = false; b.textContent = unread > 9 ? "9+" : unread; }
   else b.hidden = true;
 }
 function renderChat(){
   const log = $("#chat-log");
-  if(!chatMsgs.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
+  const global = chatMsgs.filter(m => !m.anchor);   // anchored messages live in their thread, not here
+  if(!global.length){ log.innerHTML = `<p class="empty">Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.</p>`; return; }
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
-  log.innerHTML = chatMsgs.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
+  log.innerHTML = global.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
     <div class="who">${m.role==='agent'?'агент':'вы'}</div>
     <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
     ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
@@ -2353,8 +2499,10 @@ async function tick(){
       api("/data?slug=" + encodeURIComponent(SLUG)),
       api("/replies?slug=" + encodeURIComponent(SLUG)),
     ]);
-    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, (replies.replies||[]).length]);
+    const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now,
+      (data.workstreams||[]).map(w=>w.status).join(","), (replies.replies||[]).length, chatMsgs.length]);
     if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
+    else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
   } catch(e){ /* server may be restarting */ }
 }
 (async function init(){

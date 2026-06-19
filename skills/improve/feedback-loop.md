@@ -107,6 +107,28 @@ batches. Handle it at checkpoints, the same cadence as everything else.
   chat and reflect it in `dashboard.json` rather than silently diverging.
 - In headless/eval mode there is no chat; skip it.
 
+### Anchored discussion (ветки на блоках)
+
+A `chat.jsonl` message may carry an **`anchor`** — a feature-card id (`feat-K`), the literal `summary`,
+or a demo-variant id — plus an optional **`quote`** (the exact fragment the human selected). Such a
+message renders as a **threaded discussion under that card/region** instead of in the free-form chat
+panel. This is now the **per-block discussion channel** — it replaces the old draft-comment cards.
+
+- **Reply in context** by appending your own `chat.jsonl` line with the **same `anchor`** — your reply
+  lands in that thread:
+
+  ```json
+  {"role":"agent","text":"Учёл уточнение: фичу 3 делаем без BOM.","anchor":"feat-3","ts":"<iso>"}
+  ```
+
+- **If your reply is a question back to the human**, add **`"needsAnswer": true`**. The page marks that
+  card as having an open thread and raises a header counter «🔸 N ждут ответа», which stays up until the
+  human posts a later turn on that anchor. Omit `needsAnswer` for a plain reply — the page then shows
+  «✓ учтено агентом».
+- `needsAnswer` is **agent-only**: the human's POST never sets it (it only appears on a `role:"agent"`
+  line). So a card is "ждёт ответа" exactly when your latest anchored turn asked something and the human
+  hasn't answered yet.
+
 ## Don't busy-wait
 
 The `/wait` long-poll is already the no-busy-wait path: you block on a background curl and are

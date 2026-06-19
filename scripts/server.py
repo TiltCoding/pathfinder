@@ -1156,6 +1156,14 @@ class Handler(BaseHTTPRequestHandler):
         ws.ensure_task(slug)
         msg = {"role": "human", "text": text, "ts": now_iso(),
                "phase": body.get("phase")}
+        # Optional anchoring: which block/region/variant this turn discusses, and
+        # the quoted fragment for select-to-comment. Copied verbatim (the backend
+        # stays agnostic to content). `needsAnswer` is intentionally NOT accepted
+        # from the human — only the agent sets it on its own appended turns.
+        for _k in ("anchor", "quote"):
+            _v = body.get(_k)
+            if _v:
+                msg[_k] = _v
         with ws.lock(slug):
             _aipf.append_jsonl(ws.task_file(slug, "chat.jsonl"), msg)
             self._append_signal(slug, "chat", {"ts": msg["ts"]})

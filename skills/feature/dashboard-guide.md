@@ -46,6 +46,11 @@ Field notes:
   header badge reflects this, so keep it honest — it's how the human knows whether a click will be seen.
 - **`phase`**: one of INTAKE / EXPLORE / ELABORATE / PLAN GATE / IMPLEMENT / VERIFY / DONE.
 - **`progress`**: usually work-streams done/total during IMPLEMENT; drives the top bar.
+- **`now`** / **`nowAt`** (optional, back-compatible): a one-line **human** description of what you are
+  doing right now (e.g. `"исследую server.py"`) plus an ISO timestamp. The header shows it as «Сейчас: …».
+  Update both whenever your activity changes so the line stays live; the page greys it out after ~90s
+  stale (`nowAt`) and hides it entirely while `status:"awaiting-batch"` (you're parked, not acting).
+  Omit both to leave the line off — old `dashboard.json` without these fields renders unchanged.
 - **Markdown** is supported in `summary`, `codebaseMap`, and block `body` (headings, lists, `code`,
   **bold**, links). Keep blocks self-contained and scannable — the human comments by selecting any
   text and typing a note, so write prose worth quoting.

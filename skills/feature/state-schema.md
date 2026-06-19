@@ -37,7 +37,9 @@ Field notes:
 - **`phase`** / **`checkpoint`**: `checkpoint` is `working` while you act and `awaiting-batch` while
   parked waiting for a human batch. Together with `phase` they tell a resumed session what to do next.
 - **`workstreams[].status`**: `todo` | `in_progress` | `done`. The source of truth for IMPLEMENT
-  progress; mirror it into `dashboard.json.progress` and `workstreams`.
+  progress; mirror it into `dashboard.json.progress` and `workstreams`. Also reflect the **current
+  activity** into `dashboard.json.now`/`nowAt` (a human one-liner like «пишу сервис экспорта» + ISO
+  timestamp) whenever it changes, so the «Сейчас: …» header stays live — see `dashboard-guide.md`.
 - **`lastSubmission`**: the highest `submissions/<n>` you have already consumed. Compare against
   `submit.flag.latest` to detect a new batch.
 - **`lastSignalCount`**: how many `signals.json` entries you have already accounted for. Serves as the
