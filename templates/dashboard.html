@@ -485,6 +485,7 @@
     <button class="ghost theme-btn" id="theme-btn" title="Сменить тему" aria-label="Сменить тему">
       <span id="theme-icon">☀️</span>
     </button>
+    <button class="ghost" id="open-threads" hidden title="Перейти к ветке, ждущей ответа"></button>
     <button class="ghost chat-toggle" id="btn-chat-toggle" title="Чат с агентом">💬 Чат<span class="chat-unread" id="chat-unread" hidden>0</span></button>
   </div>
   <div class="top-inner">
@@ -907,6 +908,24 @@ function render(data, replies){
   wireBlocks();
   restoreActiveInput(__snap);
   updateQueue();
+
+  const openAnchors = openThreadAnchors(threadsByAnchor);
+  const openSet = new Set(openAnchors);
+  document.querySelectorAll("#content [data-anchor],#content [data-variant]").forEach(el => {
+    const a = el.getAttribute("data-anchor") || el.getAttribute("data-variant");
+    el.classList.toggle("thread-open", openSet.has(a));
+  });
+  const otBtn = $("#open-threads");
+  if(otBtn){
+    if(openAnchors.length){
+      otBtn.hidden = false;
+      otBtn.textContent = "🔸 " + openAnchors.length + " ждут ответа";
+      otBtn.onclick = () => {
+        const first = document.querySelector('#content .thread-open');
+        if(first) first.scrollIntoView({ behavior:"smooth", block:"center" });
+      };
+    } else { otBtn.hidden = true; }
+  }
 }
 function nowAge(ts){
   if(!ts) return null;
@@ -968,6 +987,21 @@ function threadTurns(msgs){
     html += '<div class="th-status">✓ учтено агентом</div>';
   }
   return html;
+}
+// An anchor's thread is "open" when the agent's latest needsAnswer turn has no
+// human turn after it.
+function openThreadAnchors(threadsByAnchor){
+  const open = [];
+  for(const a of Object.keys(threadsByAnchor||{})){
+    const msgs = threadsByAnchor[a];
+    let lastNeed = -1, lastHuman = -1;
+    msgs.forEach((m, i) => {
+      if(m.role === "agent" && m.needsAnswer) lastNeed = i;
+      if(m.role === "human") lastHuman = i;
+    });
+    if(lastNeed >= 0 && lastHuman < lastNeed) open.push(a);
+  }
+  return open;
 }
 function card(t, body){ return `<section class="card"><h2>${esc(t)}</h2>${body}</section>`; }
 // a commentable prose region (summary / codebase map)
