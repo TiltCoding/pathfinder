@@ -1385,172 +1385,289 @@ HUB_PAGE = r"""<!doctype html>
   })();
 </script>
 <style>
+  /* Font stacks — no CDN (ADR-0004): the design's Hanken Grotesk / JetBrains Mono
+     are named first so they render when locally installed, falling back to the
+     platform's UI sans / monospace otherwise. */
+  :root {
+    --font-sans:'Hanken Grotesk', system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
   :root[data-theme="light"] {
-    --bg:#fbfbfa; --panel:#ffffff; --ink:#1f2328; --muted:#6b7280;
-    --line:#e5e7eb; --accent:#4f46e5; --accent-soft:#eef2ff;
-    --ok:#16a34a; --warn:#d97706; --chip:#f3f4f6;
+    --bg:#fafafa; --panel:#ffffff; --ink:#0a0a0a; --ink-soft:#3f3f46; --head:#52525b;
+    --muted:#71717a; --muted2:#a1a1aa; --faint:#c4c4c8;
+    --line:#e4e4e7; --line2:#ededed; --line3:#f4f4f5;
+    --accent:#4f46e5; --accent2:#a5b4fc; --accent-soft:#eef2ff;
+    --ok:#16a34a; --ok-soft:#ecfdf5; --warn:#d97706; --chip:#f4f4f5;
+    --sel-bg:#0a0a0a; --sel-fg:#ffffff; --topbar:rgba(255,255,255,.85);
     --reply-bg:#f0fdf4; --reply-line:#bbf7d0;
-    --shadow:0 1px 3px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.06);
+    --shadow:none;
     --err:#ef4444; --err-soft:#fef2f2; --awaiting-soft:#fff7ed;
   }
   :root[data-theme="dark"] {
-    --bg:#0f1115; --panel:#181b21; --ink:#e6e8eb; --muted:#9aa3af;
-    --line:#2a2f37; --accent:#818cf8; --accent-soft:#1e2230;
-    --ok:#16a34a; --warn:#d97706; --chip:#232830;
+    --bg:#0f1115; --panel:#181b21; --ink:#e6e8eb; --ink-soft:#c3c8d0; --head:#aab2bd;
+    --muted:#9aa3af; --muted2:#6b7480; --faint:#4b5360;
+    --line:#2a2f37; --line2:#242931; --line3:#20242b;
+    --accent:#818cf8; --accent2:#4f46e5; --accent-soft:#1e2230;
+    --ok:#22c55e; --ok-soft:#10231a; --warn:#d97706; --chip:#232830;
+    --sel-bg:#e6e8eb; --sel-fg:#0f1115; --topbar:rgba(24,27,33,.85);
     --reply-bg:#132019; --reply-line:#1f4d31;
-    --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    --shadow:none;
     --err:#f87171; --err-soft:#2a1414; --awaiting-soft:#2a2113;
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-    font:15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    padding-bottom:64px; }
-  a { color:var(--accent); }
-  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px; }
-  header.top { position:sticky; top:0; z-index:20; background:var(--bg);
-    border-bottom:1px solid var(--line); padding:14px 20px; }
-  .top-inner { max-width:1180px; margin:0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1.title { font-size:18px; margin:0; font-weight:650; flex:1 1 280px; }
-  .sub { color:var(--muted); font-size:13px; }
-  .badge { font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; background:var(--chip); white-space:nowrap; }
-  .badge.phase { background:var(--accent-soft); color:var(--accent); }
-  .badge.kind { background:var(--chip); color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .status { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; }
-  .status.working { background:var(--accent-soft); color:var(--accent); }
-  .status.awaiting { background:var(--awaiting-soft); color:var(--warn); }
-  .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
-  .status.working .dot { animation:pulse 1.2s ease-in-out infinite; }
-  /* theme toggle — icon button (☀️/🌙), shares localStorage['theme'] with the dashboard */
-  .theme-btn { display:inline-flex; align-items:center; justify-content:center; min-width:38px;
-    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px;
-    padding:7px 10px; font-size:15px; line-height:1; cursor:pointer; }
-  .theme-btn:hover { border-color:var(--accent); }
-  /* language toggle — icon button (EN⇄RU), shares localStorage['lang'] with the dashboard;
-     the hub is the writer of the global setting (POST /settings). Mirrors .theme-btn. */
-  .lang-btn { margin-left:auto; display:inline-flex; align-items:center; justify-content:center; min-width:38px;
-    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px;
-    padding:7px 10px; font-size:13px; font-weight:700; line-height:1; cursor:pointer; letter-spacing:.03em; }
-  .lang-btn:hover { border-color:var(--accent); }
-  /* the lang button takes the auto-margin so the pair stays right-aligned; theme follows it */
-  .lang-btn + .theme-btn { margin-left:0; }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--ink);
+    font:15px/1.55 var(--font-sans); padding-bottom:64px; -webkit-font-smoothing:antialiased; }
+  a { color:var(--accent); text-decoration:none; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 32px; }
+
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
-  .progress { height:6px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:10px; }
-  .progress > div { height:100%; background:var(--accent); transition:width .4s; }
-  .run-status { font-size:11px; font-weight:600; padding:2px 9px; border-radius:999px; }
-  .run-status.running { background:var(--accent-soft); color:var(--accent); }
-  .run-status.done { background:var(--reply-bg); color:var(--ok); }
-  .run-status.failed { background:var(--err-soft); color:var(--err); }
-  /* extra queue statuses, built from existing tokens (no new palette — ADR-0015) */
-  .run-status.pending { background:var(--chip); color:var(--muted); }
-  .run-status.skipped { background:var(--awaiting-soft); color:var(--warn); }
+  @keyframes pf-pulse { 0%,100%{ transform:scale(1); opacity:1; } 50%{ transform:scale(1.45); opacity:.55; } }
+  @keyframes pf-ring { 0%{ box-shadow:0 0 0 0 var(--ring); } 70%{ box-shadow:0 0 0 7px transparent; } 100%{ box-shadow:0 0 0 0 transparent; } }
+  @keyframes pf-shim { 0%{ background-position:220% 0; } 100%{ background-position:-120% 0; } }
+  @keyframes pf-think { 0%,100%{ transform:scaleY(.28); } 50%{ transform:scaleY(1); } }
+  .shim { background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent)); background-size:220% 100%; animation:pf-shim 1.6s linear infinite; }
 
-  section.card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:16px 0; box-shadow:var(--shadow); }
-  section.card > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 14px; display:flex; align-items:center; gap:10px; }
-  section.card > h2 .count { background:var(--chip); color:var(--ink); border-radius:999px; padding:1px 9px; font-size:12px; }
-  .empty { color:var(--muted); font-size:13px; }
+  /* topbar — sticky, translucent, blurred (design language) */
+  header.top { position:sticky; top:0; z-index:20; display:flex; align-items:center;
+    justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 32px;
+    border-bottom:1px solid var(--line2); background:var(--topbar); backdrop-filter:blur(8px); }
+  .brand { display:flex; align-items:center; gap:12px; min-width:0; }
+  .brand .logo { width:30px; height:30px; border-radius:7px; flex:none; display:block; }
+  .brand .name { font-weight:700; font-size:15px; letter-spacing:-.02em; }
+  .brand .tag { font-size:12px; color:var(--muted2); font-family:var(--font-mono); }
+  .topright { display:flex; align-items:center; gap:14px; }
+  .refresh { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+  .refresh .dot { width:7px; height:7px; --ring:rgba(22,163,74,.5); background:var(--ok); animation:pf-ring 2s ease-out infinite; }
+  .sub { color:var(--muted2); font-size:12px; font-family:var(--font-mono); }
 
-  /* hub search + filter toolbar (static node #filter-bar — lives between header
-     and #root, never rewritten by render(), so input focus survives the poll).
-     Tokens reused from the shared palette (both :root[data-theme]); no new colours. */
-  #filter-bar { max-width:1180px; margin:16px auto 0; padding:0 20px; }
-  .fpanel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-    box-shadow:var(--shadow); padding:14px 16px; display:flex; flex-direction:column; gap:11px; }
-  #f-search { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line);
-    border-radius:9px; padding:9px 13px; font-size:14px; }
-  #f-search:focus { outline:none; border-color:var(--accent); }
-  .frow { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
-  .frow .glabel { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; width:42px; flex:none; }
-  .chip { font-size:12px; font-weight:600; padding:4px 11px; border-radius:999px; cursor:pointer;
-    background:var(--chip); color:var(--muted); border:1px solid transparent; user-select:none; }
+  /* theme + language toggles — compact icon buttons (shared localStorage with the dashboard) */
+  .theme-btn, .lang-btn { display:inline-flex; align-items:center; justify-content:center;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+    padding:6px 9px; line-height:1; cursor:pointer; }
+  .theme-btn { font-size:14px; min-width:34px; }
+  .lang-btn { font:700 12px/1 var(--font-mono); letter-spacing:.03em; min-width:34px; }
+  .theme-btn:hover, .lang-btn:hover { border-color:var(--accent); }
+
+  /* badges + flat status text (design uses flat coloured mono, not filled pills) */
+  .badge { font:700 10px var(--font-mono); letter-spacing:.05em; padding:2px 7px; border-radius:5px;
+    background:var(--chip); color:var(--muted); white-space:nowrap; }
+  .badge.phase { background:var(--accent-soft); color:var(--accent); }
+  .badge.kind { background:var(--chip); color:var(--muted); text-transform:uppercase; }
+  .status { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; }
+  .status.working { color:var(--ok); }
+  .status.awaiting { color:var(--warn); }
+  .dot { width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .status.working .dot { animation:pf-pulse 1.4s ease-in-out infinite; }
+
+  .progress { height:4px; background:var(--line3); border-radius:4px; overflow:hidden; }
+  .progress > div { height:100%; background:var(--accent); border-radius:4px; transition:width .4s; }
+  /* status text in tables (history/queue) — flat coloured mono */
+  .run-status { font:700 10px var(--font-mono); }
+  .run-status.running { color:var(--accent); }
+  .run-status.done { color:var(--ok); }
+  .run-status.failed { color:var(--err); }
+  .run-status.pending { color:var(--muted2); }
+  .run-status.skipped { color:var(--warn); }
+  .empty { color:var(--muted2); font-size:13px; background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:22px; }
+
+  /* section header (bare label + count pill, sits above its content) */
+  .sec { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin:44px 0 14px; }
+  .sec:first-child { margin-top:32px; }
+  .sec .title { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--head); }
+  .sec .submeta { font-size:11px; color:var(--muted2); }
+  .sec .submeta code { font-family:var(--font-mono); color:var(--muted); }
+  .pill { font:600 11px var(--font-mono); padding:1px 7px; border-radius:20px; background:var(--chip); color:var(--head); }
+  .pill.live { background:var(--ok-soft); color:var(--ok); }
+  .sec .grow { margin-left:auto; }
+
+  /* search + filter toolbar (static node #filter-bar — never rewritten by render(),
+     so input focus survives the 3s poll). */
+  #filter-bar { max-width:1180px; margin:0 auto; padding:0 32px; }
+  .fpanel { display:flex; flex-direction:column; gap:12px; }
+  .searchbox { display:flex; align-items:center; gap:9px; height:42px; padding:0 14px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .searchbox svg { flex:none; stroke:var(--muted2); }
+  #f-search { flex:1; min-width:0; border:none; outline:none; background:transparent;
+    color:var(--ink); font:13px var(--font-sans); }
+  #f-search::placeholder { color:var(--muted2); }
+  .searchbox .slash { font:11px var(--font-mono); color:var(--faint); border:1px solid var(--line2);
+    border-radius:4px; padding:1px 6px; }
+  .frow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .frow .glabel { color:var(--muted2); font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.07em; flex:none; }
+  .fsep { width:1px; height:20px; background:var(--line2); margin:0 4px; }
+  .chip { font:600 12px var(--font-mono); padding:7px 11px; border-radius:8px; cursor:pointer;
+    background:var(--panel); color:var(--head); border:1px solid var(--line); user-select:none;
+    transition:all .12s; display:inline-flex; align-items:center; gap:6px; }
   .chip:hover { border-color:var(--accent); }
-  .chip.on { background:var(--accent-soft); color:var(--accent); }
-  #f-count { display:none; align-items:center; gap:10px; font-size:12px; color:var(--accent);
-    background:var(--accent-soft); border-radius:8px; padding:6px 11px; align-self:flex-start; }
+  .chip.on { background:var(--sel-bg); color:var(--sel-fg); border-color:var(--sel-bg); }
+  .chip .num { font:700 10px var(--font-mono); color:var(--faint); }
+  .chip.on .num { color:rgba(255,255,255,.55); }
+  #f-count { display:none; align-items:center; gap:10px; font-size:11px; color:var(--muted2);
+    margin-left:auto; }
   #f-count.on { display:inline-flex; }
-  #f-count b { font-weight:700; }
-  #f-reset { color:var(--muted); cursor:pointer; text-decoration:underline; font-weight:600; }
+  #f-count b { font-weight:700; color:var(--head); }
+  #f-reset { color:var(--head); cursor:pointer; font-weight:600; }
+  #f-reset:hover { color:var(--accent); }
 
-  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px; }
-  .runcard { border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--bg); display:flex; flex-direction:column; gap:8px; }
-  .runcard.awaiting { border-color:var(--warn); background:var(--awaiting-soft); }
-  .runcard .head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .runcard .slug { font-weight:650; font-size:15px; }
-  .runcard .desc { color:var(--muted); font-size:13px; }
-  .runcard .meta { display:flex; gap:8px; flex-wrap:wrap; font:12px ui-monospace, SFMono-Regular, Menlo, monospace; color:var(--muted); }
-  .runcard .meta .git { background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--ink); }
-  .runcard .open { align-self:flex-start; color:var(--accent); font-size:13px; text-decoration:none; font-weight:600; }
-  .runcard .open:hover { text-decoration:underline; }
+  /* active runs — hero (first) + slim cards */
+  .cards { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  .runcard { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:22px; display:flex; flex-direction:column; }
+  .runcard.hero { grid-column:span 2; }
+  .runcard.awaiting { border-color:var(--warn); }
+  .runcard .head { display:flex; align-items:center; justify-content:space-between; gap:9px;
+    flex-wrap:wrap; margin-bottom:12px; }
+  .runcard .headl { display:flex; align-items:center; gap:9px; flex-wrap:wrap; min-width:0; }
+  .runcard .slug { font:700 14px var(--font-mono); }
+  .runcard .iter { font:11px var(--font-mono); color:var(--muted2); }
+  .runcard .desc { font-size:14px; font-weight:500; line-height:1.45; color:var(--ink-soft); margin-bottom:18px; }
+  .runcard .scratch { font:12px var(--font-mono); color:var(--muted2); margin-bottom:auto; }
+  .runcard .meta { display:flex; gap:8px; flex-wrap:wrap; font:11px var(--font-mono); color:var(--muted2); margin:10px 0 0; }
+  .runcard .meta .git { background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--head); }
+  .open-link { color:var(--ink); cursor:pointer; font-size:12px; font-weight:600; }
+  .open-link:hover { color:var(--accent); }
 
-  table.hist { width:100%; border-collapse:collapse; font-size:13px; }
-  table.hist th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; padding:6px 10px; border-bottom:1px solid var(--line); }
-  table.hist td { padding:8px 10px; border-bottom:1px solid var(--line); }
-  table.hist tr:hover td { background:var(--accent-soft); }
-  table.hist a { color:var(--accent); text-decoration:none; font-weight:600; }
-  table.hist .mono { font:12px ui-monospace, monospace; color:var(--muted); }
+  /* phase tracker (hero) */
+  .track { display:flex; gap:5px; margin-bottom:7px; }
+  .track .seg { flex:1; height:4px; border-radius:4px; background:var(--line); }
+  .track .seg.done { background:var(--ok); }
+  .tracklabels { display:flex; justify-content:space-between; font:9.5px var(--font-mono);
+    letter-spacing:.04em; color:var(--muted2); margin-bottom:18px; }
+  .tracklabels .cur { color:var(--accent); font-weight:700; }
+  .heronow { display:flex; align-items:flex-start; gap:9px; padding:11px 13px; background:var(--bg);
+    border:1px solid var(--line3); border-radius:8px; margin-bottom:18px; }
+  .heronow .think { display:flex; align-items:flex-end; gap:2px; height:14px; padding-top:1px; flex:none; }
+  .heronow .think span { width:2.5px; height:100%; background:var(--accent); border-radius:2px;
+    transform-origin:bottom; animation:pf-think 1s ease-in-out infinite; }
+  .heronow .think span:nth-child(2){ animation-delay:.2s; }
+  .heronow .think span:nth-child(3){ animation-delay:.4s; }
+  .heronow .txt { font-size:12px; color:var(--head); line-height:1.4; }
+  .herostats { display:flex; gap:24px; align-items:center; padding-top:16px; border-top:1px solid var(--line3); }
+  .herostat .n { font:700 17px var(--font-mono); }
+  .herostat .n small { color:var(--faint); font-size:inherit; }
+  .herostat .l { font-size:10px; color:var(--muted2); letter-spacing:.04em; text-transform:uppercase; }
+  /* slim card progress */
+  .slimbar { height:4px; border-radius:4px; background:var(--line3); margin:20px 0 14px; overflow:hidden; }
+  .slimbar > div { height:100%; border-radius:4px; }
 
-  .stats { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); gap:12px; }
-  .stat { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:var(--bg); }
-  .stat .n { font-size:26px; font-weight:700; }
-  .stat .l { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
-  .phasebars { margin-top:6px; display:flex; flex-direction:column; gap:6px; }
-  .phasebar { display:flex; align-items:center; gap:10px; font-size:13px; }
-  .phasebar .name { width:120px; color:var(--muted); }
-  .phasebar .bar { flex:1; height:8px; background:var(--line); border-radius:999px; overflow:hidden; }
-  .phasebar .bar > div { height:100%; background:var(--accent); }
-  .phasebar .v { width:28px; text-align:right; color:var(--ink); }
-
-  /* /improve dispatch queue — neutral table section (between active & history) */
-  /* #queue-root and #root-tail continue the #root column: drop their vertical
-     padding so the card margins stay even (each .card already has margin:16px 0). */
-  #queue-root, #root-tail { padding-top:0; padding-bottom:0; }
-  #queue-root:empty { display:none; }
-  .q-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
-  .q-head .meta { color:var(--muted); font-size:13px; }
-  .q-head .progress { flex:1; min-width:160px; max-width:320px; margin-top:0; }
-  .q-actions { margin-left:auto; display:flex; gap:8px; }
-  button.copy { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:7px 12px; font-weight:600; font-size:13px; cursor:pointer; }
+  /* /improve queue card */
+  .listcard { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .listcard .topbar { height:3px; background:var(--ok); }
+  .qrow { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--line3); }
+  .qrow:last-child { border-bottom:none; }
+  .qrow:hover { background:var(--bg); }
+  .qrow .n { font:11px var(--font-mono); color:var(--faint); width:16px; flex:none; }
+  .qrow .ttl { flex:1; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .qrow .prism { font:11px var(--font-mono); color:var(--muted2); width:116px; flex:none;
+    text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .qrow .run-status { width:50px; flex:none; text-align:right; }
+  .qrow.failed { background:var(--err-soft); }
+  .qrow.skipped { background:var(--awaiting-soft); }
+  button.copy { font:600 11px var(--font-sans); padding:7px 11px; border-radius:7px; cursor:pointer;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); }
   button.copy:hover { border-color:var(--accent); }
-  button.copy.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  code.cmd { font:12px ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--ink); }
-  table.queue { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
-  table.queue th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; padding:6px 10px; border-bottom:1px solid var(--line); }
-  table.queue td { padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  table.queue tr:hover td { background:var(--accent-soft); }
-  table.queue .n { font:12px ui-monospace, monospace; color:var(--muted); width:28px; }
-  table.queue .ttl { font-weight:600; }
-  table.queue .prism { color:var(--muted); font:12px ui-monospace, monospace; }
-  table.queue a { color:var(--accent); text-decoration:none; font-weight:600; }
-  table.queue tr.failed td { background:var(--err-soft); }
-  table.queue tr.skipped td { background:var(--awaiting-soft); }
-  table.queue tr.failed:hover td { background:var(--err-soft); }
-  table.queue tr.skipped:hover td { background:var(--awaiting-soft); }
+  button.copy.primary { background:var(--sel-bg); color:var(--sel-fg); border-color:var(--sel-bg); }
+  code.cmd { font:12px var(--font-mono); background:var(--chip); border-radius:6px; padding:1px 7px; color:var(--head); }
+
+  /* aggregate analytics */
+  .anrow { display:grid; grid-template-columns:1.35fr 1fr; gap:28px; align-items:start; }
+  .statgrid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:12px; }
+  .stat { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .stat .n { font:700 22px var(--font-mono); }
+  .stat .n.ok { color:var(--ok); }
+  .stat .l { font-size:10px; color:var(--muted2); letter-spacing:.03em; text-transform:uppercase; margin-top:2px; }
+  .barcard { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:15px 16px; }
+  .phasebar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .phasebar:last-of-type { margin-bottom:0; }
+  .phasebar .name { width:88px; font:11px var(--font-mono); color:var(--muted); flex:none; }
+  .phasebar .bar { flex:1; height:7px; background:var(--line3); border-radius:4px; overflow:hidden; }
+  .phasebar .bar > div { height:100%; border-radius:4px; background:var(--accent); }
+  .phasebar .v { width:16px; text-align:right; font:11px var(--font-mono); color:var(--muted); flex:none; }
+  .note { font-size:11px; color:var(--muted2); line-height:1.4; margin-top:13px; padding-top:13px; border-top:1px solid var(--line3); }
+
+  /* history table */
+  .histcard { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  table.hist { width:100%; border-collapse:collapse; font-size:12px; }
+  table.hist th { text-align:left; color:var(--muted2); font:10px var(--font-mono); font-weight:400;
+    letter-spacing:.05em; text-transform:uppercase; padding:11px 18px; border-bottom:1px solid var(--line2); }
+  table.hist td { padding:12px 18px; border-bottom:1px solid var(--line3); }
+  table.hist tr:last-child td { border-bottom:none; }
+  table.hist tbody tr:hover td { background:var(--bg); }
+  table.hist .mono { font:12px var(--font-mono); color:var(--muted); }
+  table.hist .task { font:12px var(--font-mono); color:var(--ink); }
 
   /* toast — ported from templates/dashboard.html */
   .toast { position:fixed; bottom:84px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:30; }
   .toast.show { opacity:1; }
+
+  @media (max-width:860px){
+    .cards { grid-template-columns:1fr; }
+    .runcard.hero { grid-column:span 1; }
+    .anrow { grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
-<header class="top"><div class="top-inner">
-  <h1 class="title">ai-pathfinder — runs hub</h1>
-  <span class="sub" id="updated">loading…</span>
-  <button class="lang-btn" id="lang-btn" title="Toggle language" aria-label="Toggle language"><span id="lang-label">EN</span></button>
-  <button class="theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"><span id="theme-icon">☀️</span></button>
-</div></header>
+<header class="top">
+  <div class="brand">
+    <!-- brand mark: a lime path threading a maze to an arrow. The maze uses
+         currentColor (= --ink) so it inverts with the theme; the path stays lime. -->
+    <svg class="logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 9 H27"/><path d="M37 9 H53"/>
+        <path d="M11 9 V25"/><path d="M11 41 V55"/>
+        <path d="M53 9 V25"/><path d="M53 41 V55"/>
+        <path d="M11 55 H27"/><path d="M37 55 H53"/>
+        <path d="M27 9 V21 H21"/><path d="M37 9 V21 H45"/>
+        <path d="M27 55 V43 H21"/><path d="M45 43 H37 V55"/>
+        <path d="M32 23 V41"/>
+      </g>
+      <g fill="currentColor">
+        <rect x="16" y="14" width="7" height="7" rx="1.5"/>
+        <rect x="41" y="14" width="7" height="7" rx="1.5"/>
+        <rect x="16" y="43" width="7" height="7" rx="1.5"/>
+        <rect x="41" y="43" width="7" height="7" rx="1.5"/>
+      </g>
+      <g stroke="#7ed321" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="32" r="3.6" stroke-width="3.6"/>
+        <path d="M10 32 H25 V24 H40 V40 H55"/>
+        <path d="M50 35 L58 40 L50 45"/>
+      </g>
+    </svg>
+    <span class="name">ai-pathfinder</span>
+    <span class="tag" id="brand-tag">runs hub</span>
+  </div>
+  <div class="topright">
+    <span class="refresh" id="refresh"><span class="dot"></span><span id="refresh-label">auto-refresh</span></span>
+    <span class="sub" id="updated">loading…</span>
+    <button class="lang-btn" id="lang-btn" title="Toggle language" aria-label="Toggle language"><span id="lang-label">EN</span></button>
+    <button class="theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"><span id="theme-icon">☀️</span></button>
+  </div>
+</header>
 
 <!-- static filter toolbar — sits OUTSIDE #root/#queue-root/#root-tail so render()'s
      innerHTML rewrites never touch it (input focus/caret survive the 3s poll). -->
 <div id="filter-bar">
   <div class="fpanel">
-    <input id="f-search" type="text" placeholder="Search by title or slug…" autocomplete="off">
-    <div class="frow"><span class="glabel" id="f-phase-label">phase</span><span id="f-phase" class="frow" style="gap:7px"></span></div>
-    <div class="frow"><span class="glabel" id="f-kind-label">type</span><span id="f-kind" class="frow" style="gap:7px"></span></div>
-    <span id="f-count"><span id="f-count-pre"></span> <b id="f-n">0</b> <span id="f-count-mid"></span> <span id="f-m">0</span> <span id="f-count-post"></span> <span id="f-reset">reset</span></span>
+    <div class="searchbox">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="f-search" type="text" placeholder="Search by title or slug…" autocomplete="off">
+      <span class="slash">/</span>
+    </div>
+    <div class="frow">
+      <span class="glabel" id="f-phase-label">phase</span><span id="f-phase" class="frow"></span>
+      <span class="fsep"></span>
+      <span class="glabel" id="f-kind-label">type</span><span id="f-kind" class="frow"></span>
+      <span id="f-count"><span id="f-count-pre"></span> <b id="f-n">0</b> <span id="f-count-mid"></span> <span id="f-m">0</span> <span id="f-count-post"></span> <span id="f-reset">reset</span></span>
+    </div>
   </div>
 </div>
 
 <div class="wrap" id="root">
-  <section class="card"><div class="empty">loading…</div></section>
+  <div class="empty">loading…</div>
 </div>
 <div class="wrap" id="queue-root"></div>
 <div class="wrap" id="root-tail"></div>
@@ -1609,6 +1726,9 @@ const STR = {
     "hub.tokensNote": "Tokens and cost are not part of the cross-task aggregate (expensive and unavailable from a worktree) — they open lazily on the task dashboard.",
     "hub.updated": "updated",
     "hub.autoRefresh": "auto-refresh",
+    "hub.subtitle": "runs hub",
+    "hub.steps": "steps",
+    "hub.live": "live",
     "hub.months": "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
     // /improve dispatch queue
     "hubq.title": "/improve queue",
@@ -1670,6 +1790,9 @@ const STR = {
     "hub.tokensNote": "Токены и стоимость не входят в кросс-задачный агрегат (дорого и недоступно из worktree) — открываются лениво на дашборде задачи.",
     "hub.updated": "обновлено",
     "hub.autoRefresh": "автообновление",
+    "hub.subtitle": "хаб запусков",
+    "hub.steps": "шагов",
+    "hub.live": "live",
     "hub.months": "янв,фев,мар,апр,мая,июн,июл,авг,сен,окт,ноя,дек",
     "hubq.title": "Очередь /improve",
     "hubq.copied": "Команда скопирована",
@@ -1715,6 +1838,8 @@ function applyLang(){
 function applyStaticStrings(){
   const set = (id, val, attr) => { const el = document.getElementById(id); if(el){ if(attr) el.setAttribute(attr, val); else el.textContent = val; } };
   set("theme-btn", t("header.toggleTheme"), "title"); set("theme-btn", t("header.toggleTheme"), "aria-label");
+  set("brand-tag", t("hub.subtitle"));
+  set("refresh-label", t("hub.autoRefresh"));
   set("f-search", t("hub.search"), "placeholder");
   set("f-phase-label", t("hub.filterPhase"));
   set("f-kind-label", t("hub.filterKind"));
@@ -1817,39 +1942,98 @@ function progressPct(p){
   return Math.max(0, Math.min(100, Math.round((p.done||0)/p.total*100)));
 }
 
-function runCard(r){
-  const pct = progressPct(r.progress);
-  const branch = r.branch ? `<span class="git">⎇ ${esc(r.branch)}</span>` : "";
-  const wt = r.worktreePath ? `<span>${esc(r.worktreePath)}</span>` : "";
-  const meta = (branch||wt) ? `<div class="meta">${branch}${wt}</div>` : "";
+// run status as flat coloured text (working / awaiting), shared by hero+slim cards
+function runStatus(r){
+  if(r.awaiting)
+    return `<span class="status awaiting"><span class="dot"></span>${esc(t("hub.awaiting"))}</span>`;
+  return statusBadge(r.status);
+}
+
+// /feature pipeline → segmented phase tracker (hero card). A phase that is not a
+// /feature stage (scratch, ANSWER, …) maps to -1 and renders no tracker.
+const PHASE_ORDER = ["EXPLORE","PLAN","IMPLEMENT","VERIFY","DONE"];
+const PHASE_MAP = { INTAKE:0, EXPLORE:0, ELABORATE:1, "PLAN GATE":1, PLAN:1,
+  IMPLEMENT:2, VERIFY:3, DONE:4 };
+function phaseIndex(phase){
+  const p = String(phase||"").toUpperCase();
+  return (p in PHASE_MAP) ? PHASE_MAP[p] : -1;
+}
+function phaseTracker(phase){
+  const idx = phaseIndex(phase);
+  if(idx < 0) return "";
+  const segs = PHASE_ORDER.map((_, i) =>
+    i < idx ? '<div class="seg done"></div>'
+    : i === idx ? '<div class="seg shim"></div>'
+    : '<div class="seg"></div>').join("");
+  const labels = PHASE_ORDER.map((name, i) =>
+    `<span${i === idx ? ' class="cur"' : ''}>${name}</span>`).join("");
+  return `<div class="track">${segs}</div><div class="tracklabels">${labels}</div>`;
+}
+
+// hero card — the first active run, with phase tracker + stats row
+function heroCard(r){
+  const track = phaseTracker(r.phase);
+  const slimbar = track ? "" :
+    `<div class="slimbar"><div class="shim" style="width:${progressPct(r.progress)}%"></div></div>`;
+  const steps = (r.progress && r.progress.total)
+    ? `${esc(r.progress.done||0)}<small>/${esc(r.progress.total)}</small>` : "—";
+  const iter = (r.iteration!=null) ? `<span class="iter">iter ${esc(r.iteration)}</span>` : "";
+  return `<div class="runcard hero${r.awaiting ? " awaiting" : ""}">
+    <div class="head">
+      <div class="headl">
+        <span class="slug">${esc(r.slug)}</span>
+        ${r.phase ? `<span class="badge phase">${esc(r.phase)}</span>` : ""}
+        ${r.kind ? `<span class="badge kind">${esc(r.kind)}</span>` : ""}
+        ${iter}
+      </div>
+      ${runStatus(r)}
+    </div>
+    ${r.title ? `<div class="desc">${esc(r.title)}</div>` : ""}
+    ${track}${slimbar}
+    <div class="herostats">
+      <div class="herostat"><div class="n">${steps}</div><div class="l">${esc(t("hub.steps"))}</div></div>
+      <div class="herostat"><div class="n">${r.subagents==null?"—":esc(r.subagents)}</div><div class="l">${esc(t("hub.stat.subagents"))}</div></div>
+      <div class="herostat"><div class="n">${r.sessions==null?"—":esc(r.sessions)}</div><div class="l">${esc(t("hub.stat.sessions"))}</div></div>
+      <a class="open-link" style="margin-left:auto" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.openDashboard"))}</a>
+    </div>
+  </div>`;
+}
+
+// slim card — secondary active runs: title/kind + indeterminate-ish progress
+function slimCard(r){
+  const sub = r.title ? esc(r.title) : (r.kind ? esc(r.kind) : "&nbsp;");
   return `<div class="runcard${r.awaiting ? " awaiting" : ""}">
     <div class="head">
       <span class="slug">${esc(r.slug)}</span>
-      ${r.kind ? `<span class="badge kind">${esc(r.kind)}</span>` : ""}
-      ${r.phase ? `<span class="badge phase">${esc(r.phase)}</span>` : ""}
-      ${statusBadge(r.status)}
+      ${runStatus(r)}
     </div>
-    ${r.title ? `<div class="desc">${esc(r.title)}</div>` : ""}
-    <div class="progress"><div style="width:${pct}%"></div></div>
-    ${meta}
-    <a class="open" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.openDashboard"))}</a>
+    <div class="scratch">${sub}</div>
+    <div class="slimbar"><div class="shim" style="width:${progressPct(r.progress)}%"></div></div>
+    <a class="open-link" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.openDashboard"))}</a>
   </div>`;
 }
 
 function histRow(r){
   const kind = r.kind ? ` <span class="badge kind">${esc(r.kind)}</span>` : "";
   return `<tr>
-    <td>${esc(r.slug)}${kind}</td>
+    <td class="task">${esc(r.slug)}${kind}</td>
     <td><span class="run-status ${runStatusClass(r.phase)}">${esc(r.phase||"—")}</span></td>
     <td class="mono">${r.iteration==null?"—":esc(r.iteration)}</td>
     <td class="mono">${fmtDur(r.durationMs)}</td>
     <td class="mono">${r.subagents==null?"—":esc(r.subagents)}</td>
     <td class="mono">${r.sessions==null?"—":esc(r.sessions)}</td>
     <td class="mono">${fmtDate(r.updatedAt)}</td>
-    <td><a href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.open"))}</a></td>
+    <td><a class="open-link" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.open"))} →</a></td>
   </tr>`;
 }
 
+// phase distribution bars (aggregate analytics); bar colour hints terminal vs live
+function phaseBarColor(name){
+  const p = String(name||"").toUpperCase();
+  if(p === "DONE") return "var(--ok)";
+  if(p === "ABORTED" || p === "FAILED") return "var(--err)";
+  return phaseIndex(p) >= 0 ? "var(--accent)" : "var(--muted2)";
+}
 function phaseBars(phases){
   const entries = Object.entries(phases||{});
   if(!entries.length) return "";
@@ -1857,7 +2041,7 @@ function phaseBars(phases){
   return entries.map(([name,v])=>{
     const w = max ? Math.round(v/max*100) : 0;
     return `<div class="phasebar"><span class="name">${esc(name)}</span>`+
-      `<span class="bar"><div style="width:${w}%"></div></span>`+
+      `<span class="bar"><div style="width:${w}%;background:${phaseBarColor(name)}"></div></span>`+
       `<span class="v">${esc(v)}</span></div>`;
   }).join("");
 }
@@ -1900,62 +2084,63 @@ function render(data){
   const activeEmpty = filtered ? t("hub.nothingFound") : t("hub.noActive");
   const histEmpty = filtered ? t("hub.nothingFound") : t("hub.histEmpty");
 
+  // active runs: first card is the detailed hero, the rest are slim cards
   const activeHtml = active.length
-    ? `<div class="cards">${active.map(runCard).join("")}</div>`
+    ? `<div class="cards">${active.map((r,i)=> i===0 ? heroCard(r) : slimCard(r)).join("")}</div>`
     : `<div class="empty">${activeEmpty}</div>`;
 
   const histHtml = history.length
-    ? `<table class="hist"><thead><tr>
+    ? `<div class="histcard"><table class="hist"><thead><tr>
         <th>${esc(t("hub.colTask"))}</th><th>${esc(t("hub.colPhase"))}</th><th>${esc(t("hub.colIter"))}</th><th>${esc(t("hub.colDur"))}</th>
         <th>${esc(t("hub.colSubagents"))}</th><th>${esc(t("hub.colSessions"))}</th><th>${esc(t("hub.colUpdated"))}</th><th></th>
-      </tr></thead><tbody>${history.map(histRow).join("")}</tbody></table>`
+      </tr></thead><tbody>${history.map(histRow).join("")}</tbody></table></div>`
     : `<div class="empty">${histEmpty}</div>`;
 
   const stats = [
-    [a.total, t("hub.stat.total")],
-    [a.active, t("hub.stat.active")],
-    [a.done, t("hub.stat.done")],
-    [a.subagents, t("hub.stat.subagents")],
-    [a.sessions, t("hub.stat.sessions")],
-    [fmtDur(a.medianDurationMs), t("hub.stat.medianDur")],
-  ].map(([n,l])=>`<div class="stat"><div class="n">${n==null?"—":esc(n)}</div>`+
+    [a.total, t("hub.stat.total"), ""],
+    [a.active, t("hub.stat.active"), "ok"],
+    [a.done, t("hub.stat.done"), ""],
+    [a.subagents, t("hub.stat.subagents"), ""],
+    [a.sessions, t("hub.stat.sessions"), ""],
+    [fmtDur(a.medianDurationMs), t("hub.stat.medianDur"), ""],
+  ].map(([n,l,c])=>`<div class="stat"><div class="n ${c}">${n==null?"—":esc(n)}</div>`+
     `<div class="l">${esc(l)}</div></div>`).join("");
 
   // #root holds active runs; #queue-root (filled by tickQueue) sits between;
   // #root-tail holds history + analytics. Splitting keeps the queue section
   // visually between "Active runs" and "History" while #root is overwritten every
   // /hub.json diff without ever touching the independent #queue-root node.
+  const liveBadge = active.length
+    ? `<span class="pill live">${active.length} ${esc(t("hub.live"))}</span>` : "";
   document.getElementById("root").innerHTML = `
-    <section class="card">
-      <h2>${esc(t("hub.secActive"))} <span class="count">${active.length}</span></h2>
-      ${activeHtml}
-    </section>`;
+    <div class="sec"><span class="title">${esc(t("hub.secActive"))}</span>${liveBadge}</div>
+    ${activeHtml}`;
   document.getElementById("root-tail").innerHTML = `
-    <section class="card">
-      <h2>${esc(t("hub.secHistory"))} <span class="count">${history.length}</span></h2>
-      ${histHtml}
-    </section>
-    <section class="card">
-      <h2>${esc(t("hub.secAnalytics"))}</h2>
-      <div class="stats">${stats}</div>
-      <div class="phasebars" style="margin-top:16px">${phaseBars(a.phases)}</div>
-      <p class="sub" style="margin-top:14px">${esc(t("hub.tokensNote"))}</p>
-    </section>`;
+    <div class="sec"><span class="title">${esc(t("hub.secHistory"))}</span><span class="pill">${history.length}</span></div>
+    ${histHtml}
+    <div class="sec"><span class="title">${esc(t("hub.secAnalytics"))}</span></div>
+    <div class="statgrid">${stats}</div>
+    <div class="barcard">${phaseBars(a.phases)}<div class="note">${esc(t("hub.tokensNote"))}</div></div>`;
   document.getElementById("updated").textContent =
-    t("hub.updated") + " " + fmtDate(new Date().toISOString()) + " · " + t("hub.autoRefresh");
+    t("hub.updated") + " " + fmtDate(new Date().toISOString());
 }
 
 // Build phase/kind chips dynamically from the data (the kind list is {ask,null}
 // today, so a hardcoded list would be wrong — q1=A). null kind → synthetic
 // KIND_FEAT chip (q2=A). Redraw only when the set of values changes (lastChipKey)
 // so the toolbar DOM isn't churned every poll; #f-search is never rewritten.
-function chipHtml(value, on){
-  return `<span class="chip${on ? " on" : ""}" data-v="${esc(value)}">${esc(value)}</span>`;
+function chipHtml(value, on, count){
+  const num = (count==null) ? "" : ` <span class="num">${esc(count)}</span>`;
+  return `<span class="chip${on ? " on" : ""}" data-v="${esc(value)}">${esc(value)}${num}</span>`;
 }
 function buildChips(runs){
   const phases = [...new Set(runs.map(r=>r.phase).filter(Boolean))].sort();
   const kinds = [...new Set(runs.map(r=>r.kind || KIND_FEAT))].sort();
-  const key = JSON.stringify([phases, kinds]);
+  const phaseCount = {};
+  runs.forEach(r=>{ if(r.phase) phaseCount[r.phase] = (phaseCount[r.phase]||0) + 1; });
+  // counts join the key so a redraw refreshes the per-phase badge; the chip
+  // container holds no <input>, so re-rendering it on a poll is harmless.
+  const key = JSON.stringify([phases, kinds, phaseCount]);
   if(key === lastChipKey) {
     // value sets unchanged — only refresh the .on state (cheap, no input nearby)
     syncChipState();
@@ -1964,7 +2149,7 @@ function buildChips(runs){
   lastChipKey = key;
   const phaseEl = document.getElementById("f-phase");
   const kindEl = document.getElementById("f-kind");
-  if(phaseEl) phaseEl.innerHTML = phases.map(p=>chipHtml(p, activePhases.has(p))).join("");
+  if(phaseEl) phaseEl.innerHTML = phases.map(p=>chipHtml(p, activePhases.has(p), phaseCount[p])).join("");
   if(kindEl) kindEl.innerHTML = kinds.map(k=>chipHtml(k, activeKinds.has(k))).join("");
 }
 function syncChipState(){
@@ -2029,6 +2214,14 @@ function initFilter(){
     q = ""; activePhases.clear(); activeKinds.clear();
     if(search) search.value = "";
     syncChipState(); reFilter();
+  });
+  // "/" focuses the search box (matches the keycap hint in the toolbar), unless
+  // the user is already typing in a field.
+  document.addEventListener("keydown", function(e){
+    if(e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+    const el = document.activeElement;
+    if(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+    if(search){ e.preventDefault(); search.focus(); }
   });
 }
 initFilter();
@@ -2113,18 +2306,19 @@ function queueStatusLabel(status){
 }
 function queueRow(it){
   const cls = queueStatusClass(it.status);
-  const trCls = (cls === "failed" || cls === "skipped") ? ` class="${cls}"` : "";
+  const rowCls = (cls === "failed" || cls === "skipped") ? " " + cls : "";
   const prism = it.prism ? esc(it.prism) : (it.candId ? esc(it.candId) : "—");
-  const link = it.slug
-    ? `<a href="/?slug=${encodeURIComponent(it.slug)}">${esc(t("hub.open"))}</a>`
-    : "";
-  return `<tr${trCls}>
-    <td class="n">${it.n==null?"":esc(it.n)}</td>
-    <td class="ttl">${esc(it.title)}</td>
-    <td class="prism">${prism}</td>
-    <td><span class="run-status ${cls}">${esc(queueStatusLabel(it.status))}</span></td>
-    <td>${link}</td>
-  </tr>`;
+  const label = (cls === "done" ? "✓ " : "") + queueStatusLabel(it.status);
+  // the status text doubles as the open link when the feature has a dashboard
+  const status = it.slug
+    ? `<a class="run-status ${cls}" href="/?slug=${encodeURIComponent(it.slug)}">${esc(label)}</a>`
+    : `<span class="run-status ${cls}">${esc(label)}</span>`;
+  return `<div class="qrow${rowCls}">
+    <span class="n">${it.n==null?"":esc(it.n)}</span>
+    <span class="ttl">${esc(it.title)}</span>
+    <span class="prism">${prism}</span>
+    ${status}
+  </div>`;
 }
 function renderQueue(data){
   const root = document.getElementById("queue-root");
@@ -2134,26 +2328,19 @@ function renderQueue(data){
   const total = items.length;
   const done = items.filter(i => i.status === "done").length;
   const failed = items.filter(i => i.status === "failed").length;
-  const pct = total ? Math.round(done/total*100) : 0;
   const src = data.source
-    ? `${t("hubq.source")} <code class="cmd">${esc(data.source)}</code> · ` : "";
-  const failMeta = failed ? ` · ${failed} ${failed===1?t("hubq.failureOne"):t("hubq.failureMany")}` : "";
-  const meta = `${src}${t("hubq.remaining")} ${total - done}${failMeta}`;
+    ? `${esc(t("hubq.source"))} <code class="cmd">${esc(data.source)}</code>` : "";
+  const failMeta = failed
+    ? ` · ${failed} ${esc(failed===1?t("hubq.failureOne"):t("hubq.failureMany"))}` : "";
   root.innerHTML = `
-    <section class="card">
-      <h2>${esc(t("hubq.title"))} <span class="count">${done} / ${total}</span></h2>
-      <div class="q-head">
-        <div class="progress"><div style="width:${pct}%"></div></div>
-        <span class="meta">${meta}</span>
-        <div class="q-actions">
-          <button class="copy primary" id="queue-copy">${esc(t("hubq.copyDrain"))}</button>
-        </div>
-      </div>
-      <table class="queue">
-        <thead><tr><th>#</th><th>${esc(t("hubq.colFeature"))}</th><th>${esc(t("hubq.colPrism"))}</th><th>${esc(t("hubq.colStatus"))}</th><th></th></tr></thead>
-        <tbody>${items.map(queueRow).join("")}</tbody>
-      </table>
-    </section>`;
+    <div class="sec">
+      <span class="title">${esc(t("hubq.title"))}</span>
+      <span class="pill">${done}/${total}</span>
+      <span class="submeta">${src}${failMeta}</span>
+      <span class="grow"></span>
+      <button class="copy primary" id="queue-copy">${esc(t("hubq.copyDrain"))}</button>
+    </div>
+    <div class="listcard"><div class="topbar"></div>${items.map(queueRow).join("")}</div>`;
   const btn = document.getElementById("queue-copy");
   if(btn) btn.addEventListener("click", copyDrainCmd);
 }
