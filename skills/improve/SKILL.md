@@ -59,9 +59,9 @@ Read these reference files when you reach the relevant part — don't load them 
   contract (`feat-K`).
 - `state-schema.md` — the `state.json` shape you read/write to resume (with the improve-specific fields).
 - `knowledge-guide.md` — structure and principles of `docs/knowledge/` (what the documenter writes).
-- `parallel.md` — running a task in its own git worktree: an **opt-in** alternative the human can ask
-  for instead of the default sequential drain. The hub at `/hub` aggregates every run (sequential or
-  worktree) as it executes.
+- `parallel.md` — per-task git worktrees, now the **default**: each drained `/feature` stands up its own
+  worktree off the queue's `baseCommit`, so every feature lands on its own branch. `/improve` itself does
+  not create them (the drainer does); the hub at `/hub` aggregates every run as it executes.
 
 ## Sub-agents you orchestrate
 
@@ -114,8 +114,9 @@ runs through you.
   over HTTP, so the choice is only visible after submit), and the default is **no answer = Пропускаем**.
   See `dashboard-guide.md` §SELECT GATE for the full contract.
 - **DISPATCH is queue-and-handoff.** For each picked feature you write its `brief.md` and append a
-  `pending` item to `.workflow/dispatch-queue.json` — **no worktree, no per-feature state/dashboard
-  seeding, and you never run `/feature` yourself** (it would pollute this context). Then you hand the
+  `pending` item to `.workflow/dispatch-queue.json` — **you create no worktree** (the `/feature` drainer
+  stands one up off `baseCommit` when it picks the item up), **no per-feature state/dashboard seeding,
+  and you never run `/feature` yourself** (it would pollute this context). Then you hand the
   human the drain: run **`/feature`** to do the first item (full workflow), then **`/clear` + `/feature`**
   for the next — or **`/loop /feature`** to auto-continue. `/feature` in queue mode pops the next
   `pending` item, runs it in a fresh context, and marks it `done`. See `dispatch-queue.md` for the

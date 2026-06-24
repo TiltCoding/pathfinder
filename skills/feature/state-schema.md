@@ -52,13 +52,14 @@ Field notes:
   `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
   generated artifacts/dashboard/knowledge; chat (`chat.jsonl`) and `replies.json` instead follow the
   language of the human's message. Pass it to sub-agents in their spawn prompt.
-- **`worktreePath`** (optional): the absolute path of the task's own git working tree, set only when
-  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **Changes** tab
-  against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read
-  by the server. Absent for ordinary tasks — the server falls back to its `--root` working tree.
-- **`branch`** (optional): the git branch the task's worktree is checked out on. Set alongside
-  `worktreePath` by `scripts/worktree.py`; absent for ordinary tasks. Old tasks without either field
-  stay fully compatible.
+- **`worktreePath`**: the absolute path of the task's own git working tree. Set for **every** task now
+  that each task runs in its own worktree (see `parallel.md`). The server diffs the **Changes** tab
+  against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read by
+  the server. Absent only outside a git repo (or for old tasks) — the server then falls back to its
+  `--root` working tree.
+- **`branch`**: the git branch the task's worktree is checked out on (`<slug>` by default). Set
+  alongside `worktreePath` by `scripts/worktree.py`. Absent only outside a git repo or for old tasks,
+  which stay fully compatible.
 - **`lastChatTs`**: timestamp of the last `chat.jsonl` message you have already read/answered. On each
   checkpoint wake-up you reply to messages newer than this, then advance it (see `feedback-loop.md`).
 - **`subagents`**: lightweight record of what you spawned (especially background coders) so a resumed

@@ -25,8 +25,10 @@ Goal: capture the task and stand up the workspace.
   human's message language).
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
-- If the task is being launched **in parallel** with another in-flight one, stand it up in its own
-  git worktree at this point (see `parallel.md`) — that records `worktreePath`/`branch` in `state.json`.
+- **Stand the task up in its own git worktree at this point** (always — see `parallel.md`):
+  `worktree.py add <slug>` records `worktreePath`/`branch` in `state.json`, symlinks the shared store,
+  and gives the task an isolated branch so it never collides with another task's files or branch. In
+  queue mode pass `--base <baseCommit>`. (Skip only outside a git repo.)
 - Advance to EXPLORE.
 
 ## 2. EXPLORE (autonomous)

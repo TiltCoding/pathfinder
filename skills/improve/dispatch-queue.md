@@ -1,15 +1,20 @@
 # Dispatch queue — sequential `/feature` drain (the DISPATCH contract)
 
-`/improve` no longer fans the picked features out into parallel git worktrees. Instead it **queues**
-them and they are **drained one at a time through `/feature`**, each in a **fresh context**. This file
-is the canonical contract for that queue — both `/improve` (writer) and `/feature` (drainer) follow it.
+`/improve` does not fan the picked features out into **concurrent** Claude Code sessions. Instead it
+**queues** them and they are **drained one at a time through `/feature`**, each in a **fresh context**.
+This file is the canonical contract for that queue — both `/improve` (writer) and `/feature` (drainer)
+follow it.
 
-Why sequential-with-reset instead of parallel worktrees: launching N independent Claude Code sessions
-by hand is the friction we are removing, and one session doing all N features accumulates context until
-quality degrades. A queue file + one `/feature` per **cleared** session gives full `/feature` quality
-(exploration, plan gate, review gates, knowledge growth) on every item while keeping each run's context
-clean. (Parallel worktrees still exist as an opt-in — see `parallel.md` — but they are no longer the
-default dispatch path.)
+Two isolations, kept separate. **Context isolation** stays sequential-with-reset: launching N
+independent sessions by hand is the friction we are removing, and one session doing all N features
+accumulates context until quality degrades — so a queue file + one `/feature` per **cleared** session
+gives full `/feature` quality (exploration, plan gate, review gates, knowledge growth) on every item
+while keeping each run's context clean. **Branch/file isolation** is separate and now **always on**:
+each drained `/feature` stands up its **own git worktree off `baseCommit`** (per `parallel.md`), so
+every item lands on its own reviewable branch `<slug>` instead of piling onto the current one — which
+is exactly why a drain no longer leaves all features stacked on one branch. The drain is still
+one-at-a-time by default; the per-item worktrees mean the human *can* also run several concurrently,
+but that is not required.
 
 ## The queue file
 
@@ -48,10 +53,10 @@ survives the `/clear` between features. Append/extend-only in spirit; statuses m
   wrote. The `/feature` run keys its own `.workflow/tasks/<slug>/` workspace off `slug`.
 - **`status`** per item: `pending` → `in-progress` → `done` (or `skipped` / `failed`). The drain always
   takes the lowest-`n` item still `pending`.
-- **`baseCommit`** — the `git HEAD` captured at `/improve` INTAKE. `/feature`, when it starts a queue
-  item on the default branch, branches from here so the features stay independent and reviewable
-  (the human merges/cherry-picks afterward). If the human prefers a stack, they say so and `/feature`
-  branches from the current HEAD instead.
+- **`baseCommit`** — the `git HEAD` captured at `/improve` INTAKE. `/feature` stands up each item's
+  worktree off this ref (`worktree.py add <slug> --base <baseCommit>`), so the features stay independent
+  and reviewable, each on its own branch `<slug>` (the human merges/cherry-picks afterward). If the human
+  prefers a stack, they say so and `/feature` bases the worktree on the current HEAD instead.
 - **`autonomous`** *(optional, top-level)* — when `true`, the **whole queue drains autonomously**: each
   item runs to DONE without parking at the per-feature PLAN GATE, and the agent self-resolves the plan's
   open questions instead of asking the human (subject to the escalation valve below). Absent or `false`
@@ -67,8 +72,9 @@ Per picked feature (in ranked `feat-K` order), `/improve`:
    filled from the candidate **plus** the human's free-form `answer.text` for that `feat-K` if any).
 3. Appends an `items[]` entry (status `pending`) to `.workflow/dispatch-queue.json`.
 
-It does **not** create a worktree, and does **not** seed `state.json`/`dashboard.json`/`index.html`
-for the feature — the `/feature` run creates its own workspace when it picks the item up. `/improve`
+It does **not** create the worktree itself (the `/feature` drainer does that when it picks the item up,
+off `baseCommit`), and does **not** seed `state.json`/`dashboard.json`/`index.html` for the feature —
+the `/feature` run creates its own workspace when it picks the item up. `/improve`
 records the same set in its own `state.json.dispatched[]` (`{slug, featId, candId, briefPath, status}`)
 and then **hands the drain to the human** (it does not run `/feature` inside its own session — that
 would pollute context, defeating the fresh-context goal).
@@ -86,7 +92,9 @@ one `pending` item exists, enters **queue mode**:
    `updatedAt`.
 2. Adopt its `slug` as the active task and its `briefPath` as the **given** brief — so it **skips
    INTAKE elicitation** and goes straight to EXPLORE (if a `state.json` for that slug already exists,
-   resume that instead). On the default branch, branch from the queue's `baseCommit`.
+   resume that instead). **Stand up the item's worktree** off the queue's `baseCommit`
+   (`worktree.py add <slug> --base <baseCommit>`, idempotent on resume — see `parallel.md`), so the
+   feature gets its own branch `<slug>` and never shares files/branch with another item.
 3. Run the normal `/feature` workflow for that one feature: EXPLORE → ELABORATE → PLAN GATE →
    IMPLEMENT → VERIFY → DONE, with its own dashboard, plan gate, and review gates.
 4. **At DONE:** mark the item `done` (+`doneAt`) in the queue. Then tell the human plainly: this
@@ -156,4 +164,6 @@ in one session.
 ## Eval / headless mode
 
 With `--eval` / `AIPF_EVAL=1`, `/improve` writes the queue exactly the same way; the harness (or a test
-driver) then runs `/feature` repeatedly to drain it unattended. No worktrees are created.
+driver) then runs `/feature` repeatedly to drain it unattended. Each drained `/feature` still stands up
+its own worktree off `baseCommit` (it is part of the normal `/feature` start), unless the run is outside
+a git repo.

@@ -101,12 +101,14 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
 ## 5. DISPATCH (autonomous)
 
 Goal: queue each picked feature for a sequential `/feature` drain, then hand the drain to the human.
-No worktrees, no parallel fan-out — the picks are drained one at a time, each in a fresh context.
+The picks are drained one at a time, each in a fresh context — but each drained `/feature` stands up its
+**own worktree off `baseCommit`** (per `parallel.md`), so the features land on independent branches, not
+stacked on one. You (the `/improve` writer) just don't create those worktrees yourself.
 
 - The exact writer-side sequence is in `consensus.md` §DISPATCH and the full contract in
   `dispatch-queue.md` (per feature: fresh slug → write `brief.md` → append a `pending` item to
-  `.workflow/dispatch-queue.json`). You create **no** worktree and seed **no** per-feature
-  `state.json`/`dashboard.json`/`index.html` — the `/feature` drainer makes its own workspace.
+  `.workflow/dispatch-queue.json`). You create **no** worktree here (the drainer does) and seed **no**
+  per-feature `state.json`/`dashboard.json`/`index.html` — the `/feature` drainer makes its own workspace.
 - For each queued feature, append a `dispatched[]` entry to this task's `state.json`
   (`{slug, featId, candId, briefPath, status:"queued"}`).
 - If the human answered the `drain-mode` choice with **«Автономно»**, stamp top-level `autonomous:true`

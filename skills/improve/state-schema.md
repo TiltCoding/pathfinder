@@ -51,13 +51,14 @@ Field notes:
   generated artifacts/dashboard/knowledge (incl. gate cards and choice option labels); chat
   (`chat.jsonl`) and `replies.json` instead follow the language of the human's message. Pass it to
   sub-agents in their spawn prompt.
-- **`worktreePath`** (optional): the absolute path of the task's own git working tree, set only when
-  the task runs in a parallel worktree (see `parallel.md`). The server diffs the **Changes** tab
-  against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read
-  by the server. Absent for ordinary tasks — the server falls back to its `--root` working tree.
-- **`branch`** (optional): the git branch the task's worktree is checked out on. Set alongside
-  `worktreePath` by `scripts/worktree.py`; absent for ordinary tasks. Old tasks without either field
-  stay fully compatible.
+- **`worktreePath`** (optional): the absolute path of a task's own git working tree. The `/improve`
+  audit task is read-only and does **not** get a worktree, so this is absent on the audit's own
+  `state.json`; it is instead set on each drained **`/feature`** task's `state.json` (every feature runs
+  in its own worktree — see `parallel.md`), where the server diffs that feature's **Changes** tab
+  against the worktree. Written by `scripts/worktree.py` (append-only); read by the server.
+- **`branch`** (optional): the git branch a worktree is checked out on (`<slug>`). Set alongside
+  `worktreePath` by `scripts/worktree.py` on the drained feature tasks; absent on the read-only audit
+  task. Old tasks without either field stay fully compatible.
 - **`lastChatTs`**: timestamp of the last `chat.jsonl` message you have already read/answered. On each
   checkpoint wake-up you reply to messages newer than this, then advance it (see `feedback-loop.md`).
 - **`subagents`**: lightweight record of what you spawned (the scout fan-out and the voter panel, some
@@ -111,8 +112,9 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
 - **`dispatched`** — one entry per **queued** feature
   (`{slug, featId, candId, briefPath, status}`), appended as DISPATCH writes each item into
   `.workflow/dispatch-queue.json` (the project-level queue is the source of truth for the drain; this
-  mirror is for the DONE summary). No `worktreePath` — there is no worktree in the default sequential
-  drain. See `dispatch-queue.md`.
+  mirror is for the DONE summary). No `worktreePath` in this mirror — the drained `/feature` stands up
+  its own worktree off `baseCommit` and records it in that feature's own `state.json`, not here. See
+  `dispatch-queue.md`.
 
 ## Related files (not part of `state.json`)
 

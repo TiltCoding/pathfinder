@@ -112,7 +112,8 @@ order, free-form answers) lives in `dashboard-guide.md` §SELECT GATE; the stage
 ## 6. DISPATCH — queue-and-drain (the exact sequence)
 
 For each picked feature (`feat-K` answered «Делаем», or a free-form "делаем…"), you **queue** it for a
-sequential `/feature` drain — you do **not** create a worktree and do **not** run `/feature` yourself.
+sequential `/feature` drain — you do **not** create its worktree (the `/feature` drainer stands one up
+off `baseCommit` when it picks the item up) and do **not** run `/feature` yourself.
 The full contract (queue schema, drainer behaviour, the two drive options) is in `dispatch-queue.md`;
 this is the writer-side sequence. Per feature, in ranked `feat-K` order:
 
@@ -134,7 +135,9 @@ this is the writer-side sequence. Per feature, in ranked `feat-K` order:
    per `dispatch-queue.md` §"Autonomous drain (opt-in)". Absent ⇒ manual drain.
 
 Also append a `dispatched[]` entry to **this** task's `state.json` per feature:
-`{slug, featId, candId, briefPath, status:"queued"}` (no `worktreePath` — there is no worktree).
+`{slug, featId, candId, briefPath, status:"queued"}` (no `worktreePath` here — `/improve` doesn't create
+the worktree; the `/feature` drainer stands one up off `baseCommit` and records it in the item's own
+`state.json`).
 
 ### Then hand the drain to the human (do NOT run `/feature` yourself)
 
@@ -149,11 +152,12 @@ defeating the fresh-context goal. Instead, at DONE you tell the human the two dr
 
 ### What you do NOT do
 
-- **No worktree** (`worktree.py add`), **no per-feature `state.json`/`dashboard.json`/`index.html`** —
-  the `/feature` drainer creates its own workspace from the brief + queue item.
+- **No `worktree.py add` here, no per-feature `state.json`/`dashboard.json`/`index.html`** — the
+  `/feature` drainer creates its own workspace **and its own worktree** (off `baseCommit`) from the brief
+  + queue item. You only write the brief and the queue entry.
 - **Do not auto-launch `/feature`** from this session. The drain is a human/`/loop` step.
-- Parallel git-worktree fan-out is still available if the human explicitly asks for it (`parallel.md`),
-  but it is no longer the default dispatch path.
+- Each drained feature gets its own worktree/branch by default (`parallel.md`), so the picks stay
+  independently reviewable even though they are drained one at a time.
 
 ## 7. Default knobs & eval mode
 
