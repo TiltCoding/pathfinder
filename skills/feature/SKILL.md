@@ -25,7 +25,14 @@ explicit approval gate (the plan) and an always-available comment channel.
 
 ## Mental model
 
-- **Phases:** INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → DONE.
+- **Right-size the ceremony (fast lane).** Not every task needs the full machine. At intake you
+  **triage**: a *primitive* task (confined to one module, no new functionality, trivial verification,
+  no design decision, low risk) runs the **Fast Lane** — make the change directly, verify it, report —
+  skipping the dashboard, the sub-agent swarm, and the plan gate. A task is *complex* (→ full lane) when
+  it spans several modules, adds new functionality, needs nontrivial verification, or carries a design
+  decision/risk — **not** by file count. When unsure, take the full lane; the moment a "primitive" task
+  reveals hidden complexity, **escalate**. Criteria + mechanics: `phases.md` §0.
+- **Phases (full lane):** INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → DONE.
 - **Checkpoints:** at the end of each iteration you **park** and wait for the human to send a batch
   of feedback from the dashboard (or to approve). You never poll while actively working.
 - **One hard gate:** the human must approve the plan before IMPLEMENT. Everything else is autonomous.
@@ -86,6 +93,11 @@ several calls). Give each the task slug and workspace path so it writes artifact
    the branch forks the queue's base), then route all file work and sub-agents at the worktree path and
    write a per-session pointer — see `parallel.md`. The helper is idempotent, so on resume it simply
    reuses the existing worktree. (Only skip this when not inside a git repository — then work in place.)
+   - **Triage now (fast lane vs full).** Before standing up the server and dashboard, judge whether the
+     task is *primitive* (criteria + mechanics in `phases.md` §0 TRIAGE). If it is, run the **Fast Lane**:
+     keep the worktree above, **skip steps 2–3 (server + dashboard) and the sub-agent swarm**, make the
+     change directly, verify, and report in chat. Otherwise continue with steps 2–4 for the full
+     workflow. A resumed task keeps whichever lane it recorded in `state.json.lane`.
 2. **Locate the plugin assets.** The server and templates live under the plugin root. Use
    `${CLAUDE_PLUGIN_ROOT}` when set: `${CLAUDE_PLUGIN_ROOT}/scripts/server.py` and
    `${CLAUDE_PLUGIN_ROOT}/templates/`. If unset, search for the `ai-pathfinder` plugin directory.

@@ -8,6 +8,13 @@ dashboard** and a single explicit approval gate (the plan).
 
 ## What it does
 
+- **Right-sized ceremony (fast lane).** Before any of the machinery spins up, `/feature` **triages** the
+  task. A *primitive* one (confined to a single module, adds no new functionality, trivially verified, no
+  design decision, low risk) takes the **Fast Lane** — the orchestrator makes the change directly and
+  verifies it, skipping the dashboard, the sub-agent swarm, and the plan gate. A task counts as *complex*
+  when it spans several modules, adds new functionality, or needs nontrivial verification — **not** by how
+  many files it touches. Anything complex runs the full flow below, and a fast-lane task that turns out
+  complex **escalates** to it. So a small fix doesn't cost a full workflow.
 - **Autonomous exploration.** Spawns read-only `wf-explorer` sub-agents that map the relevant code
   (reading the project knowledge base first), so planning is grounded.
 - **Human-friendly elaboration.** A per-task dashboard fills in as work proceeds. The human comments on
@@ -33,8 +40,11 @@ dashboard** and a single explicit approval gate (the plan).
 
 ## Phases
 
+A **TRIAGE** gate runs first: primitive tasks take the **Fast Lane** (direct change → verify → done, no
+dashboard/swarm/gate); everything else runs the full flow:
+
 `INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → DONE` — resumable across sessions via
-`.workflow/tasks/<slug>/state.json`.
+`.workflow/tasks/<slug>/state.json` (the chosen lane is recorded in `state.lane`).
 
 ## `/new-product` — greenfield, from scratch
 

@@ -37,6 +37,10 @@ Field notes:
 
 - **`phase`** / **`checkpoint`**: `checkpoint` is `working` while you act and `awaiting-batch` while
   parked waiting for a human batch. Together with `phase` they tell a resumed session what to do next.
+- **`lane`**: `"fast"` | `"full"` — which lane the TRIAGE gate (`phases.md` §0) chose. `"fast"` means
+  the primitive-task path (no server/dashboard, no sub-agent swarm, no plan gate); a resumed session
+  stays on it. Promoted to `"full"` if the fast lane escalates. Absent on older tasks = treat as
+  `"full"`.
 - **`workstreams[].status`**: `todo` | `in_progress` | `done`. The source of truth for IMPLEMENT
   progress; mirror it into `dashboard.json.progress` and `workstreams`. Also reflect the **current
   activity** into `dashboard.json.now`/`nowAt` (a human one-liner like «пишу сервис экспорта» + ISO

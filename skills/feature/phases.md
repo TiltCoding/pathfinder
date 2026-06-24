@@ -4,6 +4,64 @@ Each phase ends by updating `state.json` (phase, iteration, checkpoint, work-str
 `dashboard.json`. Spawn sub-agents with the Agent tool; pass them the slug and the absolute
 workspace path. Keep the human's dashboard truthful at all times.
 
+## 0. TRIAGE (fast-lane gate — runs before INTAKE)
+
+Goal: spend ceremony in proportion to the task. This skill's machinery — server, dashboard,
+sub-agent swarm, plan gate, review gates — exists for *substantial* work. A primitive task should
+not pay for it, and a human who asked for a one-line fix should not wait through it.
+
+After you've resolved the workspace and stood up the worktree (SKILL step 1), judge the task against
+the **primitive** bar. A task is **primitive** only when **all** hold:
+
+- **Single area** — confined to one module/subsystem; it doesn't ripple across several or touch shared
+  architecture. *Judge by scope, not file count:* a tidy edit spanning a few files inside one area is
+  still primitive, while a one-file change that forces matching changes in callers across modules is
+  **not**.
+- **No new functionality** — a fix, tweak, or adjustment to existing behavior; you are **not** adding a
+  new feature, capability, endpoint, or surface area.
+- **Trivial verification** — "done" is obvious and cheap to confirm (an existing test, a quick run); it
+  does **not** need a new or multi-step verification strategy (new test scaffolding, manual UI driving,
+  cross-component checks).
+- **No decision for the human** — there are no open questions; you are not choosing between designs or
+  trade-offs that the human would want a say in.
+- **Low risk** — not destructive/irreversible; not touching security, auth, money, data migrations,
+  or a public API/contract.
+- **You can do it directly** — you're confident you can implement and verify it without exploration.
+
+If **any** bar fails, or you are unsure → **full workflow** (INTAKE onward). When in doubt, take the
+full lane: an unneeded plan gate costs minutes, but powering a real feature through the fast lane
+costs a botched change.
+
+### Fast Lane
+
+Record `lane: "fast"` in `state.json` (so a resume stays on it), `phase: "IMPLEMENT"`. Then:
+
+- **Keep only the worktree** from SKILL step 1 — the cheap, idempotent isolation that protects the
+  shared tree. **Skip** the companion server + dashboard (SKILL steps 2–3), EXPLORE, ELABORATE, the
+  PLAN GATE, the parallel coder/documenter swarm, and the heavy `/code-review` + `/security-review`
+  gates.
+- **Do the work directly.** The "you don't write production code yourself" rule is relaxed on this
+  lane: the orchestrator edits the files itself — no `wf-coder` round-trip. Still **read
+  `docs/knowledge/INDEX.md` first** and match existing patterns, as always.
+- **Verify before claiming done.** Run the tests/build/lint for the touched slice and confirm green
+  (evidence, not assertion). A quick self-review of the diff replaces the review-gate skills.
+- **Capture lightly.** Append a one-line `docs/knowledge/task-log.md` entry only if the change is
+  notable; otherwise skip the documenter entirely. No ADR for a primitive change.
+- **Report in chat** (there is no dashboard): what changed, the files as clickable `path:line`, and
+  how you verified. Set `phase: "DONE"`, `lane: "fast"` in `state.json`.
+
+### Escalation valve (one-way: fast → full)
+
+The fast lane is a bet that the task is small. The moment the bet breaks — the change spreads across
+modules, it turns out to add real new functionality, it needs nontrivial verification, a real design
+choice surfaces, you hit ambiguity, or you discover risk — **stop and promote to the full workflow**:
+stand up the server + dashboard (SKILL steps 2–3), set `lane: "full"`, and run EXPLORE → ELABORATE →
+PLAN GATE before going further. Tell the human you escalated and why. Never silently grind a now-complex
+task through the fast lane.
+
+> Queue mode and autonomous/eval runs still triage — a primitive queued item may take the fast lane —
+> and the DONE bookkeeping in §7 (mark the queue item `done`, etc.) still applies to whichever lane runs.
+
 ## 1. INTAKE
 
 Goal: capture the task and stand up the workspace.
