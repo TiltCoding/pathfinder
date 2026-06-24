@@ -37,6 +37,33 @@
 **Единственная правка сервера** — проброс `anchor`/`quote` через `POST /chat` (`_chat_post` в
 `scripts/server.py`); остальное — фронтенд `templates/dashboard.html`.
 
+## Раскладка страницы задачи: левый сайдбар + слим топ-бар (task-page-left-sidebar)
+
+Хром страницы задачи стал **двухколоночным** (чисто-фронтендовый рефактор `templates/dashboard.html`,
+**0 правок сервера / `dashboard.json` / i18n-ключей / theme-токенов**):
+
+- **Глобальный левый сайдбар** `aside.task-sidebar#task-aside` держит весь INFO-кластер identity/статус/
+  now/прогресс/ws — узлы `#title`, `#slug`/`#phase`/`#iter`, `#status`/`#status-text`, `#now-line`,
+  `#ws-track`, `#progress-bar` (`.progress` остаётся **скрытым**, легаси-бар не воскрешён), `#ws-summary`
+  и счётчик `#open-threads` («N ждут ответа»). Стиль по `.doc-tree`: `var(--panel)` / `var(--line)` /
+  radius 12 + flex-column.
+- **Топ-бар сведён к глобальным контролам + табам:** кликабельный логотип-`<a href="/hub">`, текст-ссылка
+  `#hub-link`, `#lang-btn`, `#theme-btn`, `#btn-chat-toggle` и `nav.tabbar`. Отдельная `.back-row` убрана.
+- **Реюз примитивов:** грид-обёртка `.page-grid wrap wide` клонирует `.docs-grid` (`260px 1fr`,
+  `gap:16px`, `align-items:start`) с тем же коллапсом `@media max-width:860px → 1fr` (на узких экранах
+  сайдбар встаёт над контентом). Панели вкладок завёрнуты в `.page-main`; правило
+  `.page-main > .wrap { max-width:none; margin:0 }` снимает 1180px-кап `.wrap`, чтобы ширину колонки
+  задавал грид (`.wrap.wide` = 1480px). Сайдбар **sticky** (`top:92px; max-height:calc(100vh-108px);
+  overflow:auto`).
+
+> **Инвариант (соблюдать при любой правке шапки/рендера).** Сайдбар живёт **ВНЕ `#content`** (его
+> `innerHTML` `render()` затирает каждый тик — `:1712`) и **ВНЕ `switchTab`-тоглинга `hidden`** (потому
+> и виден на всех 4 вкладках). Структурно он — **сибл `#content`** через `.page-main`, никогда не потомок.
+> **Каждый INFO-узел сохранил свой id** → весь id-ключёванный код (`render()` `:627`/`:1620`,
+> `renderNow`/`renderWsSummary`/`renderWsTrack`, `applyStaticStrings()`, `initTheme`/`initLang`,
+> `switchTab`) остаётся **раскладочно-агностичным** и не правился. Перенос INFO-узла внутрь `#content`
+> или в зону `hidden`-тоглинга сломал бы рендер/видимость.
+
 ## Ключевые файлы (`templates/dashboard.html`)
 
 - `:627` — `render(data, replies)`: рисует карточки «Сводка / Карта / Демо / План / Вопросы /
@@ -213,4 +240,4 @@
   либо потребует +1 строки в сервере — см. `areas/dashboard-changes-tab.md`-стиль решения (дерево/схема
   на фронте, бэкенд почти нетронут).
 
-_updated: 2026-06-24 (task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_
+_updated: 2026-06-24 (task-page-left-sidebar: хром страницы задачи стал двухколоночным — глобальный sticky `aside.task-sidebar` с INFO-кластером identity/статус/now/прогресс/ws/open-threads, топ-бар сведён к контролам+табам; инвариант «сайдбар вне `#content` и вне `switchTab`, все id сохранены»; реюз `.page-grid`/`.docs-grid` + коллапс 860px; чистый FE, 0 правок сервера/токенов/i18n). Предыдущее — task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_

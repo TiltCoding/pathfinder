@@ -4,6 +4,31 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-24 — task-page-left-sidebar (шапка задачи → левый сайдбар + слим топ-бар)
+- **Что:** чисто-фронтендовый рефактор `templates/dashboard.html` — высокая шапка задачи разбита на
+  **левый инфо-сайдбар** + **слим топ-бар**. Введён грид-обёртка `.page-grid wrap wide` (клон
+  `.docs-grid`: `260px 1fr`, `gap:16px`, `align-items:start`, коллапс `@media max-width:860px → 1fr`)
+  между `</header>` и панелями вкладок. INFO-узлы (`#title #slug #phase #iter #status/#status-text
+  #now-line #ws-track #progress-bar(скрыт) #ws-summary #open-threads`) переехали в
+  `aside.task-sidebar#task-aside` (стиль `.doc-tree`: `var(--panel)`/`var(--line)`/radius 12 + flex-column),
+  панели обёрнуты в `.page-main` (`.page-main > .wrap` сбрасывает `max-width`/`margin` — ширину задаёт грид).
+- **Зачем:** топ-бар перерос — пользователь просил «инфо слева, сверху только тема/язык/чат/хаб».
+  Сайдбар — **глобальный** (виден на всех вкладках, вне `switchTab`-тоглинга `hidden`), **sticky**
+  (`top:92px; max-height:calc(100vh-108px); overflow:auto`).
+- **Природа правки:** **только фронтенд**, **0 правок `scripts/server.py`/`dashboard.json`**,
+  **0 новых i18n-ключей**, **0 новых theme-токенов** (только реюз `--panel`/`--line` + существующая
+  `@media 860px`). Каждый id сохранён → `render()`/`applyStaticStrings()`/`initTheme`/`initLang`/
+  `switchTab` **не тронуты** (рендер ключуется по id, а не по позиции в DOM).
+- **5 решённых дизайн-вопросов:** (q1) сайдбар **глобальный**, не только на Workflow; (q2)
+  `#open-threads` **в сайдбар**; (q3) **логотип остаётся в топ-баре** (стал кликабельной `<a href="/hub">`,
+  отдельный `.back-row` убран, текст-ссылка `#hub-link` оставлена рядом); (q4) ширина расширена до
+  **1480px** (`.wrap.wide`), чтобы сайдбар не сжимал контент; (q5) сайдбар **sticky**.
+- **Ловушка соблюдена:** сайдбар — **сибл `#content`** (через `.page-main`), а НЕ внутри него — иначе
+  `render()` затирал бы INFO-узлы при `#content.innerHTML` каждый тик. Margin-auto trap
+  (`dashboard-theming.md:84`) учтён — у `.page-grid` нет вертикального margin-шортката.
+- **План:** [.workflow/tasks/task-page-left-sidebar/plan.md]. Без ADR — это раскладочный твик в рамках
+  существующих примитивов (`.docs-grid`/`.doc-tree`), не новое архитектурное решение.
+
 ## 2026-06-24 — dashboard-ui-container-fixes (полировка контейнеров/раскладки FE)
 - **Что:** три чисто-вёрсточных фикса раскладки фронтенда (без правок сервера/контрактов):
   - **Issue 1 — паритет ширины шапки хаба (`HUB_PAGE` в `scripts/server.py`).** Раньше `header.top`
