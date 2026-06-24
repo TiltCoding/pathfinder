@@ -33,6 +33,7 @@ Usage:
 
 import argparse
 import atexit
+import base64
 import hashlib
 import json
 import os
@@ -79,6 +80,20 @@ MOCKUP_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe
               "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
 MOCKUP_SEC_HEADERS = {"X-Content-Type-Options": "nosniff",
                       "Content-Security-Policy": MOCKUP_CSP}
+
+# Image attachments served from <task>/attachments/. Server-generated safe name
+# (att-<8 hex>.<ext>); the original client filename is carried as metadata only.
+# SVG is excluded on purpose (active content — would need the /mockup CSP path).
+ATTACH_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}\.(png|jpe?g|gif|webp)$")
+ATTACH_MAX_BYTES = 5 * 1024 * 1024     # 5 MB per image
+ATTACH_MAX_PER_MSG = 6                  # max images carried on one chat message
+# Allow-listed MIME -> saved extension. jpg/jpeg both map to image/jpeg; the
+# saved extension for jpeg is "jpg" (matches ATTACH_RE's jpe?g alternative).
+ATTACH_MIME_EXT = {"image/png": "png", "image/jpeg": "jpg",
+                   "image/gif": "gif", "image/webp": "webp"}
+# Reverse map (extension -> content-type) for the serve route.
+ATTACH_EXT_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                   "gif": "image/gif", "webp": "image/webp"}
 
 
 def safe_slug(slug):
@@ -276,6 +291,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_task_file(slug, "dashboard.json")
         if path == "/mockup":
             return self._serve_mockup(slug, (qs.get("file") or [""])[0])
+        if path == "/image":
+            return self._serve_image(slug, (qs.get("file") or [""])[0])
         if path == "/trace":
             if not slug:
                 return self._json(400, {"error": "missing slug"})
@@ -366,6 +383,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._signal(slug, body)
         if path == "/chat":
             return self._chat_post(slug, body)
+        if path == "/attach":
+            return self._attach(slug, body)
         if path == "/telemetry":
             return self._telemetry(slug, body)
         return self._json(404, {"error": "not found"})
@@ -418,6 +437,26 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as f:
             data = f.read()
         return self._send(200, data, ctype, extra_headers=MOCKUP_SEC_HEADERS)
+
+    def _serve_image(self, slug, name):
+        """Serve a saved image attachment from <task>/attachments/.
+        Read-only; mirrors _serve_mockup's traversal guard. Plain images are not
+        active content, so no CSP — just nosniff (and SVG is excluded by the regex)."""
+        if not slug or not name or not ATTACH_RE.match(name):
+            return self._json(404, {"error": "not found"})
+        attach_dir = os.path.join(self.workspace.task_dir(slug), "attachments")
+        path = os.path.realpath(os.path.join(attach_dir, name))
+        # confine to the attachments dir (defence in depth against traversal)
+        if os.path.commonpath([path, os.path.realpath(attach_dir)]) != os.path.realpath(attach_dir):
+            return self._json(404, {"error": "not found"})
+        if not os.path.isfile(path):
+            return self._json(404, {"error": "not found"})
+        ext = name.rsplit(".", 1)[1].lower()
+        ctype = ATTACH_EXT_MIME.get(ext, "application/octet-stream")
+        with open(path, "rb") as f:
+            data = f.read()
+        return self._send(200, data, ctype,
+                          extra_headers={"X-Content-Type-Options": "nosniff"})
 
     # ---- trace (computed, not a file) ----------------------------------
     def _trace(self, slug):
@@ -1232,7 +1271,29 @@ class Handler(BaseHTTPRequestHandler):
         The agent reads new messages at its next checkpoint and appends its own
         `role:"agent"` turns to the same chat.jsonl."""
         text = (body.get("text") or "").strip()
-        if not text:
+        # Sanitize image attachments FIRST so the empty-text guard can accept an
+        # image-only message. References returned by /attach; defence in depth:
+        # only a list, capped at ATTACH_MAX_PER_MSG, each a dict whose `file` is a
+        # safe server name — malformed entries are dropped so a forged `images`
+        # can't smuggle a bad filename onto the line the /image route trusts.
+        # `name`/`mime` are free-form client strings: coerce to str and cap length
+        # so a forged body can't store an arbitrarily large blob on the line.
+        _clean = []
+        _imgs = body.get("images")
+        if isinstance(_imgs, list):
+            for _it in _imgs[:ATTACH_MAX_PER_MSG]:
+                if not isinstance(_it, dict):
+                    continue
+                _file = _it.get("file")
+                if not isinstance(_file, str) or not ATTACH_RE.match(_file):
+                    continue
+                _clean.append({"file": _file,
+                               "name": str(_it.get("name"))[:200],
+                               "mime": str(_it.get("mime"))[:200]})
+        # Reject only a truly empty turn: no text AND no valid images. An
+        # image-only paste (empty text + at least one valid image) is allowed and
+        # stores text:"".
+        if not text and not _clean:
             return self._json(400, {"error": "empty message"})
         ws = self.workspace
         ws.ensure_task(slug)
@@ -1246,11 +1307,73 @@ class Handler(BaseHTTPRequestHandler):
             _v = body.get(_k)
             if _v:
                 msg[_k] = _v
+        if _clean:
+            msg["images"] = _clean
         with ws.lock(slug):
             _aipf.append_jsonl(ws.task_file(slug, "chat.jsonl"), msg)
             self._append_signal(slug, "chat", {"ts": msg["ts"]})
         self._wake(slug)
         return self._json(200, {"ok": True, "message": msg})
+
+    def _attach(self, slug, body):
+        """Decode a base64 image from {name, mime, dataB64}, write the bytes to
+        <task>/attachments/ under a safe server-generated name, and return a
+        reference the client then carries on its /chat message (`images:[...]`).
+
+        Never 500: every rejection is a clean 400 {"ok":false,"error":<code>}."""
+        mime = body.get("mime")
+        # Coerce/validate client-supplied types *before* any use: a non-string
+        # (e.g. list/dict) mime would make ATTACH_MIME_EXT.get(mime) raise
+        # TypeError: unhashable type, and a non-string dataB64 would break
+        # b64decode — both must surface as a clean 400, never a 500.
+        if not isinstance(mime, str):
+            return self._json(400, {"ok": False, "error": "type"})
+        data_b64 = body.get("dataB64")
+        if not isinstance(data_b64, str):
+            return self._json(400, {"ok": False, "error": "decode"})
+        name = str(body.get("name"))
+        ext = ATTACH_MIME_EXT.get(mime)
+        if not ext:
+            return self._json(400, {"ok": False, "error": "type"})
+        # Size guard *before* decode: base64 length is ~4/3 of the raw bytes, so
+        # len(b64)*3//4 is an upper bound on the decoded size — reject early.
+        if len(data_b64) * 3 // 4 > ATTACH_MAX_BYTES:
+            return self._json(400, {"ok": False, "error": "size"})
+        try:
+            data = base64.b64decode(data_b64, validate=True)
+        except Exception:  # binascii.Error et al — never 500 on bad input
+            return self._json(400, {"ok": False, "error": "decode"})
+        if len(data) > ATTACH_MAX_BYTES:
+            return self._json(400, {"ok": False, "error": "size"})
+        # Safe, unique, server-generated name (no client-controlled separators).
+        servername = "att-%s.%s" % (os.urandom(4).hex(), ext)
+        if not ATTACH_RE.match(servername):
+            return self._json(400, {"ok": False, "error": "name"})
+        ws = self.workspace
+        ws.ensure_task(slug)
+        attach_dir = os.path.join(ws.task_dir(slug), "attachments")
+        os.makedirs(attach_dir, exist_ok=True)
+        path = os.path.realpath(os.path.join(attach_dir, servername))
+        # confine to the attachments dir (defence in depth against traversal)
+        if os.path.commonpath([path, os.path.realpath(attach_dir)]) != os.path.realpath(attach_dir):
+            return self._json(400, {"ok": False, "error": "name"})
+        # Atomic write: temp file then os.replace, under the per-slug lock.
+        tmp = path + ".tmp"
+        try:
+            with ws.lock(slug):
+                with open(tmp, "wb") as f:
+                    f.write(data)
+                os.replace(tmp, path)
+        except OSError:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
+            return self._json(400, {"ok": False, "error": "write"})
+        return self._json(200, {"ok": True, "file": servername,
+                                "name": str(name)[:200], "mime": mime,
+                                "bytes": len(data)})
 
     def _append_signal(self, slug, signal, payload=None):
         ws = self.workspace
@@ -1428,10 +1551,13 @@ HUB_PAGE = r"""<!doctype html>
   @keyframes pf-think { 0%,100%{ transform:scaleY(.28); } 50%{ transform:scaleY(1); } }
   .shim { background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent)); background-size:220% 100%; animation:pf-shim 1.6s linear infinite; }
 
-  /* topbar — sticky, translucent, blurred (design language) */
-  header.top { position:sticky; top:0; z-index:20; display:flex; align-items:center;
-    justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 32px;
+  /* topbar — sticky, translucent, blurred (design language). The bar spans the
+     full width (so the blur underlay + border run edge-to-edge); its content is
+     centred in the 1180px column by .top-inner, matching the task page's header. */
+  header.top { position:sticky; top:0; z-index:20; padding:0;
     border-bottom:1px solid var(--line2); background:var(--topbar); backdrop-filter:blur(8px); }
+  header.top .top-inner { max-width:1180px; margin:0 auto; padding:14px 32px; display:flex;
+    align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .brand { display:flex; align-items:center; gap:12px; min-width:0; }
   .brand .logo { width:30px; height:30px; border-radius:7px; flex:none; display:block; }
   .brand .name { font-weight:700; font-size:15px; letter-spacing:-.02em; }
@@ -1512,11 +1638,10 @@ HUB_PAGE = r"""<!doctype html>
   #f-reset { color:var(--head); cursor:pointer; font-weight:600; }
   #f-reset:hover { color:var(--accent); }
 
-  /* active runs — hero (first) + slim cards */
-  .cards { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  /* active runs — one full-width column, every card the detailed (hero) view */
+  .cards { display:grid; grid-template-columns:1fr; gap:14px; }
   .runcard { background:var(--panel); border:1px solid var(--line); border-radius:12px;
     padding:22px; display:flex; flex-direction:column; }
-  .runcard.hero { grid-column:span 2; }
   .runcard.awaiting { border-color:var(--warn); }
   .runcard .head { display:flex; align-items:center; justify-content:space-between; gap:9px;
     flex-wrap:wrap; margin-bottom:12px; }
@@ -1612,6 +1737,7 @@ HUB_PAGE = r"""<!doctype html>
 </head>
 <body>
 <header class="top">
+  <div class="top-inner">
   <div class="brand">
     <!-- brand mark: a lime path threading a maze to an arrow. The maze uses
          currentColor (= --ink) so it inverts with the theme; the path stays lime. -->
@@ -1645,6 +1771,7 @@ HUB_PAGE = r"""<!doctype html>
     <span class="sub" id="updated">loading…</span>
     <button class="lang-btn" id="lang-btn" title="Toggle language" aria-label="Toggle language"><span id="lang-label">EN</span></button>
     <button class="theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"><span id="theme-icon">☀️</span></button>
+  </div>
   </div>
 </header>
 
@@ -1746,6 +1873,13 @@ const STR = {
     "hubq.status.pending": "queued",
     "hubq.status.skipped": "skipped",
     "hubq.status.failed": "failed",
+    // image attachments
+    "attach.button": "Attach image",
+    "attach.remove": "Remove image",
+    "attach.hint": "Drag, paste, or browse to attach an image",
+    "attach.errType": "Unsupported image type",
+    "attach.errSize": "Image too large (max 5 MB)",
+    "attach.errCount": "Too many images (max 6)",
     // duration units (fmtDur)
     "dur.s": "s",
     "dur.m": "m",
@@ -1809,6 +1943,12 @@ const STR = {
     "hubq.status.pending": "в очереди",
     "hubq.status.skipped": "пропущено",
     "hubq.status.failed": "сбой",
+    "attach.button": "Прикрепить изображение",
+    "attach.remove": "Удалить изображение",
+    "attach.hint": "Перетащите, вставьте или выберите изображение",
+    "attach.errType": "Неподдерживаемый тип изображения",
+    "attach.errSize": "Изображение слишком большое (макс. 5 МБ)",
+    "attach.errCount": "Слишком много изображений (макс. 6)",
     "dur.s": "с",
     "dur.m": "м",
     "dur.h": "ч",
@@ -1999,20 +2139,6 @@ function heroCard(r){
   </div>`;
 }
 
-// slim card — secondary active runs: title/kind + indeterminate-ish progress
-function slimCard(r){
-  const sub = r.title ? esc(r.title) : (r.kind ? esc(r.kind) : "&nbsp;");
-  return `<div class="runcard${r.awaiting ? " awaiting" : ""}">
-    <div class="head">
-      <span class="slug">${esc(r.slug)}</span>
-      ${runStatus(r)}
-    </div>
-    <div class="scratch">${sub}</div>
-    <div class="slimbar"><div class="shim" style="width:${progressPct(r.progress)}%"></div></div>
-    <a class="open-link" href="/?slug=${encodeURIComponent(r.slug)}">${esc(t("hub.openDashboard"))}</a>
-  </div>`;
-}
-
 function histRow(r){
   const kind = r.kind ? ` <span class="badge kind">${esc(r.kind)}</span>` : "";
   return `<tr>
@@ -2084,9 +2210,9 @@ function render(data){
   const activeEmpty = filtered ? t("hub.nothingFound") : t("hub.noActive");
   const histEmpty = filtered ? t("hub.nothingFound") : t("hub.histEmpty");
 
-  // active runs: first card is the detailed hero, the rest are slim cards
+  // active runs: one full-width column, every card the detailed (hero) view
   const activeHtml = active.length
-    ? `<div class="cards">${active.map((r,i)=> i===0 ? heroCard(r) : slimCard(r)).join("")}</div>`
+    ? `<div class="cards">${active.map((r)=> heroCard(r)).join("")}</div>`
     : `<div class="empty">${activeEmpty}</div>`;
 
   const histHtml = history.length

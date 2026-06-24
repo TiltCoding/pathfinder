@@ -71,10 +71,12 @@
   (с клампом по длине). Тихий выход, если поле исчезло (вопрос/вариант удалён агентом на лету) или
   фокус был не в `#content`. Образец — save/restore скролла из `renderChat`.
 - `:798` — `saveAnswer(qid, val)`: `POST /draft {kind:"answer", questionId, text}` → `loadDraft()`.
-- `:891` — `sendComment()`: select-to-comment — `POST /draft {kind:"comment", blockId, selectedText, text}`.
-- `:898` — `saveVariantComment(variantId, value, ta)`: тонкая обёртка над тем же контрактом, что
-  `sendComment`, но `blockId=variantId`, `selectedText:""`; **очищает поле** (`:901`) перед запросом,
-  чтобы на один вариант можно было оставить несколько комментариев.
+  **`/draft` остаётся только для `open`/`choice`-ответов и выбора демо-варианта** (`questionId`).
+- `sendComment()` (select-to-comment), `saveVariantComment(variantId,…)` (коммент к варианту) и
+  **ответы в тредах** — все идут через `postAnchored(anchor, text, quote, images)` → **`POST /chat`**,
+  а НЕ через `/draft {kind:"comment"}`. `saveVariantComment` **очищает поле** перед запросом, чтобы на
+  один вариант можно было оставить несколько комментариев. (Прежняя коммент-карточная модель `/draft`
+  заменена anchored-тредом — см. раздел «Обновление `dashboard-visibility-dialog`».)
 
 ## Сигнал awaiting (задача ждёт ответа человека)
 
@@ -114,8 +116,10 @@
 - **`answer`** — `{kind:"answer", questionId, text}`. Один на `questionId` (серверный дедуп, см. ниже).
   Несёт ответ на `open`/`choice`-вопрос **или** выбор демо-варианта (`questionId = demo.selectionId`).
   Для `choice`: `text` может **не совпадать ни с одной `options`** — это и есть свободный ответ.
-- **`comment`** — `{kind:"comment", blockId, selectedText, text}`. `blockId` — якорь региона;
-  `selectedText` пустой у явного коммента к варианту, непустой у select-to-comment.
+- **`comment`** — `{kind:"comment", blockId, selectedText, text}`. **Исторический вид:** комментарии
+  больше НЕ копятся в draft — они уходят сразу через `POST /chat` (`postAnchored`) как anchored-ход и
+  рендерятся тредом под блоком (см. `dashboard-visibility-dialog`). Поле `comment` в `_draft_add`
+  ещё существует, но активный путь комментариев — `/chat`, не `/draft`.
 
 ## Якоря (`blockId` / `questionId`)
 
@@ -133,6 +137,35 @@
   чистит draft, шлёт signal `submit`, будит `/wait`. Агент читает submission и пишет `replies.json`.
 - `GET /replies` (`scripts/server.py:223`): отдаётся как есть; рендерится через `regionFooter`/реплаи
   по вопросу.
+
+## Вложения-изображения (task-image-attachments)
+
+Человек может прикрепить **изображения** в любом канале — в чате И в каждом комментарии
+(block / variant / thread-reply / select-to-comment). Все каналы уже шлют `/chat` через
+`postAnchored()`, поэтому одна правка зажигает все. Цель — **оркестратор `Read`'ит сохранённый файл**
+(визуальный вход, напр. правка UI-бага по скриншоту); инлайн-превью в дашборде вторично.
+
+- **Поток:** клиент base64-кодирует байты → `POST /attach {slug,name,mime,dataB64}` декодирует +
+  валидирует + пишет байты → возвращает ref `{ok,file,name,mime,bytes}`. Ref кладётся на строку
+  сообщения `/chat` как `images:[{file,name,mime}]` (расширенный allow-list `_chat_post`). Превью и
+  отдача — через `GET /image?slug=&file=` (зеркало traversal-гарда `_serve_mockup`, `image/*` +
+  `nosniff`, без CSP, SVG исключён). **base64 не попадает в `chat.jsonl`** — там только ref.
+- **Хранилище:** `<root>/.workflow/tasks/<slug>/attachments/<safe-name>` под `workspace.task_dir(slug)`
+  (общий store, ADR-0010 — НЕ git-worktree; `.workflow/` в gitignore, но `Read` достаёт по абсолютному
+  пути). Имя на диске — серверное безопасное (`att-<hex>.<ext>`); оригинальное имя клиента хранится как
+  метаданные (`name`). Запись `wb` через temp+`os.replace` под `lock(slug)`.
+- **Лимиты/типы:** 5 МБ/изображение, 6 изображений/сообщение, типы **png/jpeg/gif/webp** (без SVG —
+  активный контент). Проверка и на клиенте (чистый reject + тост), и на сервере (по длине base64 до
+  декода, затем по декодированной длине; никогда `500`). Это **первый лимит размера тела** запроса
+  (`_read_body` был без капа).
+- **Модель pending-состояния:** незаотправленные вложения держатся в **модуль-переменной** (keyed by
+  anchor, `"chat"` для глобального чата) — вне DOM, как `draftItems`. Это переживает 3-секундный
+  ре-рендер `#content` (`:1502`): file-input/превью внутри `#content` (variant/thread/popover) иначе
+  затёрлись бы. Превью рисуется из этой переменной (data-URL), а не из DOM-инпута. Чат — вне `#content`,
+  но состояние всё равно в той же переменной для единообразия.
+- **Серверный контракт (новое):** два эндпоинта `POST /attach` + `GET /image` и ключ `images` в
+  allow-list `_chat_post` — **осознанное исключение** из «0 правок сервера / агностичный бэкенд»
+  (ADR-0008); зафиксировано в **ADR-0020**.
 
 ## Инварианты
 
@@ -161,8 +194,9 @@
 
 - `_draft_add` отбрасывает неизвестные поля — нельзя протащить «id варианта» отдельным полем; он кладётся
   в существующий `blockId` (решение ADR-0008). Не вводить новые поля без правки сервера.
-- `saveVariantComment` чистит textarea **до** await (`:901`) — намеренно, чтобы быстрый повторный ввод
-  начинался с чистого поля; повторный рендер из `loadDraft` всё равно вернёт пустое поле.
+- `saveVariantComment` чистит textarea **до** await — намеренно, чтобы быстрый повторный ввод
+  начинался с чистого поля; комментарий всё равно уходит через `postAnchored`→`/chat` и вернётся
+  тредом, а не как черновик.
 - `applyHighlights`/`wrapRange` (`:829`/`:843`) подсвечивают только комменты с непустым `selectedText`;
   у явного коммента к варианту `selectedText:""` → `mark.commented` не рисуется (это ок by design).
 - Свой ответ без совпадения с опцией требует, чтобы агент читал `answer.text` как свободный текст —
@@ -179,4 +213,4 @@
   либо потребует +1 строки в сервере — см. `areas/dashboard-changes-tab.md`-стиль решения (дерево/схема
   на фронте, бэкенд почти нетронут).
 
-_updated: 2026-06-19 (dashboard-visibility-dialog: anchored-обсуждение вместо коммент-карточек (`anchor`/`quote` в чате, `needsAnswer`→«N ждут ответа»/«учтено агентом»), строка «Сейчас: …» (`now`/`nowAt`), чип сводки work-stream'ов; правка сервера — проброс `anchor`/`quote` в `_chat_post`)_
+_updated: 2026-06-24 (task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_

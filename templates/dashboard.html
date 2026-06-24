@@ -119,7 +119,7 @@
   .status.working .dot { animation: pf-pulse 1.4s ease-in-out infinite; }
 
   /* "now" + progress strip */
-  .top-inner.now-strip { justify-content: space-between; gap: 20px; margin: 16px 0 14px; flex-wrap: nowrap; }
+  .top-inner.now-strip { justify-content: space-between; gap: 20px; margin: 16px auto 14px; flex-wrap: nowrap; }
   .now-line { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; color: var(--ink-soft); }
   .now-line.stale { opacity: .55; }
   .now-line b { color: var(--ink); font-weight: 600; }
@@ -213,9 +213,9 @@
   .v-body .region { padding: 0; }
   .v-body .region.has-draft { border-left: none; padding-left: 0; }
   .v-body .region .md { margin-bottom: 10px; }
-  .v-comment { margin-top: 4px; }
+  .v-comment { margin-top: 4px; position: relative; }
   .v-comment textarea { min-height: 40px; }
-  .v-comment-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .v-comment-row { display: flex; justify-content: flex-end; gap: 10px; align-items: center; margin-top: 6px; }
   .v-comment-send { padding: 6px 12px; font-size: 13px; }
 
   .ws { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
@@ -503,11 +503,26 @@
   .th-turn .th-quote { color: var(--muted); border-left: 3px solid var(--accent); padding: 1px 8px; margin-bottom: 4px; white-space: pre-wrap; }
   .th-needs { color: var(--warn); font-weight: 700; }
   .th-status { font-size: 11px; color: var(--ok); margin-top: 2px; }
+  .th-reply { position: relative; }
   .th-reply textarea { min-height: 38px; margin-top: 6px; }
+  .th-reply .attach-link { margin-top: 4px; }
   .block.thread-open, .region.thread-open, .variant.thread-open { box-shadow: inset 3px 0 0 var(--warn); }
   .chat-input { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; gap: 8px; align-items: flex-end; }
   .chat-input textarea { min-height: 38px; }
   .chat-input button.primary { padding: 8px 14px; white-space: nowrap; }
+
+  /* image attachments: pending strip + drop overlay + inline bubble thumbnails */
+  .attach-link { flex: none; appearance: none; background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; align-self: center; padding: 0; white-space: nowrap; }
+  .attach-hint { font-size: 11px; color: var(--muted); padding: 4px 12px 8px; }
+  .pending-strip { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px 0; }
+  .pending-strip:empty { display: none; }
+  .pchip { position: relative; width: 56px; height: 56px; border-radius: 8px; border: 1px solid var(--line); background: var(--chip); overflow: visible; flex: none; }
+  .pchip img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; }
+  .pchip .rm { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%; background: var(--err); color: #fff; border: none; font-size: 12px; line-height: 1; cursor: pointer; padding: 0; }
+  .dropzone { position: absolute; inset: 0; background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; color: var(--accent); font-weight: 650; font-size: 14px; pointer-events: none; z-index: 60; }
+  .dropzone .sub { font-weight: 400; font-size: 12px; color: var(--muted); }
+  .bubble-imgs { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0; }
+  .bubble-imgs img { max-width: 160px; max-height: 160px; border-radius: 7px; border: 1px solid var(--line); cursor: zoom-in; display: block; }
 
   /* documentation tab: tree (left) + graph/viewer (right) */
   .wrap.wide { max-width: 1480px; }
@@ -628,8 +643,11 @@
 
 <div id="sel-popover">
   <textarea id="sel-input" rows="1" placeholder="Comment on the selection…"></textarea>
+  <div class="pending-strip" id="sel-pending"></div>
   <div class="sel-row">
     <span class="hint">Enter — send · Esc — cancel</span>
+    <button class="attach-link" id="sel-attach-btn">browse…</button>
+    <input type="file" id="sel-attach-input" accept="image/*" multiple hidden>
     <button class="primary" id="sel-send">Send</button>
   </div>
 </div>
@@ -649,10 +667,14 @@
     <button class="chat-x" id="chat-close" title="Close">✕</button>
   </div>
   <div class="chat-log" id="chat-log"><p class="empty">No messages yet. Write to the agent — it will read and reply at the next checkpoint.</p></div>
+  <div class="pending-strip" id="chat-pending"></div>
   <div class="chat-input">
     <textarea id="chat-text" rows="2" placeholder="Message to the agent… (Enter — send)"></textarea>
+    <button class="attach-link" id="chat-attach-btn">browse…</button>
+    <input type="file" id="chat-attach-input" accept="image/*" multiple hidden>
     <button class="primary" id="chat-send">Send</button>
   </div>
+  <div class="attach-hint" id="chat-attach-hint">Drag, paste, or browse to attach an image</div>
 </aside>
 <div class="toast" id="toast"></div>
 
@@ -666,6 +688,164 @@ let prevStatus = null;          // прошлый data.status — детект �
 let baseTitle = document.title; // статичный <title>; восстанавливается при снятии бейджа
 
 function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// ----- image attachments (pending state + capture helpers) -----
+// Pending attachments live in a MODULE-LEVEL var keyed by channel id ("chat" for the
+// global chat, the comment anchor/variantId otherwise) so neither renderChat nor the 3s
+// #content innerHTML rewrite can wipe them (mirrors how draftItems survives). Each entry is
+// a list of {name, mime, dataUrl}. Files are read to a data-URL on select/paste/drop.
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024;   // 5 MB / image (matches server cap)
+const ATTACH_MAX_PER_MSG = 6;               // images per message
+const ATTACH_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+let pendingAttachments = {};                 // { [channelKey]: [{name, mime, dataUrl}] }
+// A channel key can have more than one visible strip at once (e.g. the select-to-comment
+// popover and the in-#content variant footer share an anchor), so keep a set of renderers
+// per key and fire them all on add/remove.
+const attachStripRenderers = {};             // { [channelKey]: Set<() => void> }
+function addStripRenderer(key, fn){ (attachStripRenderers[key] = attachStripRenderers[key] || new Set()).add(fn); return fn; }
+// Comment-channel strips live inside #content (rewritten every 3s); they are rendered from
+// pendingAttachments[anchor] by data-attribute lookup, so a single sweep keeps them current
+// regardless of which channel mutated the state.
+function renderContentStrips(){
+  document.querySelectorAll("[data-pending-strip]").forEach(el =>
+    renderPendingStrip(el, el.getAttribute("data-pending-strip")));
+}
+function fireStripRenderers(key){
+  const s = attachStripRenderers[key]; if(s) s.forEach(fn => { try { fn(); } catch(e){} });
+  renderContentStrips();   // also refresh any in-#content strip for this anchor
+}
+
+// Read one File as a data URL, resolving to the string or rejecting on error.
+function readAsDataUrl(f){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("read"));
+    reader.readAsDataURL(f);
+  });
+}
+// Validate + read a list of File objects into pendingAttachments[key]; toast on reject.
+// async: awaits every FileReader read so a slot is added to pendingAttachments ONLY
+// once its dataUrl is ready — never an optimistic half-loaded entry that a concurrent
+// Send could upload-skip and then clear (silent image loss). onDone() runs after all
+// reads settle (so the strip re-renders once). Callers that need the strip populated
+// before send must `await` this.
+async function addPendingFiles(key, files, onDone){
+  const list = pendingAttachments[key] || (pendingAttachments[key] = []);
+  const incoming = Array.from(files || []).filter(f => f && f.type && f.type.startsWith("image/"));
+  // reserve slots synchronously so a burst (or concurrent calls) can't exceed the cap;
+  // each slot is filled in-place once its read resolves, and dropped if the read fails.
+  const slots = [];
+  for(const f of incoming){
+    if(ATTACH_TYPES.indexOf(f.type) === -1){ toast(t("attach.errType")); continue; }
+    if(f.size > ATTACH_MAX_BYTES){ toast(t("attach.errSize")); continue; }
+    if(list.length >= ATTACH_MAX_PER_MSG){ toast(t("attach.errCount")); break; }
+    // keep the File on the slot so uploadPending can await its read if Send fires mid-read
+    const slot = { name: f.name || "image", mime: f.type, dataUrl: "", file: f };
+    list.push(slot);
+    slots.push({ slot, f });
+  }
+  await Promise.all(slots.map(async ({ slot, f }) => {
+    try { slot.dataUrl = await readAsDataUrl(f); }
+    catch(e){ const i = list.indexOf(slot); if(i >= 0) list.splice(i, 1); }
+  }));
+  if(onDone) onDone();
+}
+function removePending(key, idx){
+  const list = pendingAttachments[key];
+  if(list){ list.splice(idx, 1); }
+  fireStripRenderers(key);
+}
+// Render a removable thumbnail strip for `key` into `el` (data-URL src, × remove button).
+function renderPendingStrip(el, key){
+  if(!el) return;
+  const list = pendingAttachments[key] || [];
+  el.innerHTML = list.map((a, i) =>
+    `<div class="pchip">${a.dataUrl ? `<img src="${esc(a.dataUrl)}" alt="${esc(a.name)}">` : ""}` +
+    `<button class="rm" data-pending-rm="${i}" title="${esc(t("attach.remove"))}" aria-label="${esc(t("attach.remove"))}">×</button></div>`
+  ).join("");
+  el.querySelectorAll("[data-pending-rm]").forEach(b =>
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); removePending(key, parseInt(b.getAttribute("data-pending-rm"), 10)); });
+}
+// Upload every pending attachment for `key` via POST /attach; returns the {file,name,mime}
+// refs to put on the message. Throws on any rejection (caller keeps the pending state).
+// Idempotent on retry: once an entry has been uploaded its server ref is cached on
+// `a.ref`, and a later call (e.g. after a failed /chat) reuses it instead of re-POSTing,
+// so a retried Send never orphans duplicate att-*.png files on disk. Refs live on the
+// pending entries, so clearing the list on a successful send (pendingAttachments[key]=[])
+// drops the cached refs together with it.
+async function uploadPending(key){
+  const list = pendingAttachments[key] || [];
+  const refs = [];
+  for(const a of list){
+    if(a.ref){ refs.push(a.ref); continue; }       // already uploaded — reuse, don't re-POST
+    // FileReader not finished yet (Send pressed mid-read): await it rather than silently
+    // skipping, so an attached-and-shown image is never dropped at send.
+    if(!a.dataUrl){
+      try { a.dataUrl = await readAsDataUrl(a.file); }
+      catch(e){ a.dataUrl = ""; }
+    }
+    if(!a.dataUrl){ toast(t("attach.errType")); throw new Error("attach failed: read"); }
+    const dataB64 = a.dataUrl.replace(/^data:[^;]*;base64,/, "");
+    const r = await api("/attach", { method:"POST", body: JSON.stringify({ slug:SLUG, name:a.name, mime:a.mime, dataB64 }) });
+    if(!r || !r.ok || !r.file){
+      const err = r && r.error;
+      toast(err === "size" ? t("attach.errSize") : err === "type" ? t("attach.errType") : t("attach.errType"));
+      throw new Error("attach failed: " + (err || "unknown"));
+    }
+    a.ref = { file: r.file, name: r.name, mime: r.mime };   // cache for idempotent retry
+    refs.push(a.ref);
+  }
+  return refs;
+}
+// Inline thumbnails rendered inside a message bubble / thread turn. `imgs` = m.images refs;
+// click opens the full image in a NEW TAB (cheap click-to-zoom, no lightbox code).
+function bubbleImgs(imgs){
+  if(!imgs || !imgs.length) return "";
+  return `<div class="bubble-imgs">` + imgs.map(im => {
+    const url = "/image?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(im.file || "");
+    return `<a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(im.name || "")}"></a>`;
+  }).join("") + `</div>`;
+}
+// Wire paste (clipboard images) + drag-drop (drop overlay) onto a channel.
+//   textarea: the compose textarea to listen for paste on
+//   zone:     element to host the drop overlay (position:relative)
+//   key:      channel key into pendingAttachments
+//   onChange: called after files are added (re-render the strip)
+function wireAttachCapture(textarea, zone, key, onChange){
+  if(textarea){
+    textarea.addEventListener("paste", e => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      const files = [];
+      for(const it of items){ if(it.kind === "file" && it.type && it.type.startsWith("image/")){ const f = it.getAsFile(); if(f) files.push(f); } }
+      if(files.length){ e.preventDefault(); addPendingFiles(key, files, onChange); }
+    });
+  }
+  if(zone){
+    let overlay = null, depth = 0;
+    const showOverlay = () => {
+      if(overlay) return;
+      overlay = document.createElement("div");
+      overlay.className = "dropzone";
+      overlay.innerHTML = esc(t("attach.hint")) + '<span class="sub">PNG · JPEG · GIF · WebP</span>';
+      zone.appendChild(overlay);
+    };
+    const hideOverlay = () => { depth = 0; if(overlay){ overlay.remove(); overlay = null; } };
+    zone.addEventListener("dragenter", e => {
+      if(!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf("Files") !== -1)) return;
+      e.preventDefault(); depth++; showOverlay();
+    });
+    zone.addEventListener("dragover", e => {
+      if(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf("Files") !== -1){ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+    });
+    zone.addEventListener("dragleave", e => { depth--; if(depth <= 0) hideOverlay(); });
+    zone.addEventListener("drop", e => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if(files && files.length){ e.preventDefault(); addPendingFiles(key, files, onChange); }
+      hideOverlay();
+    });
+  }
+}
 
 // Бейдж «ждёт» в заголовке вкладки (виден в фоне). Снимается возвратом title к baseTitle.
 function setTitleBadge(on){
@@ -752,6 +932,13 @@ const STR = {
     "chat.empty": "No messages yet. Write to the agent — it will read and reply at the next checkpoint.",
     "chat.inputPlaceholder": "Message to the agent… (Enter — send)",
     "chat.send": "Send",
+    // image attachments
+    "attach.button": "Attach image",
+    "attach.remove": "Remove image",
+    "attach.hint": "Drag, paste, or browse to attach an image",
+    "attach.errType": "Unsupported image type",
+    "attach.errSize": "Image too large (max 5 MB)",
+    "attach.errCount": "Too many images (max 6)",
     // cards / sections
     "card.summary": "Task summary",
     "card.codebaseMap": "Codebase map",
@@ -788,6 +975,7 @@ const STR = {
     // toasts
     "toast.answerSaved": "Answer saved",
     "toast.sentToAgent": "Sent to agent",
+    "toast.sendFailed": "Couldn't send — try again",
     "toast.sentBatch": "Sent to agent ✓ Batch #",   // + n
     "toast.submitFirst": "Press Send first — otherwise the agent won't see your choice",
     "toast.planApproved": "Plan approved ✓",
@@ -949,6 +1137,12 @@ const STR = {
     "chat.empty": "Сообщений пока нет. Напишите агенту — он прочитает и ответит на ближайшем чекпоинте.",
     "chat.inputPlaceholder": "Сообщение агенту… (Enter — отправить)",
     "chat.send": "Отправить",
+    "attach.button": "Прикрепить изображение",
+    "attach.remove": "Удалить изображение",
+    "attach.hint": "Перетащите, вставьте или выберите изображение",
+    "attach.errType": "Неподдерживаемый тип изображения",
+    "attach.errSize": "Изображение слишком большое (макс. 5 МБ)",
+    "attach.errCount": "Слишком много изображений (макс. 6)",
     "card.summary": "Сводка задачи",
     "card.codebaseMap": "Карта кодовой базы",
     "card.demo": "Демо решения",
@@ -981,6 +1175,7 @@ const STR = {
     "demo.open": "открыть ↗",
     "toast.answerSaved": "Ответ сохранён",
     "toast.sentToAgent": "Отправлено агенту",
+    "toast.sendFailed": "Не удалось отправить — попробуйте ещё раз",
     "toast.sentBatch": "Отправлено агенту ✓ Пачка #",
     "toast.submitFirst": "Сначала нажмите «Отправить» — иначе агент не увидит выбор",
     "toast.planApproved": "План утверждён ✓",
@@ -1131,12 +1326,15 @@ function applyStaticStrings(){
   set("#sel-input", t("pop.placeholder"), "placeholder");
   set("#sel-popover .hint", t("pop.hint"));
   set("#sel-send", t("pop.send"));
+  set("#sel-attach-btn", t("attach.button"), "title"); set("#sel-attach-btn", t("attach.button"), "aria-label");
   set(".actionbar-hint", t("actionbar.hint"));
   set("#btn-approve", t("actionbar.approve"));
   set("#btn-submit", t("actionbar.submit"));
   set("#chat-text", t("chat.inputPlaceholder"), "placeholder");
   set("#chat-send", t("chat.send"));
   set("#chat-close", t("chat.close"), "title");
+  set("#chat-attach-btn", t("attach.button"), "title"); set("#chat-attach-btn", t("attach.button"), "aria-label");
+  set("#chat-attach-hint", t("attach.hint"));
   // queue-label «Edit queue:» — переписываем сохраняя <b id="queue-count">
   const q = $(".queue"); if(q){ const c = q.querySelector("#queue-count"); q.textContent = t("actionbar.queue") + " "; if(c) q.appendChild(c); }
   // chat-head: «Chat with agent» + подсказка
@@ -1399,9 +1597,21 @@ function highlightCode(line, lang){
   return out;
 }
 
+// Robust fetch wrapper: never throws, and always lets callers detect failure via
+// `resp.ok === false`. A network/transport error → {ok:false,error:"network"}.
+// A non-2xx HTTP response whose body has no `ok` field (e.g. /chat 400 {error:...})
+// → body with ok:false injected. A 2xx body is returned UNCHANGED (no `ok` injected),
+// so existing GET callers that read data fields directly are unaffected.
 async function api(path, opts){
-  const r = await fetch(path, opts);
-  return r.json().catch(() => ({}));
+  let r;
+  try { r = await fetch(path, opts); }
+  catch(e){ return { ok:false, error:"network" }; }
+  const body = await r.json().catch(() => ({}));
+  if(!r.ok && (!body || !("ok" in body))){
+    if(!body || typeof body !== "object") return { ok:false };
+    body.ok = false;
+  }
+  return body;
 }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 1800); }
 
@@ -1596,7 +1806,8 @@ function threadTurns(msgs){
     const who = (m.role === "agent" ? esc(t("thread.who.agent")) : esc(t("thread.who.you"))) + needs;
     const text = m.role === "agent" ? md(m.text) : esc(m.text);
     html += '<div class="th-turn ' + (m.role === "agent" ? "agent" : "human") + '">' +
-            quote + '<div class="th-who">' + who + '</div><div class="th-text">' + text + '</div></div>';
+            quote + '<div class="th-who">' + who + '</div>' + bubbleImgs(m.images) +
+            '<div class="th-text">' + text + '</div></div>';
   }
   // "учтено агентом": last turn is an agent reply (not itself a question) following a human turn
   const last = msgs[msgs.length - 1];
@@ -1631,11 +1842,19 @@ function region(anchor, innerHtml, repliesByBlock, threadsByAnchor){
   </div>`;
 }
 // agent replies + the human's left comments, keyed to one anchor
-function regionFooter(anchor, repliesByBlock, threadsByAnchor){
+function regionFooter(anchor, repliesByBlock, threadsByAnchor, noAttach){
   const reps = (repliesByBlock||{})[anchor] || [];        // legacy replies.json (kept for back-compat)
   const msgs = (threadsByAnchor||{})[anchor] || [];
   const thread = msgs.length ? `<div class="thread">${threadTurns(msgs)}</div>` : "";
-  const input = `<div class="th-reply"><textarea data-thread="${esc(anchor)}" placeholder="${esc(t("thread.replyPlaceholder"))}"></textarea></div>`;
+  // Variants own their attach affordance in .v-comment (noAttach) — avoid a second strip/input
+  // for the same anchor in the thread reply rendered below the variant.
+  const attach = noAttach ? "" : `
+    <div class="pending-strip" data-pending-strip="${esc(anchor)}"></div>
+    <button class="attach-link" data-attach-btn="${esc(anchor)}">browse…</button>
+    <input type="file" accept="image/*" multiple hidden data-attach-input="${esc(anchor)}">`;
+  const input = `<div class="th-reply" ${noAttach ? "" : `data-attach-zone="${esc(anchor)}"`}>
+    <textarea data-thread="${esc(anchor)}" placeholder="${esc(t("thread.replyPlaceholder"))}"></textarea>${attach}
+  </div>`;
   return reps.map(r=>`<div class="reply"><div class="who">${esc(t("thread.who.agent"))}</div>${md(r.text)}</div>`).join("")
        + thread + input;
 }
@@ -1654,10 +1873,12 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
     const url = `/mockup?slug=${encodeURIComponent(SLUG)}&file=${encodeURIComponent(vr.file||"")}`;
     // caption (when present) stays select-to-commentable, but footer is rendered once below
     const cap = vr.caption ? `<div class="region" data-anchor="${esc(vr.id)}"><div class="md">${md(vr.caption)}</div></div>` : "";
-    const comment = `<div class="v-comment">
+    const comment = `<div class="v-comment" data-attach-zone="${esc(vr.id)}">
         <span class="own-lbl">${esc(t("demo.commentLabel"))}</span>
+        <div class="pending-strip" data-pending-strip="${esc(vr.id)}"></div>
         <textarea data-comment-variant="${esc(vr.id)}" placeholder="${esc(t("demo.commentPlaceholder"))}"></textarea>
-        <div class="v-comment-row"><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">${esc(t("demo.commentSend"))}</button></div>
+        <input type="file" accept="image/*" multiple hidden data-attach-input="${esc(vr.id)}">
+        <div class="v-comment-row"><button class="attach-link" data-attach-btn="${esc(vr.id)}">browse…</button><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">${esc(t("demo.commentSend"))}</button></div>
       </div>`;
     v += `<div class="variant ${sel?'sel':''}" data-variant="${esc(vr.id)}">
       <label class="variant-head">
@@ -1666,7 +1887,7 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
         <a class="open" href="${url}" target="_blank" rel="noopener">${esc(t("demo.open"))}</a>
       </label>
       <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
-      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor)}</div>
+      <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor, true)}</div>
     </div>`;
   }
   const intro = demo.intro ? `<div class="md demo-intro">${md(demo.intro)}</div>` : "";
@@ -1710,11 +1931,35 @@ function wireBlocks(){
       if(e.key === "Enter" && !e.shiftKey){ e.preventDefault();
         const anchor = ta.getAttribute("data-thread"), val = ta.value;
         ta.value = "";   // clear before posting so the re-render's focus-restore doesn't re-fill it
-        postAnchored(anchor, val, ""); }
+        sendAnchoredReply(anchor, val); }
     });
   // click a comment's quote -> scroll to & flash its highlight in the prose
   document.querySelectorAll(".cmt-quote[data-cid]").forEach(q =>
     q.onclick = () => flashTo(`mark.commented[data-cid="${cssesc(q.getAttribute("data-cid"))}"]`));
+  wireContentAttach();
+}
+// Wire the image-attach controls for the comment channels rendered inside #content
+// (variant comment + thread reply). Inputs are re-created every render, so re-wire here;
+// pending state + thumbnails come from pendingAttachments[anchor] (module var), not the DOM.
+function wireContentAttach(){
+  document.querySelectorAll("[data-attach-btn]").forEach(b => {
+    const key = b.getAttribute("data-attach-btn");
+    b.title = t("attach.button"); b.setAttribute("aria-label", t("attach.button"));
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation();
+      const inp = document.querySelector(`input[data-attach-input="${cssesc(key)}"]`); if(inp) inp.click(); };
+  });
+  document.querySelectorAll("input[data-attach-input]").forEach(inp => {
+    const key = inp.getAttribute("data-attach-input");
+    inp.onchange = (e) => { addPendingFiles(key, e.target.files, () => fireStripRenderers(key)); e.target.value = ""; };
+  });
+  document.querySelectorAll("[data-attach-zone]").forEach(zone => {
+    if(zone.__attachWired) return;            // wireAttachCapture attaches listeners; guard re-wiring
+    zone.__attachWired = true;
+    const key = zone.getAttribute("data-attach-zone");
+    const ta = zone.querySelector("textarea");
+    wireAttachCapture(ta, zone, key, () => fireStripRenderers(key));
+  });
+  renderContentStrips();                      // paint pending thumbnails from module state
 }
 function cssesc(s){ return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/"/g,'\\"'); }
 // snapshot the focused #content textarea before a re-render so its unsaved text/caret survive innerHTML
@@ -1817,7 +2062,8 @@ function wrapRange(container, start, end, cid){
 const pop = $("#sel-popover"), popInput = $("#sel-input");
 let selTarget = null;
 function anchorOf(node){ const el = node && (node.nodeType === 1 ? node : node.parentElement); return el ? el.closest("[data-anchor]") : null; }
-function hidePopover(){ pop.classList.remove("open"); selTarget = null; popInput.value = ""; }
+function renderSelPending(){ renderPendingStrip($("#sel-pending"), selTarget ? selTarget.anchor : null); }
+function hidePopover(){ pop.classList.remove("open"); selTarget = null; popInput.value = ""; renderPendingStrip($("#sel-pending"), null); }
 function onSelect(e){
   if(pop.contains(e.target)) return;            // interacting with the input itself
   const content = $("#content");
@@ -1831,6 +2077,7 @@ function onSelect(e){
     pop.style.left = (window.scrollX + Math.max(8, rect.left)) + "px";
     pop.classList.add("open");
     selTarget = { anchor: a1.getAttribute("data-anchor"), text };
+    renderSelPending();
     popInput.focus();
   } else if(!pop.contains(document.activeElement)){ hidePopover(); }
 }
@@ -1841,27 +2088,68 @@ popInput.addEventListener("keydown", e => {
   else if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
 });
 $("#sel-send").onclick = sendComment;
+// select-to-comment popover attach controls (keyed by the active selection's anchor)
+$("#sel-attach-btn").onclick = (e) => { e.preventDefault(); $("#sel-attach-input").click(); };
+$("#sel-attach-input").onchange = (e) => {
+  if(selTarget) addPendingFiles(selTarget.anchor, e.target.files, renderSelPending);
+  e.target.value = "";
+};
+// popover paste/drop resolve the key dynamically from the live selTarget.anchor
+popInput.addEventListener("paste", e => {
+  if(!selTarget) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const files = [];
+  for(const it of items){ if(it.kind === "file" && it.type && it.type.startsWith("image/")){ const f = it.getAsFile(); if(f) files.push(f); } }
+  if(files.length){ e.preventDefault(); addPendingFiles(selTarget.anchor, files, renderSelPending); }
+});
+pop.addEventListener("dragover", e => { if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).indexOf("Files") !== -1) e.preventDefault(); });
+pop.addEventListener("drop", e => {
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if(selTarget && files && files.length){ e.preventDefault(); addPendingFiles(selTarget.anchor, files, renderSelPending); }
+});
 async function sendComment(){
   const text = popInput.value.trim();
-  if(!text || !selTarget) return;
-  await postAnchored(selTarget.anchor, text, selTarget.text);
-  hidePopover();
+  if(!selTarget) return;
+  const key = selTarget.anchor;
+  const hasImgs = (pendingAttachments[key] || []).length > 0;
+  if(!text && !hasImgs) return;
+  let images = [];
+  if(hasImgs){ try { images = await uploadPending(key); } catch(e){ return; } }
+  const ok = await postAnchored(key, text, selTarget.text, images);
+  if(ok){ pendingAttachments[key] = []; hidePopover(); }
 }
 async function saveVariantComment(variantId, value, ta){
   const text = (value || "").trim();
-  if(!text || !variantId) return;
-  if(ta) ta.value = "";
-  await postAnchored(variantId, text, "");
+  const hasImgs = (pendingAttachments[variantId] || []).length > 0;
+  if((!text && !hasImgs) || !variantId) return;
+  let images = [];
+  if(hasImgs){ try { images = await uploadPending(variantId); } catch(e){ return; } }
+  const ok = await postAnchored(variantId, text, "", images);
+  if(ok){ pendingAttachments[variantId] = []; if(ta) ta.value = ""; rerender(); }
 }
 // One path for every anchored turn (select-to-comment, variant comment, thread reply).
-async function postAnchored(anchor, text, quote){
+// `images` (optional) = refs returned by /attach. Returns true on a posted message.
+async function postAnchored(anchor, text, quote, images){
   const txt = (text || "").trim();
-  if(!txt || !anchor) return;
+  const imgs = images || [];
+  if((!txt && !imgs.length) || !anchor) return false;
   const body = { slug:SLUG, anchor, text:txt, phase:(lastData&&lastData.phase)||"" };
   if(quote) body.quote = quote;
-  await api("/chat", { method:"POST", body: JSON.stringify(body) });
+  if(imgs.length) body.images = imgs;
+  const resp = await api("/chat", { method:"POST", body: JSON.stringify(body) });
+  if(resp && resp.ok === false){ toast(t("toast.sendFailed")); return false; }   // caller keeps pending state
   await chatTick();
   toast(t("toast.sentToAgent"));
+  return true;
+}
+// Thread-reply send: upload pending images for the anchor first, then post + clear.
+async function sendAnchoredReply(anchor, text){
+  const hasImgs = (pendingAttachments[anchor] || []).length > 0;
+  if(!(text || "").trim() && !hasImgs) return;
+  let images = [];
+  if(hasImgs){ try { images = await uploadPending(anchor); } catch(e){ return; } }
+  const ok = await postAnchored(anchor, text, "", images);
+  if(ok){ pendingAttachments[anchor] = []; rerender(); }
 }
 
 // action bar
@@ -3089,16 +3377,31 @@ function renderChat(){
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.innerHTML = global.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
     <div class="who">${m.role==='agent'?esc(t("thread.who.agent")):esc(t("thread.who.you"))}</div>
+    ${bubbleImgs(m.images)}
     <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
     ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
   </div>`).join("");
   if(atBottom || chatOpen) log.scrollTop = log.scrollHeight;
 }
+function renderChatPending(){ renderPendingStrip($("#chat-pending"), "chat"); }
+addStripRenderer("chat", renderChatPending);
 async function sendChat(){
   const ta = $("#chat-text"), text = ta.value.trim();
-  if(!text) return;
+  const hasImgs = (pendingAttachments["chat"] || []).length > 0;
+  if(!text && !hasImgs) return;
+  // Upload pending images FIRST; if that fails, keep text + pending state (don't lose them).
+  let images = [];
+  if(hasImgs){
+    try { images = await uploadPending("chat"); }
+    catch(e){ return; }   // toast already shown by uploadPending
+  }
+  const body = { slug:SLUG, text, phase: (lastData&&lastData.phase)||"" };
+  if(images.length) body.images = images;
+  const resp = await api("/chat", { method:"POST", body: JSON.stringify(body) });
+  if(resp && resp.ok === false){ toast(t("toast.sendFailed")); return; }   // keep text + pending state
   ta.value = "";
-  await api("/chat", { method:"POST", body: JSON.stringify({ slug:SLUG, text, phase: (lastData&&lastData.phase)||"" }) });
+  pendingAttachments["chat"] = [];
+  renderChatPending();
   await chatTick();
   toast(t("toast.sentToAgent"));
 }
@@ -3106,6 +3409,10 @@ $("#chat-send").onclick = sendChat;
 $("#chat-text").addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
 });
+// chat attach controls: browse picker + paste + drag-drop over the whole panel
+$("#chat-attach-btn").onclick = (e) => { e.preventDefault(); $("#chat-attach-input").click(); };
+$("#chat-attach-input").onchange = (e) => { addPendingFiles("chat", e.target.files, renderChatPending); e.target.value = ""; };
+wireAttachCapture($("#chat-text"), $("#chat-panel"), "chat", renderChatPending);
 
 // ----- polling loop -----
 async function tick(){
