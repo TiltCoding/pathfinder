@@ -520,7 +520,10 @@
   .chat-input button.primary { padding: 8px 14px; white-space: nowrap; }
 
   /* image attachments: pending strip + drop overlay + inline bubble thumbnails */
-  .attach-link { flex: none; appearance: none; background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; align-self: center; padding: 0; white-space: nowrap; }
+  .attach-link { flex: none; appearance: none; display: inline-flex; align-items: center; justify-content: center; background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; align-self: center; width: 30px; height: 30px; padding: 0; border-radius: 8px; transition: background .12s, color .12s, border-color .12s; }
+  .attach-link:hover { background: var(--chip); color: var(--text); border-color: var(--accent); }
+  .attach-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .attach-link svg { width: 16px; height: 16px; display: block; }
   .attach-hint { font-size: 11px; color: var(--muted); padding: 4px 12px 8px; }
   .pending-strip { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px 0; }
   .pending-strip:empty { display: none; }
@@ -651,7 +654,7 @@
   <div class="pending-strip" id="sel-pending"></div>
   <div class="sel-row">
     <span class="hint">Enter — send · Esc — cancel</span>
-    <button class="attach-link" id="sel-attach-btn">browse…</button>
+    <button class="attach-link" id="sel-attach-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
     <input type="file" id="sel-attach-input" accept="image/*" multiple hidden>
     <button class="primary" id="sel-send">Send</button>
   </div>
@@ -675,7 +678,7 @@
   <div class="pending-strip" id="chat-pending"></div>
   <div class="chat-input">
     <textarea id="chat-text" rows="2" placeholder="Message to the agent… (Enter — send)"></textarea>
-    <button class="attach-link" id="chat-attach-btn">browse…</button>
+    <button class="attach-link" id="chat-attach-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
     <input type="file" id="chat-attach-input" accept="image/*" multiple hidden>
     <button class="primary" id="chat-send">Send</button>
   </div>
@@ -702,6 +705,9 @@ function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;"
 const ATTACH_MAX_BYTES = 5 * 1024 * 1024;   // 5 MB / image (matches server cap)
 const ATTACH_MAX_PER_MSG = 6;               // images per message
 const ATTACH_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+// Paperclip glyph for the attach buttons (replaces a bare "browse…" text link). title/
+// aria-label carry the localized name, so the button stays icon-only across all channels.
+const ATTACH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
 let pendingAttachments = {};                 // { [channelKey]: [{name, mime, dataUrl}] }
 // A channel key can have more than one visible strip at once (e.g. the select-to-comment
 // popover and the in-#content variant footer share an anchor), so keep a set of renderers
@@ -1855,7 +1861,7 @@ function regionFooter(anchor, repliesByBlock, threadsByAnchor, noAttach){
   // for the same anchor in the thread reply rendered below the variant.
   const attach = noAttach ? "" : `
     <div class="pending-strip" data-pending-strip="${esc(anchor)}"></div>
-    <button class="attach-link" data-attach-btn="${esc(anchor)}">browse…</button>
+    <button class="attach-link" data-attach-btn="${esc(anchor)}">${ATTACH_ICON}</button>
     <input type="file" accept="image/*" multiple hidden data-attach-input="${esc(anchor)}">`;
   const input = `<div class="th-reply" ${noAttach ? "" : `data-attach-zone="${esc(anchor)}"`}>
     <textarea data-thread="${esc(anchor)}" placeholder="${esc(t("thread.replyPlaceholder"))}"></textarea>${attach}
@@ -1883,7 +1889,7 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
         <div class="pending-strip" data-pending-strip="${esc(vr.id)}"></div>
         <textarea data-comment-variant="${esc(vr.id)}" placeholder="${esc(t("demo.commentPlaceholder"))}"></textarea>
         <input type="file" accept="image/*" multiple hidden data-attach-input="${esc(vr.id)}">
-        <div class="v-comment-row"><button class="attach-link" data-attach-btn="${esc(vr.id)}">browse…</button><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">${esc(t("demo.commentSend"))}</button></div>
+        <div class="v-comment-row"><button class="attach-link" data-attach-btn="${esc(vr.id)}">${ATTACH_ICON}</button><button class="ghost v-comment-send" data-comment-variant="${esc(vr.id)}">${esc(t("demo.commentSend"))}</button></div>
       </div>`;
     v += `<div class="variant ${sel?'sel':''}" data-variant="${esc(vr.id)}">
       <label class="variant-head">
