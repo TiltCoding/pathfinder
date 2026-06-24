@@ -149,8 +149,13 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 Отдаёт `HUB_PAGE` (`text/html`). Само-содержащий HTML без CDN; при загрузке `fetch('/hub.json')` и
 рендерит **три секции** (вариант A, утверждён на гейте):
 
-1. **Активные запуски** — карточки (`runCard`) из `runs.filter(r=>r.active)`: slug/title, бейдж фазы,
+1. **Активные запуски** — карточки из `runs.filter(r=>r.active)`: slug/title, бейдж фазы,
    статус, прогресс, ветка/worktree, ссылка `/?slug=<slug>` (открыть дашборд задачи).
+   - **Раскладка (2026-06-24):** один полноширинный столбец — `.cards { grid-template-columns:1fr }`,
+     каждый запуск рисуется детальной карточкой `heroCard` (единый вид; деления hero/slim и `slimCard`
+     больше нет). Шапка хаба `header.top` — полноширинная полоса, контент в обёртке
+     `header.top .top-inner` (`max-width:1180px; margin:0 auto`) для паритета ширины со страницей
+     задачи. Данные `/hub.json` остаются layout-агностичными.
    - **Бейдж awaiting.** `statusBadge` (`scripts/server.py:1440`) рисует для `awaiting-batch` бейдж
      **«⏳ ждёт ответа»** (раньше — «ждёт батч»), иначе «в работе». Зеркалит `.status.awaiting`
      дашборда.
