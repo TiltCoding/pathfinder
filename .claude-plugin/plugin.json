@@ -1,6 +1,6 @@
 {
   "name": "ai-pathfinder",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "description": "Long-running, multi-agent coding workflow for large projects: autonomous codebase exploration, a live per-task HTML dashboard with batched human feedback, changed-files + diff view, code-review/security-review gates, checkpoint chat steering, a knowledge tree + graph, parallel runs in isolated git worktrees with a runs hub (history + cross-task analytics), and a self-growing project knowledge base. Also ships /new-product for greenfield product creation from scratch: PRD, vertical-slice phase plan, and an evolutionary generate-test-judge build-loop. And /improve, which surveys an existing app with a swarm of analysis sub-agents, reaches consensus on the best improvements via a voting panel, lets the human pick which to do, then queues the winners and drains them sequentially through /feature — one feature per fresh context. Plus /ask, a read-only question-and-answer mode: a mini-swarm of read-only researchers reads the docs and code, and the orchestrator synthesizes a written answer with an infographic and a process diagram, then keeps a chat open for follow-ups — touching no project code.",
   "author": {
     "name": "Gleb"

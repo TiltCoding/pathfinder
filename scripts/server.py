@@ -1559,8 +1559,8 @@ HUB_PAGE = r"""<!doctype html>
   header.top .top-inner { max-width:1180px; margin:0 auto; padding:14px 32px; display:flex;
     align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .brand { display:flex; align-items:center; gap:12px; min-width:0; }
-  .brand .logo { width:30px; height:30px; border-radius:7px; flex:none; display:block; }
-  .brand .name { font-weight:700; font-size:15px; letter-spacing:-.02em; }
+  .brand .logo { width:42px; height:42px; border-radius:9px; flex:none; display:block; }
+  .brand .name { font-weight:700; font-size:17px; letter-spacing:-.02em; }
   .brand .tag { font-size:12px; color:var(--muted2); font-family:var(--font-mono); }
   .topright { display:flex; align-items:center; gap:14px; }
   .refresh { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
@@ -1610,7 +1610,7 @@ HUB_PAGE = r"""<!doctype html>
 
   /* search + filter toolbar (static node #filter-bar — never rewritten by render(),
      so input focus survives the 3s poll). */
-  #filter-bar { max-width:1180px; margin:0 auto; padding:0 32px; }
+  #filter-bar { max-width:1180px; margin:28px auto 0; padding:0 32px; }
   .fpanel { display:flex; flex-direction:column; gap:12px; }
   .searchbox { display:flex; align-items:center; gap:9px; height:42px; padding:0 14px;
     background:var(--panel); border:1px solid var(--line); border-radius:10px; }
@@ -2451,6 +2451,10 @@ function renderQueue(data){
   if(!root) return;
   const items = (data && data.items) || [];
   if(!items.length){ root.innerHTML = ""; return; } // graceful: hide when empty
+  // once the queue is fully drained (nothing still pending or in progress),
+  // hide the whole block — the finished runs already live on in history.
+  const active = items.some(i => i.status === "pending" || i.status === "in-progress");
+  if(!active){ root.innerHTML = ""; return; }
   const total = items.length;
   const done = items.filter(i => i.status === "done").length;
   const failed = items.filter(i => i.status === "failed").length;
