@@ -64,6 +64,14 @@ several calls). Give each the task slug and workspace path so it writes artifact
    `baseCommit`. At DONE you mark the item `done` and tell the human to `/clear` + `/feature` for the
    next. Full contract: **`../improve/dispatch-queue.md`**. (If there is no queue or the human named a
    task, skip this and use step 1.)
+   - **Autonomous flag.** When entering queue mode, read the queue's top-level **`autonomous`** field:
+     if `true`, drain this queue **autonomously** (no PLAN GATE park — self-resolve open questions and
+     auto-approve — but VERIFY and the review gates are kept; see PLAN GATE / VERIFY in `phases.md`).
+     The queue field is the canonical surface. **Per-invocation override:** an explicit
+     **`--auto` / `--autonomous`** argument (or an equivalent natural-language request to run unattended)
+     turns the **same** mode on just for this invocation — so a human can autonomously drain a manual
+     (non-`autonomous`) queue, or run a single named task unattended. The CLI arg overrides the queue
+     field for that one run. Canonical spec: **`../improve/dispatch-queue.md`** §"Autonomous drain (opt-in)".
 
 1. **Resolve the workspace.** Make a kebab-case `<slug>` from the task title (in queue mode, the slug is
    the queue item's). Workspace is `.workflow/tasks/<slug>/`. If `state.json` already exists there,
@@ -90,6 +98,9 @@ several calls). Give each the task slug and workspace path so it writes artifact
   then write a short reply per item into `replies.json` so the human sees you understood.
 - **Headless/eval mode** (`--eval` argument or `AIPF_EVAL=1`): skip the human gate (auto-approve the
   plan) and consume any pre-seeded `submissions/`. This lets the whole workflow run unattended.
+  - **Autonomous mode is a SEPARATE predicate from `AIPF_EVAL` — do not merge the two.** Autonomous
+    skips the PLAN GATE park like eval, but **keeps** VERIFY + the review gates and chat steering;
+    eval skips the review gates. See `../improve/dispatch-queue.md` §"Autonomous drain (opt-in)".
 - **Output language.** The default output language for artifacts, dashboard, and knowledge base is the
   global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
   defaulting to **English** when unset/unreadable. **Exception:** in the human-facing reply channels —

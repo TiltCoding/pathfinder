@@ -119,7 +119,9 @@ runs through you.
   human the drain: run **`/feature`** to do the first item (full workflow), then **`/clear` + `/feature`**
   for the next — or **`/loop /feature`** to auto-continue. `/feature` in queue mode pops the next
   `pending` item, runs it in a fresh context, and marks it `done`. See `dispatch-queue.md` for the
-  contract and `consensus.md` §DISPATCH for the writer-side sequence.
+  contract and `consensus.md` §DISPATCH for the writer-side sequence. The human can opt the drain into
+  **autonomous mode** via the `drain-mode` choice at the SELECT GATE → you stamp top-level
+  `autonomous:true` on the queue; see `dispatch-queue.md` §"Autonomous drain (opt-in)".
 - **Feedback is batched.** Read a submission only when parked at the gate and a new `submissions/<n>.json`
   (or an `approve-plan` signal) has appeared. Apply every comment/answer, then write a short reply per
   item into `replies.json` so the human sees you understood.

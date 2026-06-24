@@ -72,11 +72,20 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
   translate the label to the active language) — so
   the human sees how the panel scored each feature and the gate is not a black box. Set status
   `awaiting-batch`.
+- Also write **one** extra `questions[kind:"choice"]` with the stable `id = "drain-mode"` (not tied to
+  any `feat-K`): text "Drain the picked features autonomously (no per-feature plan gate; the agent
+  self-resolves open questions)?", `options:["Автономно","Вручную (как сейчас)"]`. The default is
+  **«Вручную»** (no answer ⇒ manual) — the safe, back-compatible behavior. This single choice flips the
+  whole queue to autonomous at DISPATCH; the drainer's contract is in `dispatch-queue.md`
+  §"Autonomous drain (opt-in)".
 - In the `summary`, tell the human the contract in the **global default language** (from
   `~/.claude/ai-pathfinder/settings.json`, default English): pick the **Do / Skip** choice per feature
   (or type a free-form note like "do it, but without X"), then **Submit** to record the choice, then
   **Approve plan** to dispatch the picked ones. State the defaults explicitly: **no answer = Skip**, and
-  the order **Submit → Approve** is required (the draft is not readable before submit). The choice option
+  the order **Submit → Approve** is required (the draft is not readable before submit). Also explain the
+  **`drain-mode`** choice: «Автономно» drains the whole queue without parking at each feature's plan gate
+  (the agent self-resolves open questions, recorded with rationale), while «Вручную» (the default) keeps
+  today's behavior — every item parks at its PLAN GATE. The choice option
   labels and gate texts you write into `dashboard.json` must match the dashboard's active language
   (these are UI/content in the global default, not a reply to the human).
 - Park at the checkpoint and wait (see `feedback-loop.md`). On a new `submissions/<n>.json`: read every
@@ -100,6 +109,10 @@ No worktrees, no parallel fan-out — the picks are drained one at a time, each 
   `state.json`/`dashboard.json`/`index.html` — the `/feature` drainer makes its own workspace.
 - For each queued feature, append a `dispatched[]` entry to this task's `state.json`
   (`{slug, featId, candId, briefPath, status:"queued"}`).
+- If the human answered the `drain-mode` choice with **«Автономно»**, stamp top-level `autonomous:true`
+  onto `.workflow/dispatch-queue.json` (alongside `mode`/`source`). Absent or «Вручную» ⇒ leave it off
+  (manual drain). The drainer reads this back per the contract in `dispatch-queue.md`
+  §"Autonomous drain (opt-in)" — don't restate the drain behavior here.
 - **Do not run `/feature` yourself** (it would pollute this context). Advance to DONE.
 
 ## 6. DONE

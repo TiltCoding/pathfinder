@@ -129,6 +129,9 @@ this is the writer-side sequence. Per feature, in ranked `feat-K` order:
    `version/source/mode/createdAt/baseCommit`, where `baseCommit` = the `/improve` INTAKE `baseCommit`):
    `{ n, featId, slug, title, candId, prism, briefPath, status:"pending", startedAt:null, doneAt:null }`.
    Keep items in ranked order (`feat-1` → `n:1`). See `dispatch-queue.md` for the exact shape.
+   If the human chose «Автономно» at the SELECT GATE (`drain-mode` choice, see `phases.md`
+   §PROPOSE/SELECT GATE), also write top-level `autonomous:true` on the queue object when you create it —
+   per `dispatch-queue.md` §"Autonomous drain (opt-in)". Absent ⇒ manual drain.
 
 Also append a `dispatched[]` entry to **this** task's `state.json` per feature:
 `{slug, featId, candId, briefPath, status:"queued"}` (no `worktreePath` — there is no worktree).

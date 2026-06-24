@@ -70,6 +70,16 @@ Goal: converge on a plan the human approves. This is an iteration loop driven by
   `plan.md`, finalize `workstreams[]` in `state.json` (independent, parallelizable units, each with an
   id/title/status `todo`), and advance to IMPLEMENT.
 - In headless/eval mode: skip waiting, auto-apply any pre-seeded submissions, auto-approve.
+- In **autonomous** mode (a separate predicate from eval — see SKILL step 0): do **not** park by
+  default. For each open question apply the auto-resolve policy (sensible default + the **two-tier
+  escalation valve** — canonical in `../improve/dispatch-queue.md` §"Autonomous drain (opt-in)"),
+  recording `answer` + `rationale` + `mode:"auto"|"escalated"|"blocked"` in `state.json.questions[]`
+  and mirroring to `replies.json`; then auto-approve the plan and advance to IMPLEMENT.
+  **Exception — hard block:** if a decision is irreversible / destructive / risks data loss, do **not**
+  auto-approve that slice — raise the question to the human (an entry in `state.json.questions[]` plus
+  an anchored `chat.jsonl` agent line with `needsAnswer:true`), park on `/wait` and wait for explicit
+  human approval (the same parking machinery as the normal PLAN GATE above, enabled only conditionally),
+  and continue only after the human answers.
 
 ## 5. IMPLEMENT (autonomous, with optional steering)
 
@@ -98,7 +108,8 @@ Goal: confirm the change actually works.
   shape): set `status: "running"` before you invoke the skill and rewrite it to `done`/`failed` with a
   short `summary` and the ranked `findings` (severity, `file:line`, text) when it returns. The
   dashboard's **«Изменения»** tab renders these and surfaces the change diff next to them. Treat
-  high-severity findings as fix-or-justify before DONE. (In headless/eval mode, skip the gates.)
+  high-severity findings as fix-or-justify before DONE. (Only headless/eval mode skips these gates;
+  in **autonomous** mode `/code-review` + `/security-review` STILL run, exactly like a normal run.)
 - A human can also request a re-run from the dashboard: the **`run-code-review`** / **`run-security-review`**
   signals arrive on your `/wait` baseline like any other signal — when you see one, re-run that skill
   and append a fresh entry to `reviews.json`.
@@ -116,3 +127,8 @@ Goal: confirm the change actually works.
   step: **`/clear` then `/feature`** to start the next pending item in a fresh context (or **`/loop
   /feature`** to auto-continue). **Do not** start the next item in this same session — a clean context
   per feature is the point. If it was the last item, say the queue is drained and point at `/hub`.
+- **Autonomous queue-mode run:** the DONE summary **lists every auto-resolved question with its
+  rationale** (from `state.json.questions[]`), calling out any `blocked` / escalated decisions in a
+  separate section so they are easy to spot. Since the human stepped away, **recommend `/loop /feature`**
+  for the next item — while still preserving the invariant above: **do not** start the next item in this
+  same session.

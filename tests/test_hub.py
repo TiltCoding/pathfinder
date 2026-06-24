@@ -438,6 +438,7 @@ class QueueEndpointTest(unittest.TestCase):
             "version": 1,
             "source": "improve-overall",
             "mode": "sequential-feature",
+            "autonomous": True,
             "createdAt": "2026-06-15T15:13:00",
             "updatedAt": "2026-06-16T10:51:17",
             "baseCommit": "67d305ca1c750a38ce4f4b364b5c9b076aa0c5dc",
@@ -468,6 +469,11 @@ class QueueEndpointTest(unittest.TestCase):
         self.assertEqual(out["version"], 1)
         self.assertIn("items", out)
         self.assertEqual(len(out["items"]), 5)
+
+        # the opt-in top-level autonomous-drain flag (b4/D9) survives the
+        # verbatim passthrough -- contract insurance, _queue is server-agnostic.
+        self.assertIn("autonomous", out)
+        self.assertEqual(out["autonomous"], True)
 
         # every status is preserved, including failed/skipped.
         statuses = [i["status"] for i in out["items"]]

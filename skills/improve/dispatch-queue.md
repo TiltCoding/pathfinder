@@ -22,6 +22,7 @@ survives the `/clear` between features. Append/extend-only in spirit; statuses m
   "version": 1,
   "source": "improve-runtime",
   "mode": "sequential-feature",
+  "autonomous": true,
   "createdAt": "2026-06-13T20:30:00",
   "updatedAt": "2026-06-13T20:30:00",
   "baseCommit": "dd01a10…",
@@ -51,6 +52,11 @@ survives the `/clear` between features. Append/extend-only in spirit; statuses m
   item on the default branch, branches from here so the features stay independent and reviewable
   (the human merges/cherry-picks afterward). If the human prefers a stack, they say so and `/feature`
   branches from the current HEAD instead.
+- **`autonomous`** *(optional, top-level)* — when `true`, the **whole queue drains autonomously**: each
+  item runs to DONE without parking at the per-feature PLAN GATE, and the agent self-resolves the plan's
+  open questions instead of asking the human (subject to the escalation valve below). Absent or `false`
+  ⇒ today's manual behavior (every item parks at its PLAN GATE). This is a queue-level flag in v1;
+  per-item autonomy is a possible future extension, not part of v1. See **Autonomous drain (opt-in)**.
 
 ## Writer side — what `/improve` does at DISPATCH
 
@@ -66,6 +72,10 @@ for the feature — the `/feature` run creates its own workspace when it picks t
 records the same set in its own `state.json.dispatched[]` (`{slug, featId, candId, briefPath, status}`)
 and then **hands the drain to the human** (it does not run `/feature` inside its own session — that
 would pollute context, defeating the fresh-context goal).
+
+If the human chose **autonomous drain** at the `/improve` SELECT GATE, `/improve` stamps top-level
+`autonomous:true` onto the queue at DISPATCH (the mechanics live in `/improve`'s own phases; this file
+just records the contract that the drainer reads back).
 
 ## Drainer side — what `/feature` does in queue mode
 
@@ -94,6 +104,54 @@ When the last item flips to `done`, `/feature` reports the queue is drained and 
 - **Hands-off:** **`/loop /feature`** — the loop re-invokes `/feature`, which pops the next pending item
   each time. Context is compacted by the harness between iterations rather than fully cleared; use this
   when you want to walk away.
+
+## Autonomous drain (opt-in)
+
+This is the **canonical spec** for the opt-in autonomous mode. It is **off by default** — absent
+`autonomous` on the queue means every item parks at its PLAN GATE exactly as today.
+
+**What the flag does.** When `/feature` drains a queue whose top-level `autonomous` is `true` (or when
+`/feature` is invoked with `--auto` / `--autonomous`, or an equivalent natural-language request, as an
+override for that one invocation), it runs each item to DONE **without parking at the PLAN GATE**.
+Instead of asking the human, it **auto-resolves the plan's open questions itself** and **auto-approves
+the plan**, then proceeds to IMPLEMENT. This lets the human start the drain and walk away.
+
+**Auto-resolve policy.** For each open question, pick the **sensible default** — the option that best
+matches, in priority order: (a) existing project conventions and the knowledge base (`docs/knowledge/`),
+(b) the **lowest-risk / most reversible** choice, (c) the **smallest scope** that still meets the
+brief's acceptance criteria. Record the choice and a short rationale (see Decision trail below).
+
+**Two-tier escalation valve (IMPORTANT).** Autonomy is **not** recklessness. Auto-resolution runs
+through a two-tier valve:
+
+- **Soft escalation** — for ordinary ambiguity and reversible decisions: do **not** block. Take the
+  sensible default, tag the decision `mode:"escalated"`, record the rationale, surface it in chat and
+  in the DONE summary, and continue.
+- **Hard block = mandatory human approval** — if a decision is **irreversible / risks data loss /
+  destructive**, the agent does **not** do it autonomously. This covers: deleting or overwriting data
+  or files, a destructive migration, `DROP` of a table or column, rewriting git history, a breaking
+  change to a public / served contract, bulk operations — in short, **anything not revertible via
+  git**. In that case the agent **stops that slice**, tags the decision `mode:"blocked"`, raises the
+  question to the human (an entry in `state.json.questions[]` **plus** an anchored `chat.jsonl` agent
+  line with `needsAnswer:true`), **parks on `/wait` and waits for explicit human approval**, and only
+  proceeds after the human answers. This conditional gate fires **even during a fully hands-off
+  `/loop /feature` drain**: autonomy ≠ recklessness.
+
+**Decision trail (no new artifacts).** Every auto-decision is recorded in `state.json.questions[]` as
+an `answer` plus a short `rationale` plus `mode:"auto"|"escalated"|"blocked"`, and mirrored to
+`replies.json` / `chat.jsonl` so it shows on the task dashboard. Genuinely notable decisions also
+become an ADR (`docs/knowledge/decisions/`) and a `task-log.md` line. The **DONE summary lists all
+auto-decisions**, with `blocked` items and escalations called out in a separate section.
+
+**Predicate separation from eval.** `autonomous` is **independent** of `AIPF_EVAL` — they are different
+predicates, not the same switch. On the **PLAN GATE** an autonomous run behaves *like* eval (no park,
+auto-approve). On **VERIFY**, however, it behaves like a **normal** run: the `/code-review` and
+`/security-review` gates **still run**, high-severity findings are fix-or-justify, and chat steering
+stays on. This is the key contrast with eval, which skips the review gates outright.
+
+**Hands-off driving.** The autonomous drain pairs with **`/loop /feature`**. The "fresh context per
+feature" invariant still holds: exactly **one `/feature` re-invocation per item** — never chain items
+in one session.
 
 ## Eval / headless mode
 

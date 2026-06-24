@@ -113,6 +113,20 @@ review gates → done) on it, marks it done, and prompts for the next. Between f
 **`/loop /feature`** to walk away. Every run shows up in the **hub** (`/hub`) as it executes. Parallel
 git-worktree fan-out (`scripts/worktree.py`) is still there as an opt-in if you explicitly want it.
 
+**Autonomous drain (opt-in).** By default each drained feature still parks at its **«Approve plan»**
+gate. To run the whole queue hands-off, turn on **autonomous drain**: pick **«Автономно»** at the
+`/improve` SELECT GATE (which stamps `autonomous:true` on the queue), or invoke **`/feature --auto`** to
+override for one drain. In autonomous mode `/feature` runs each item to DONE **without the plan gate** —
+instead of asking the human, it **self-resolves the plan's open questions** (picks the sensible default
+and records a rationale, visible afterwards on the dashboard and in chat). A **two-tier escalation valve**
+keeps it safe: ordinary, reversible ambiguity is decided by the agent and noted (*soft escalation*), but
+anything **irreversible / destructive / risking data loss** (deleting or overwriting data, a destructive
+migration, `DROP`, rewriting git history, a breaking change to a served contract — anything not revertible
+via git) **hard-blocks**: the agent parks and waits for explicit human approval, even during a fully
+hands-off `/loop /feature`. Autonomous is a **separate mode from `--eval`** — it still **keeps** VERIFY
+with the `/code-review` and `/security-review` gates, the fix-or-justify rule on high-severity findings,
+chat steering, and decision transparency. Pair it with **`/loop /feature`** for a genuinely hands-off run.
+
 **How it differs from `/feature` and `/new-product`:** `/feature` implements one already-defined task;
 `/new-product` builds a greenfield product from a PRD; `/improve` **discovers what's worth doing** across
 the whole app and **queues the winners** for a sequential `/feature` drain — it never edits code itself.

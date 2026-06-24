@@ -156,3 +156,10 @@ be re-invoked when it finishes — schedule only a long fallback in that case to
 With `--eval` / `AIPF_EVAL=1`: do not park for the human. If the fixture pre-seeded
 `submissions/*.json`, apply them in order; then treat the plan as approved and continue. This is what
 lets the workflow run unattended for benchmarking.
+
+**Autonomous mode is not eval.** Autonomous mode (a separate predicate — see SKILL step 0) also does
+not park at the PLAN GATE, **but**, unlike eval, **chat steering stays on** and the `/code-review` +
+`/security-review` gates are **kept**, exactly like a normal run. The one place autonomous re-enables
+parking is the hard-block exception: an irreversible / destructive / data-loss decision re-arms `/wait`
+parking conditionally and waits for explicit human approval. Canonical description:
+`../improve/dispatch-queue.md` §"Autonomous drain (opt-in)".
