@@ -126,5 +126,4 @@
 - `scripts/_aipf.py:25` — `now_iso_utc()` — таймстемп ISO-8601 UTC `Z`.
 - `scripts/_aipf.py:496` — `_spans_from_events(events)` — склейка start/end в спаны (паттерн парности).
 
-_updated: 2026-06-25 (ci-lint-gate-wire: CI-job `lint` реально подключён в `ci.yml` — stdlib-only + no-CDN гейт `scripts/check_stdlib.py` проверяется на каждый push/PR; раздел «CI» описывает оба job'а). Ранее — конвенция языка: eng-first глобальная настройка + язык вопроса в чате, ADR-0018_
-_updated: 2026-06-25 (инвариант атомарной записи: per-process temp + retrying replace `atomic_write`/`atomic_replace`/`atomic_temp_name`, ADR-0021; предыдущее — конвенция языка eng-first, ADR-0018)_
+_updated: 2026-06-25 (improve-overall-2: CI job `lint` подключён (stdlib-only + no-CDN гейт на push/PR, оба job'а описаны) + инвариант атомарной записи per-process temp + retrying replace (`atomic_write`/`atomic_replace`/`atomic_temp_name`, ADR-0021). Ранее — конвенция языка eng-first, ADR-0018)_
