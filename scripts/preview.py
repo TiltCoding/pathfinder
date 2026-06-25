@@ -5,17 +5,23 @@
 агенты, во всех фазах, где он выглядит по-разному, без запуска настоящего
 ``/feature``.
 
+Изоляция от рабочих дашбордов: превью НЕ трогает настоящий companion-сервер,
+который обслуживает живые ``/feature``-``/ask`` прогоны. Оно поднимает **отдельный**
+сервер с собственным корнем (``.preview/``) и на зарезервированном **редком порту**
+(:9473, вне диапазона авто-скана 8473–8497), поэтому его reap (отбор по корню +
+порту) физически не может убить главный сервер, а фикстуры не засоряют живой хаб.
+
 Что делает (идемпотентно):
 
-  1. копирует каждый ``templates/fixtures/<slug>/`` → ``.workflow/tasks/<slug>/``
-     (источник истины коммитим, т.к. ``.workflow/`` в ``.gitignore``);
+  1. копирует каждый ``templates/fixtures/<slug>/`` →
+     ``.preview/.workflow/tasks/<slug>/`` (отдельный от живого корень);
   2. штампует **текущий** ``templates/dashboard.html`` как ``index.html`` каждой
      задачи — так превью всегда отражает живой шаблон;
   3. резолвит ``state.baseCommit`` вида ``AUTO:<rev>`` в реальный sha, чтобы
      вкладка «Изменения» показывала непустой diff (graceful: нет git → ключ
      убираем, сервер падает на ``HEAD``);
-  4. (пере)поднимает companion-сервер (идемпотентный singleton ``server.py``)
-     и открывает ``/hub`` — оттуда кликом заходишь в любую фазовую фикстуру.
+  4. (пере)поднимает изолированный companion-сервер на :9473 и открывает его
+     ``/hub`` — оттуда кликом заходишь в любую фазовую фикстуру.
 
 Только stdlib, кросс-платформенно (``sys.executable``).
 
@@ -38,9 +44,16 @@ import webbrowser
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES_DIR = os.path.join(ROOT, "templates", "fixtures")
 TEMPLATE = os.path.join(ROOT, "templates", "dashboard.html")
-TASKS_DIR = os.path.join(ROOT, ".workflow", "tasks")
 SERVER = os.path.join(ROOT, "scripts", "server.py")
-SERVER_JSON = os.path.join(ROOT, ".workflow", "server.json")
+
+# Превью живёт в собственном корне на зарезервированном редком порту, чтобы не
+# трогать настоящий сервер живых дашбордов (см. модульный docstring). Корень
+# .preview/ — внутри репо (git -C находит работающее дерево для вкладки
+# «Изменения»), но в .gitignore.
+PREVIEW_ROOT = os.path.join(ROOT, ".preview")
+PREVIEW_PORT = 9473
+TASKS_DIR = os.path.join(PREVIEW_ROOT, ".workflow", "tasks")
+SERVER_JSON = os.path.join(PREVIEW_ROOT, ".workflow", "server.json")
 
 
 def fixtures():
@@ -88,8 +101,24 @@ def _resolve_base_commit(state_path):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+def _sweep_legacy():
+    """Снести фикстуры _preview-*, которые СТАРАЯ версия харнесса ставила прямо в
+    живой ``ROOT/.workflow/tasks/`` и засоряла настоящий хаб. Идемпотентно: при
+    апгрейде на изолированный корень это одноразово чистит живой хаб."""
+    legacy = os.path.join(ROOT, ".workflow", "tasks")
+    swept = 0
+    for name in fixtures():
+        d = os.path.join(legacy, name)
+        if os.path.isdir(d):
+            shutil.rmtree(d, ignore_errors=True)
+            swept += 1
+    if swept:
+        print(f"  * убрал из живого хаба старые превью-задачи: {swept}")
+
+
 def install():
-    """Поставить все фикстуры в .workflow/tasks/. Вернуть список slug'ов."""
+    """Поставить все фикстуры в изолированный .preview/.workflow/tasks/. Вернуть
+    список slug'ов."""
     names = fixtures()
     if not names:
         print(f"нет фикстур в {FIXTURES_DIR}", file=sys.stderr)
@@ -97,6 +126,7 @@ def install():
     if not os.path.isfile(TEMPLATE):
         print(f"нет шаблона {TEMPLATE}", file=sys.stderr)
         return []
+    _sweep_legacy()
     os.makedirs(TASKS_DIR, exist_ok=True)
     for name in names:
         src = os.path.join(FIXTURES_DIR, name)
@@ -109,7 +139,9 @@ def install():
 
 
 def clean():
-    """Удалить установленные _preview-* задачи из .workflow/tasks/."""
+    """Удалить установленные _preview-* задачи и весь изолированный корень
+    .preview/ (включая его server.json). Прошлый превью-сервер на :9473 при
+    следующем запуске реапнётся через --force; здесь его не трогаем."""
     removed = 0
     for name in fixtures():
         dst = os.path.join(TASKS_DIR, name)
@@ -117,17 +149,24 @@ def clean():
             shutil.rmtree(dst, ignore_errors=True)
             removed += 1
             print(f"  - {name}")
+    _sweep_legacy()
+    shutil.rmtree(PREVIEW_ROOT, ignore_errors=True)
     print(f"удалено превью-задач: {removed}")
 
 
 def _spawn_server():
-    """Запустить server.py отдельным фоновым процессом с ``--force``.
+    """Запустить изолированный server.py отдельным фоновым процессом.
+
+    Ключевая изоляция — ``--root PREVIEW_ROOT``: reap сервера отбирает жертв по
+    корню, поэтому превью-сервер физически не может убить настоящий сервер живых
+    дашбордов (у того корень ROOT). ``--port PREVIEW_PORT`` резервирует редкий
+    порт вне диапазона авто-скана, так что чужие серверы тоже его не трогают.
 
     ``--force`` ОБЯЗАТЕЛЕН: без него идемпотентный singleton переиспользовал бы
-    уже-живой сервер, а он мог быть поднят из старой версии кода (например, из
+    уже-живой превью-сервер, а он мог быть поднят из старой версии кода (из
     плагин-кэша) и рисовать устаревший хаб/логотип. Превью должно отражать
-    ТЕКУЩИЙ код, поэтому реапаем живой сервер этого корня и биндим свежий. Не
-    блокируемся на нём."""
+    ТЕКУЩИЙ код, поэтому реапаем прошлый превью-сервер (того же корня и порта) и
+    биндим свежий. Не блокируемся на нём."""
     kwargs = {
         "cwd": ROOT,
         "stdout": subprocess.DEVNULL,
@@ -140,7 +179,8 @@ def _spawn_server():
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(
-        [sys.executable, SERVER, "--root", ROOT, "--no-browser", "--force"],
+        [sys.executable, SERVER, "--root", PREVIEW_ROOT,
+         "--port", str(PREVIEW_PORT), "--no-browser", "--force"],
         **kwargs,
     )
 

@@ -331,6 +331,27 @@ class PortForRootTest(unittest.TestCase):
         self.assertGreater(len(ports), 1)  # not all roots collide on one port
 
 
+class AwaitPortsFreeTest(unittest.TestCase):
+    """`await_ports_free` — returns promptly once no port answers /health."""
+
+    def test_empty_returns_immediately(self):
+        start = time.time()
+        server.await_ports_free([], timeout=5)
+        self.assertLess(time.time() - start, 0.5)
+
+    def test_free_ports_return_within_timeout(self):
+        # nothing is listening on these high ports, so the first poll finds them
+        # silent and the wait returns well before the timeout would elapse.
+        start = time.time()
+        server.await_ports_free([59731, 59732], timeout=2)
+        self.assertLess(time.time() - start, 1.0)
+
+    def test_falsy_ports_ignored(self):
+        start = time.time()
+        server.await_ports_free([None, 0], timeout=5)
+        self.assertLess(time.time() - start, 0.5)
+
+
 class GcTargetsTest(unittest.TestCase):
     """`gc_targets` — pure selection of which discovered servers to reap."""
 
