@@ -1,0 +1,4 @@
+{ "signals": [
+  { "signal": "submit", "payload": { "n": 1 }, "ts": "2026-06-25T10:20:00" },
+  { "signal": "approve-plan", "payload": null, "ts": "2026-06-25T10:20:01" }
+] }

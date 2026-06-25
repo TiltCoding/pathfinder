@@ -1,0 +1,22 @@
+{
+  "slug": "_preview-elaborate",
+  "title": "Preview · plan & questions awaiting your review",
+  "phase": "PLAN GATE",
+  "status": "awaiting-batch",
+  "iteration": 1,
+  "now": "Awaiting your review of the plan and the open questions",
+  "progress": { "label": "Work-streams", "done": 0, "total": 4 },
+  "summary": "## Plan ready for review 📝\n\nThis is the **ELABORATE / PLAN GATE** look — the agent has explored the area, drafted a plan, and is now waiting on you. The action bar at the bottom is in **awaiting** state: review the plan blocks below, answer the open questions, optionally comment on any block, then hit **Submit → Approve**.\n\n**What this fixture demonstrates:** plan blocks you can comment on, a choice question, a free-text question, an anchored discussion thread (see block `b2`), the work-stream summary chip, and the left info sidebar — all the surfaces the dashboard shows while it waits for a human.",
+  "planBlocks": [
+    { "id": "b1", "title": "1. Add the fixtures directory", "body": "Create `templates/fixtures/<phase>/` with the data files the server serves (`state.json`, `dashboard.json`, `replies.json`, `signals.json`, `chat.jsonl`, `telemetry.jsonl`). Committed, because `.workflow/` is gitignored." },
+    { "id": "b2", "title": "2. The preview harness script", "body": "`scripts/preview.py` copies each fixture into `.workflow/tasks/`, stamps the **current** `dashboard.html` as each task's `index.html`, resolves the `baseCommit` for a live diff, then (re)starts the server and opens `/hub`." },
+    { "id": "b3", "title": "3. Wire `python dev.py preview`", "body": "A thin sub-command in `dev.py` so the whole thing is one command. Flags mirror `serve`: `--no-browser`, plus `--clean` to remove the preview tasks." },
+    { "id": "b4", "title": "4. A smoke test", "body": "One `unittest` in `tests/` that loads every fixture's JSON and asserts the required keys — a cheap guard so a malformed fixture fails CI instead of rendering blank." }
+  ],
+  "questions": [
+    { "id": "q1", "text": "How many phase fixtures should ship?", "kind": "choice", "options": ["Four — elaborate / implement / done / ask (recommended)", "Just one rich ELABORATE fixture", "Add EXPLORE and VERIFY too"] },
+    { "id": "q2", "text": "Should the Changes tab show a real git diff?", "kind": "choice", "options": ["Yes — pin baseCommit to an older commit (recommended)", "No — leave it empty for preview"] },
+    { "id": "q3", "text": "Anything else the preview should exercise that's missing here?" }
+  ],
+  "updatedAt": "2026-06-25T10:12:00"
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observability pipeline — the moving parts</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --ink:#e7e9ee; --soft:#9aa3b2;
+    --line:#2a2f3a; --a:#6ea8fe; --b:#7ee0c0; --c:#f3c969; --d:#c89bf5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;
+       background:var(--bg);color:var(--ink);padding:22px}
+  h1{font-size:18px;margin:0 0 2px}
+  .sub{color:var(--soft);margin:0 0 18px;font-size:13px}
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .node{flex:1 1 140px;min-width:140px;background:var(--panel);border:1px solid var(--line);
+        border-radius:12px;padding:14px}
+  .node .tag{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft)}
+  .node .name{font-size:15px;font-weight:650;margin:4px 0}
+  .node .desc{font-size:12px;color:var(--soft)}
+  .node.a{border-top:3px solid var(--a)} .node.b{border-top:3px solid var(--b)}
+  .node.c{border-top:3px solid var(--c)} .node.d{border-top:3px solid var(--d)}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--soft);
+         flex:0 0 30px;font-size:20px}
+  .opt{margin-top:18px;display:flex;gap:12px;align-items:center;background:var(--panel);
+       border:1px dashed var(--line);border-radius:12px;padding:12px 14px}
+  .opt .dot{width:10px;height:10px;border-radius:50%;background:var(--d);flex:0 0 auto}
+  .chips{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+        padding:7px 13px;font-size:12px;color:var(--soft)}
+  .chip b{color:var(--ink)}
+</style>
+</head>
+<body>
+  <h1>Observability pipeline — the moving parts</h1>
+  <p class="sub">How a tool call in Claude Code becomes a live dashboard.</p>
+
+  <div class="flow">
+    <div class="node a">
+      <div class="tag">1 · capture</div>
+      <div class="name">Hooks</div>
+      <div class="desc">Claude Code fires a hook on every tool start/end.</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node b">
+      <div class="tag">2 · store</div>
+      <div class="name">telemetry.jsonl</div>
+      <div class="desc">One JSON line per event, appended in the task dir.</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node c">
+      <div class="tag">3 · serve</div>
+      <div class="name">Server</div>
+      <div class="desc">Reads from an offset, serves <code>/trace/feed</code>, <code>/data</code>, <code>/changes</code>.</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="node d">
+      <div class="tag">4 · render</div>
+      <div class="name">Dashboard</div>
+      <div class="desc">Polls the endpoints and draws the tabs you're looking at.</div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <span class="dot"></span>
+    <div><b>Optional sink — Langfuse.</b> <span style="color:var(--soft)">When <code>LANGFUSE_*</code> is set, the server forwards spans in the background; otherwise it stays local-only.</span></div>
+  </div>
+
+  <div class="chips">
+    <span class="chip"><b>stdlib-only</b> · no pip deps</span>
+    <span class="chip"><b>delta-only</b> feed · byte cursor</span>
+    <span class="chip"><b>singleton</b> server · stable port</span>
+    <span class="chip"><b>exit-0</b> hooks · never block the agent</span>
+  </div>
+</body>
+</html>

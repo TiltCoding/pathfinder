@@ -1,0 +1,24 @@
+{
+  "slug": "_preview-implement",
+  "title": "Preview · agents implementing the approved plan",
+  "phase": "IMPLEMENT",
+  "iteration": 2,
+  "checkpoint": "working",
+  "createdAt": "2026-06-25T10:00:00",
+  "updatedAt": "2026-06-25T10:31:00",
+  "planApproved": true,
+  "questions": [],
+  "answers": [],
+  "workstreams": [
+    { "id": "ws1", "title": "Fixtures directory + phase data", "blocks": ["b1"], "status": "done" },
+    { "id": "ws2", "title": "preview.py harness", "blocks": ["b2"], "status": "in_progress" },
+    { "id": "ws3", "title": "dev.py wiring + smoke test", "blocks": ["b3", "b4"], "status": "todo" }
+  ],
+  "subagents": [
+    { "id": "wf-coder-1", "title": "wf-coder · fixtures", "status": "done" },
+    { "id": "wf-coder-2", "title": "wf-coder · preview.py", "status": "working" },
+    { "id": "wf-documenter", "title": "wf-documenter · area doc", "status": "working" }
+  ],
+  "branch": "preview/implement",
+  "baseCommit": "AUTO:HEAD~3"
+}

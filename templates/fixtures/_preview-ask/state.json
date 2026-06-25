@@ -1,0 +1,16 @@
+{
+  "slug": "_preview-ask",
+  "title": "Preview · /ask answer with visualizations",
+  "phase": "ANSWER",
+  "kind": "ask",
+  "iteration": 1,
+  "checkpoint": "working",
+  "createdAt": "2026-06-25T10:00:00",
+  "updatedAt": "2026-06-25T10:55:00",
+  "planApproved": false,
+  "questions": [],
+  "answers": [],
+  "workstreams": [],
+  "subagents": [],
+  "branch": ""
+}

@@ -1,0 +1,6 @@
+{"ts": "2026-06-25T10:40:00Z", "session_id": "preview-done-0001", "event": "tool.start", "tool": "Task", "toolUseId": "toolu_prev_d1", "spanId": "tool-toolu_prev_d1", "kind": "task", "arg": "ai-pathfinder:wf-reviewer — run tests + review the diff"}
+{"ts": "2026-06-25T10:43:20Z", "session_id": "preview-done-0001", "event": "tool.end", "tool": "Task", "toolUseId": "toolu_prev_d1", "spanId": "tool-toolu_prev_d1", "ok": true}
+{"ts": "2026-06-25T10:43:30Z", "session_id": "preview-done-0001", "event": "tool.start", "tool": "Bash", "toolUseId": "toolu_prev_d2", "spanId": "tool-toolu_prev_d2", "kind": "bash", "arg": "python dev.py test"}
+{"ts": "2026-06-25T10:44:10Z", "session_id": "preview-done-0001", "event": "tool.end", "tool": "Bash", "toolUseId": "toolu_prev_d2", "spanId": "tool-toolu_prev_d2", "ok": true}
+{"ts": "2026-06-25T10:44:20Z", "session_id": "preview-done-0001", "event": "tool.start", "tool": "Bash", "toolUseId": "toolu_prev_d3", "spanId": "tool-toolu_prev_d3", "kind": "bash", "arg": "git commit -m 'feat(dev): preview dashboard harness'"}
+{"ts": "2026-06-25T10:44:21Z", "session_id": "preview-done-0001", "event": "tool.end", "tool": "Bash", "toolUseId": "toolu_prev_d3", "spanId": "tool-toolu_prev_d3", "ok": true}
