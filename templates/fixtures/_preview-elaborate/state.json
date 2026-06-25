@@ -1,0 +1,16 @@
+{
+  "slug": "_preview-elaborate",
+  "title": "Preview · plan & questions awaiting your review",
+  "phase": "PLAN GATE",
+  "iteration": 1,
+  "checkpoint": "awaiting",
+  "createdAt": "2026-06-25T10:00:00",
+  "updatedAt": "2026-06-25T10:12:00",
+  "planApproved": false,
+  "questions": [],
+  "answers": [],
+  "workstreams": [],
+  "subagents": [],
+  "branch": "preview/elaborate",
+  "baseCommit": "AUTO:HEAD~2"
+}

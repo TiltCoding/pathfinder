@@ -1,0 +1,22 @@
+{
+  "slug": "_preview-ask",
+  "title": "Preview · /ask answer with visualizations",
+  "phase": "ANSWER",
+  "kind": "ask",
+  "status": "working",
+  "iteration": 1,
+  "summary": "## How the observability pipeline works\n\nThis is the **/ask** look — a read-only answer. There's no action bar and no plan to approve; instead the answer is markdown plus two self-contained **visualizations** (below), with the chat open for follow-ups. In the hub this run carries an **`ask`** badge.\n\n**Short answer:** Claude Code hooks append events to `telemetry.jsonl`; the companion **server** reads that file and serves the dashboard endpoints (`/state.json`, `/data`, `/trace/feed`, `/changes`); the **dashboard** polls them and renders the tabs; optionally the server forwards spans to **Langfuse**.\n\nSee the infographic for the moving parts and the diagram for the request flow.",
+  "demo": {
+    "kind": "diagram",
+    "intro": "Two visualizations the agent drew for this answer — an **infographic** of the moving parts and a **process diagram** of the data flow. (In a real `/ask` you could comment on either.)",
+    "selectionId": "ask-viz",
+    "selected": "infographic",
+    "variants": [
+      { "id": "infographic", "title": "Infographic — the moving parts", "file": "infographic.html", "caption": "Hooks → telemetry.jsonl → server → dashboard, with Langfuse as an optional sink." },
+      { "id": "diagram", "title": "Process diagram — the data flow", "file": "diagram.html", "caption": "How a tool call becomes a span on the Tracing tab." }
+    ]
+  },
+  "planBlocks": [],
+  "questions": [],
+  "updatedAt": "2026-06-25T10:55:00"
+}

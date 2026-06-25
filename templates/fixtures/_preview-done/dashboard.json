@@ -1,0 +1,22 @@
+{
+  "slug": "_preview-done",
+  "title": "Preview · completed task (summary, commit, diff)",
+  "phase": "DONE",
+  "status": "working",
+  "iteration": 3,
+  "progress": { "label": "Work-streams", "done": 3, "total": 3 },
+  "summary": "## Done ✅\n\nThis is the **DONE** look — the task is finished. The summary leads with the outcome, names the commit and the verification done, and the **Changes** tab carries the full diff for review.\n\n**What shipped:** `python dev.py preview` — one command that installs four phase fixtures, stamps the current `templates/dashboard.html` as each task's `index.html`, and opens the runs hub so you can eyeball the dashboard in every phase at any time.\n\n**Verification:** 183 tests OK (5 skipped); the smoke test asserts every fixture's JSON is valid; lint gate clean.\n\n**Where it lives:** branch `preview/done` — see the **Changes** tab for the diff.",
+  "planBlocks": [
+    { "id": "b1", "title": "1. Fixtures directory ✅", "body": "Done. `templates/fixtures/` holds four phase fixtures, committed (since `.workflow/` is gitignored)." },
+    { "id": "b2", "title": "2. preview.py harness ✅", "body": "Done. Copies fixtures, stamps `index.html` from the live template, resolves `baseCommit` for a real diff, opens `/hub`." },
+    { "id": "b3", "title": "3. dev.py wiring ✅", "body": "Done. `python dev.py preview` (+ `--no-browser`, `--clean`)." },
+    { "id": "b4", "title": "4. Smoke test ✅", "body": "Done. `tests/test_preview_fixtures.py` validates every fixture's JSON and required keys." }
+  ],
+  "questions": [],
+  "workstreams": [
+    { "id": "ws1", "title": "Fixtures directory + phase data", "status": "done" },
+    { "id": "ws2", "title": "preview.py harness", "status": "done" },
+    { "id": "ws3", "title": "dev.py wiring + smoke test", "status": "done" }
+  ],
+  "updatedAt": "2026-06-25T10:48:00"
+}

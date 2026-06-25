@@ -1,0 +1,25 @@
+{
+  "slug": "_preview-implement",
+  "title": "Preview · agents implementing the approved plan",
+  "phase": "IMPLEMENT",
+  "status": "working",
+  "iteration": 2,
+  "now": "wf-coder · editing scripts/preview.py",
+  "nowAt": "2026-06-25T10:31:00",
+  "progress": { "label": "Work-streams", "done": 1, "total": 3 },
+  "summary": "## Implementing 🛠️\n\nThis is the **IMPLEMENT** look — the plan is approved and parallel coding work-streams are running. The status badge reads *agent working*, the progress track fills as work-streams complete, and the **Now: …** line shows what the agent is doing right now.\n\n**What this fixture demonstrates:** the work-stream summary chip with mixed states (done / in-progress / to-do), the sub-agents list on the Tracing tab, the live token/tool feed, and the progress bar — the surfaces you watch while agents build.",
+  "codebaseMap": "## What's being touched\n\n- `templates/fixtures/*` — four phase fixtures (**done**).\n- `scripts/preview.py` — the harness: copy fixtures → `.workflow/tasks/`, stamp `index.html` from the current template, resolve `baseCommit`, open `/hub` (**in progress**).\n- `dev.py` — new `preview` sub-command (**to do**).\n- `tests/test_preview_fixtures.py` — JSON validity smoke test (**to do**).",
+  "planBlocks": [
+    { "id": "b1", "title": "1. Fixtures directory ✅", "body": "Done. Four fixtures under `templates/fixtures/`, one per phase, each with the data files the server serves." },
+    { "id": "b2", "title": "2. preview.py harness ⏳", "body": "In progress. Copy + `index.html` stamping land; `baseCommit` resolution and the server hand-off are being wired now." },
+    { "id": "b3", "title": "3. dev.py wiring", "body": "Queued behind b2." },
+    { "id": "b4", "title": "4. Smoke test", "body": "Queued behind b2." }
+  ],
+  "questions": [],
+  "workstreams": [
+    { "id": "ws1", "title": "Fixtures directory + phase data", "status": "done" },
+    { "id": "ws2", "title": "preview.py harness", "status": "in_progress" },
+    { "id": "ws3", "title": "dev.py wiring + smoke test", "status": "todo" }
+  ],
+  "updatedAt": "2026-06-25T10:31:00"
+}

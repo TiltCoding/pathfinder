@@ -1,0 +1,4 @@
+{"ts": "2026-06-25T10:50:00Z", "session_id": "preview-ask-0001", "event": "tool.start", "tool": "Task", "toolUseId": "toolu_prev_a1", "spanId": "tool-toolu_prev_a1", "kind": "task", "arg": "ai-pathfinder:ask-researcher — read docs/knowledge then the server code"}
+{"ts": "2026-06-25T10:52:10Z", "session_id": "preview-ask-0001", "event": "tool.end", "tool": "Task", "toolUseId": "toolu_prev_a1", "spanId": "tool-toolu_prev_a1", "ok": true}
+{"ts": "2026-06-25T10:52:20Z", "session_id": "preview-ask-0001", "event": "tool.start", "tool": "Read", "toolUseId": "toolu_prev_a2", "spanId": "tool-toolu_prev_a2", "kind": "tool", "arg": "docs/knowledge/architecture.md"}
+{"ts": "2026-06-25T10:52:21Z", "session_id": "preview-ask-0001", "event": "tool.end", "tool": "Read", "toolUseId": "toolu_prev_a2", "spanId": "tool-toolu_prev_a2", "ok": true}

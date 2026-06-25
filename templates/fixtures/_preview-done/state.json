@@ -1,0 +1,22 @@
+{
+  "slug": "_preview-done",
+  "title": "Preview · completed task (summary, commit, diff)",
+  "phase": "DONE",
+  "iteration": 3,
+  "checkpoint": "working",
+  "createdAt": "2026-06-25T10:00:00",
+  "updatedAt": "2026-06-25T10:48:00",
+  "planApproved": true,
+  "commit": "preview1",
+  "verification": "183 tests OK (5 skipped); preview harness installs 4 fixtures, stamps index.html from the live template, opens /hub; lint gate clean",
+  "questions": [],
+  "answers": [],
+  "workstreams": [
+    { "id": "ws1", "title": "Fixtures directory + phase data", "blocks": ["b1"], "status": "done" },
+    { "id": "ws2", "title": "preview.py harness", "blocks": ["b2"], "status": "done" },
+    { "id": "ws3", "title": "dev.py wiring + smoke test", "blocks": ["b3", "b4"], "status": "done" }
+  ],
+  "subagents": [],
+  "branch": "preview/done",
+  "baseCommit": "AUTO:HEAD~3"
+}

@@ -1,0 +1,4 @@
+{"role": "human", "text": "В блоке 2 — где будут жить демо-данные, если .workflow в gitignore?", "ts": "2026-06-25T10:08:00", "phase": "PLAN GATE", "anchor": "b2", "quote": "copies each fixture into `.workflow/tasks/`"}
+{"role": "agent", "text": "Хороший вопрос — источник истины коммитим в `templates/fixtures/`, а `.workflow/tasks/` это лишь рантайм-копия, которую харнесс пересоздаёт. Так превью всегда отражает текущий `dashboard.html`. **Ок зафиксировать `templates/fixtures/` как место хранения?**", "ts": "2026-06-25T10:09:00", "phase": "PLAN GATE", "anchor": "b2", "needsAnswer": true}
+{"role": "human", "text": "Как это запускать?", "ts": "2026-06-25T10:10:00", "phase": "PLAN GATE"}
+{"role": "agent", "text": "Одной командой из корня проекта: `python dev.py preview`. Она поставит фикстуры, обновит `index.html` из текущего шаблона и откроет хаб.", "ts": "2026-06-25T10:10:20", "phase": "PLAN GATE"}

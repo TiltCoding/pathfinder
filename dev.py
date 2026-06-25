@@ -8,6 +8,7 @@
 
     python dev.py test [цели unittest...]
     python dev.py serve [--port N] [--open SLUG] [--no-browser] [--no-forward]
+    python dev.py preview [--no-browser] [--clean]
     python dev.py lint
 """
 import argparse
@@ -43,6 +44,15 @@ def cmd_serve(args):
     return _run(cmd)
 
 
+def cmd_preview(args):
+    cmd = [sys.executable, os.path.join("scripts", "preview.py")]
+    if args.no_browser:
+        cmd.append("--no-browser")
+    if args.clean:
+        cmd.append("--clean")
+    return _run(cmd)
+
+
 def cmd_lint(args):
     checker = os.path.join(ROOT, "scripts", "check_stdlib.py")
     if os.path.exists(checker):
@@ -75,6 +85,16 @@ def main(argv=None):
     p_serve.add_argument("--no-browser", action="store_true", help="не открывать браузер")
     p_serve.add_argument("--no-forward", action="store_true", help="не форвардить в Langfuse")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_preview = sub.add_parser(
+        "preview",
+        help="поставить фазовые фикстуры дашборда и открыть хаб",
+    )
+    p_preview.add_argument("--no-browser", action="store_true",
+                           help="не открывать браузер")
+    p_preview.add_argument("--clean", action="store_true",
+                           help="удалить _preview-* задачи и выйти")
+    p_preview.set_defaults(func=cmd_preview)
 
     p_lint = sub.add_parser("lint", help="линт-гейт stdlib-инвариантов (стаб до feat-8)")
     p_lint.set_defaults(func=cmd_lint)

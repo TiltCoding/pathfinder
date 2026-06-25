@@ -1,0 +1,8 @@
+{"ts": "2026-06-25T10:20:05Z", "session_id": "preview-impl-0001", "event": "tool.start", "tool": "Task", "toolUseId": "toolu_prev_i1", "spanId": "tool-toolu_prev_i1", "kind": "task", "arg": "ai-pathfinder:wf-coder — work-stream ws1: fixtures directory"}
+{"ts": "2026-06-25T10:23:40Z", "session_id": "preview-impl-0001", "event": "tool.end", "tool": "Task", "toolUseId": "toolu_prev_i1", "spanId": "tool-toolu_prev_i1", "ok": true}
+{"ts": "2026-06-25T10:23:50Z", "session_id": "preview-impl-0001", "event": "tool.start", "tool": "Task", "toolUseId": "toolu_prev_i2", "spanId": "tool-toolu_prev_i2", "kind": "task", "arg": "ai-pathfinder:wf-coder — work-stream ws2: preview.py harness"}
+{"ts": "2026-06-25T10:24:30Z", "session_id": "preview-impl-0001", "event": "tool.start", "tool": "Write", "toolUseId": "toolu_prev_i3", "spanId": "tool-toolu_prev_i3", "kind": "tool", "arg": "scripts/preview.py"}
+{"ts": "2026-06-25T10:24:31Z", "session_id": "preview-impl-0001", "event": "tool.end", "tool": "Write", "toolUseId": "toolu_prev_i3", "spanId": "tool-toolu_prev_i3", "ok": true}
+{"ts": "2026-06-25T10:25:00Z", "session_id": "preview-impl-0001", "event": "tool.start", "tool": "Bash", "toolUseId": "toolu_prev_i4", "spanId": "tool-toolu_prev_i4", "kind": "bash", "arg": "python dev.py test tests.test_preview_fixtures"}
+{"ts": "2026-06-25T10:25:12Z", "session_id": "preview-impl-0001", "event": "tool.end", "tool": "Bash", "toolUseId": "toolu_prev_i4", "spanId": "tool-toolu_prev_i4", "ok": true}
+{"ts": "2026-06-25T10:30:00Z", "session_id": "preview-impl-0001", "event": "tool.start", "tool": "Task", "toolUseId": "toolu_prev_i5", "spanId": "tool-toolu_prev_i5", "kind": "task", "arg": "ai-pathfinder:wf-documenter — area doc for the preview harness"}
