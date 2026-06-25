@@ -73,19 +73,37 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   если задан, существует и это git-дерево; иначе fallback на `self.workspace.root`. Путь
   валидируется, битый никогда не ломает страницу. Прокинут во **все** git-вызовы вкладки «Изменения»
   (`_build_changes` `:597`, `_changes_file` `:684`, `_base_commit` `:568`, `_is_noise`/`_count_lines`).
-- `scripts/server.py:706` — `_hub()`: агрегат всех задач; кэш+лок (TTL 2 c), мягкий дефолт
-  `{"runs":[], "analytics":{}, "error":…}`. Read-only — `telemetry.cursor`/Langfuse не трогает.
-- `scripts/server.py:724` — `_build_hub()`: обходит `_list_tasks()`, по задаче зовёт `_hub_run`;
-  одна битая задача не топит агрегат (per-task try/except).
-- `scripts/server.py:740` — `_hub_run(slug, now)`: карточка задачи из `state.json` (авторитетно для
-  phase/iteration/таймстемпов) + `dashboard.json` (title/status/progress) + лёгкий проход телеметрии.
-- `scripts/server.py:782` — `_hub_is_active(phase, updated, now)`: критерий active/history (q7).
-- `scripts/server.py:792` — `_hub_duration_ms(...)`: длительность `updatedAt − createdAt` в мс.
-- `scripts/server.py:800` — `_hub_telemetry(slug)`: **один дешёвый проход** `telemetry.jsonl`
+- `_hub()` (`scripts/server.py:855`): агрегат всех задач; кэш+лок (внешний TTL **3 c**, `now+3.0`,
+  `:872`), мягкий дефолт `{"runs":[], "analytics":{}, "error":…}`. Read-only — `telemetry.cursor`/Langfuse
+  не трогает.
+- `_build_hub(now=None)` (`scripts/server.py:887`): обходит `_list_tasks()`, по задаче зовёт `_hub_run`;
+  одна битая задача не топит агрегат (per-task try/except). В конце **прунит** из per-task кэша slug'и
+  исчезнувших задач (`:903–907`, под `_hub_card_lock`). `now` дефолтится в `time.time()`; тест передаёт
+  явно для детерминизма active/history.
+- **Per-task mtime-кэш карточек** (`scripts/server.py:852–853`): класс-атрибуты
+  `_hub_card_cache` (`slug -> {sig, card}`) + `_hub_card_lock`. См. блок «Per-task mtime-кэш хаба» ниже.
+- `_stat_sig(path)` (`scripts/server.py:910`): дешёвая подпись файла `(st_mtime, st_size)` без чтения
+  тела; `None` при `OSError`. `size` дополняет `mtime`, чтобы поймать append в ту же секунду на ФС с
+  грубой гранулярностью (`telemetry.jsonl` append-only).
+- `_hub_signature(slug)` (`scripts/server.py:921`): кортеж из трёх `_stat_sig` в фиксированном порядке —
+  `telemetry.jsonl`, `state.json`, `dashboard.json`. Любое изменение любого из трёх флипает сигнатуру →
+  пересборка.
+- `_hub_run(slug, now)` (`scripts/server.py:933`): карточка задачи, **мемоизированная per-task по
+  сигнатуре**. На хит сигнатуры сырая карточка переиспользуется дословно (без `read_json`, без прохода
+  телеметрии); на промах — зовёт `_hub_build_card` и кладёт в кэш. Поле `active` **всегда**
+  пересчитывается от `now` (см. инвариант). `os.stat` и тяжёлый билд — вне лока; под локом только
+  чтение/запись кэша. Кэшированный dict **не мутируется** — возвращается копия `dict(card, active=…)`.
+- `_hub_build_card(slug)` (`scripts/server.py:955`): сырая карточка **без** now-зависимого поля
+  `active` — из `state.json` (авторитетно для phase/iteration/таймстемпов) + `dashboard.json`
+  (title/status/progress) + лёгкий проход телеметрии. Зависит только от трёх файлов → кэшируема.
+- `_hub_is_active(phase, updated, now)` (`scripts/server.py:1002`): критерий active/history (q7).
+- `_hub_duration_ms(...)` (`scripts/server.py:1012`): длительность `updatedAt − createdAt` в мс.
+- `_hub_telemetry(slug)` (`scripts/server.py:1020`): **один дешёвый проход** `telemetry.jsonl`
   (`_aipf._iter_lines`) — без транскриптов и `build_trace`: счётчики events/activity/subagents,
-  множество session_id, first/last ts. Терпит битый/отсутствующий файл (нули).
-- `scripts/server.py:833` — `_hub_analytics(runs)`: кросс-задачная аналитика (только событийная).
-- `scripts/server.py:858` — `_median(values)`.
+  множество session_id, first/last ts. Терпит битый/отсутствующий файл (нули). **Это и есть дорогая
+  часть, ради которой введён сигнатурный кэш** — для неизменившихся задач не вызывается.
+- `_hub_analytics(runs)` (`scripts/server.py:1067`): кросс-задачная аналитика (только событийная).
+- `_median(values)` — медиана длительностей.
 - `scripts/server.py:242` — маршрут `/hub.json` (без slug, особый случай как `/health`);
   `:244` — маршрут `/hub` (отдаёт `HUB_PAGE`).
 - `scripts/server.py:1200` — константа `HUB_PAGE`: само-содержащий HTML (инлайн `<style>`+`<script>`,
@@ -128,11 +146,11 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   firstTs, lastTs, durationMs }
 ```
 
-**Поле `awaiting`** (`_hub_run`, `scripts/server.py:793`) — задача ждёт ответа человека (висит на
+**Поле `awaiting`** (`_hub_build_card`, `scripts/server.py:985`) — задача ждёт ответа человека (висит на
 батч-гейте). OR-формула из двух источников: `state.checkpoint == "awaiting-batch"` **или**
 `dashboard.status == "awaiting-batch"` (читаем оба — какой из артефактов опередил другой, тот и
 сработает). Добавлено **дозаписью** (инвариант «только добавление»). Поле **косметическое** — влияет
-только на отображение, **НЕ** на критерий active/history: `_hub_is_active` (`:782`) не тронут, поэтому
+только на отображение, **НЕ** на критерий active/history: `_hub_is_active` (`:1002`) не тронут, поэтому
 терминальная задача, оставшаяся в `awaiting`, всё равно уезжает в «Историю» по своему `phase`/окну.
 
 `analytics` (`_hub_analytics`, **только событийная, БЕЗ токенов/cost**):
@@ -210,9 +228,44 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 (`copyDrainCmd`, команда `DRAIN_CMD = "/loop /feature"`) через `navigator.clipboard` с
 `execCommand`-fallback для небезопасного origin; toast подтверждения портирован из `dashboard.html`.
 
+## Per-task mtime-кэш хаба (производительность пересборки `/hub.json`)
+
+Пересборка `/hub.json` **мемоизируется per-task** по сигнатуре `(mtime, size)` трёх входных файлов
+задачи. Это второй слой кэша **под** внешним TTL-кэшем `_hub` (`now+3.0`).
+
+```
+GET /hub.json
+  └ _hub()            внешний TTL-кэш 3 c  (нижняя граница; ≥ интервала поллинга хаба)
+      └ _build_hub()  обход _list_tasks() + прунинг исчезнувших slug
+          └ _hub_run(slug, now)  ──► sig = _hub_signature(slug)   [3× os.stat, без чтения тел]
+                 ├ sig совпала с кэшем → сырую карточку берём из памяти (НЕ читаем файлы)
+                 └ sig изменилась      → _hub_build_card(slug)     [read_json + _hub_telemetry]
+              затем active = _hub_is_active(phase, updatedAt, now)  ВСЕГДА пересчитывается
+```
+
+- **Сигнатура — три файла, фиксированный порядок** (`_hub_signature` `:921`): `telemetry.jsonl`,
+  `state.json`, `dashboard.json` — ровно те, от которых зависит сырая карточка. `(st_mtime, st_size)`
+  снимается без чтения тела (`_stat_sig` `:910`); `size` ловит append в ту же секунду на ФС с грубой
+  гранулярностью mtime. Любое изменение любого файла флипает сигнатуру → перепарс.
+- **Перепарс только изменившихся.** Дорогой проход `_hub_telemetry` (всё `telemetry.jsonl` задачи) +
+  `read_json(state/dashboard)` идут **только для задач с изменившейся сигнатурой**. Неизменившиеся
+  задачи отдают сырую карточку из `_hub_card_cache` без I/O по их телу. Горячий путь становится
+  пропорционален числу **изменившихся** задач, а не всех (типично 1–2 активные).
+- **`active` пересчитывается от `now` всегда.** Сырая карточка (`_hub_build_card` `:955`) намеренно
+  **не содержит** поле `active` — оно зависит от стенных часов (окно `HUB_ACTIVE_WINDOW_SEC`, 24 ч) и
+  должно отражать момент запроса, а не момент построения карточки. `_hub_run` дописывает его на каждый
+  вызов: `dict(card, active=_hub_is_active(card["phase"], card["updatedAt"], now))`. Так задача,
+  пересёкшая границу 24 ч **без записи в файлы**, корректно уезжает в историю, хотя её карточка из кэша.
+- **Кэш не мутируется.** Возвращается копия (`dict(card, …)`), сырой объект в кэше остаётся чистым.
+- **Прунинг.** `_build_hub` после обхода удаляет из кэша slug'и задач, которых больше нет в
+  `_list_tasks()` (под `_hub_card_lock`) — кэш не растёт за счёт исчезнувших задач.
+- **Лок-дисциплина.** `os.stat` и тяжёлый `_hub_build_card` идут **вне** `_hub_card_lock`; под локом —
+  только чтение/запись `_hub_card_cache` (паттерн как у кэша `/trace`).
+- **Контракт `/hub.json` не изменён** — те же поля карточки/аналитики; это чистая перф-оптимизация.
+
 ## Критерий active vs history (q7)
 
-Задача **активна** (`_hub_is_active`, `scripts/server.py:782`), если:
+Задача **активна** (`_hub_is_active`, `scripts/server.py:1002`), если:
 `phase ∉ {DONE, ABORTED}` **И** `updatedAt` свежее `HUB_ACTIVE_WINDOW_SEC` (24 ч). Иначе — история.
 
 - Источник полей — `state.json` (надёжнее телеметрии: `phase`/`iteration` в событиях бывают `null`).
@@ -223,9 +276,18 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 - **Одиночный сценарий не ломается.** Без `worktreePath` в `state.json` — diff идёт по
   `self.workspace.root` (как раньше); без per-session `active/<sid>.json` — старое поведение
   `active_slug`. Поля добавлены **только дозаписью** (инвариант «только добавление», conventions.md).
-- **Хаб read-only.** `_hub`/`_build_hub`/`_hub_telemetry` не пишут ничего, `telemetry.cursor` и
-  Langfuse не затрагивают — те же гарантии, что у `/changes` и трейс-эндпоинтов. `_queue` — тоже
-  чистое чтение (passthrough `dispatch-queue.json`).
+- **Хаб read-only.** `_hub`/`_build_hub`/`_hub_run`/`_hub_build_card`/`_hub_telemetry` не пишут ничего
+  на диск, `telemetry.cursor` и Langfuse не затрагивают — те же гарантии, что у `/changes` и
+  трейс-эндпоинтов (`_hub_card_cache` — память процесса, не файлы). `_queue` — тоже чистое чтение
+  (passthrough `dispatch-queue.json`).
+- **`active` НЕ кэшируется (now-инвариант).** Per-task кэш хранит **сырую** карточку без поля `active`;
+  оно пересчитывается от `now` на каждый вызов `_hub_run` (окно 24 ч). Никогда не отдаём `active` из
+  кэша — иначе задача застряла бы в «активных» после пересечения окна без записи в файлы. Сырая карточка
+  не мутируется (возвращается копия). См. блок «Per-task mtime-кэш хаба».
+- **Сигнатура per-task кэша = `(mtime, size)` трёх файлов.** Карточка зависит только от
+  `telemetry.jsonl`/`state.json`/`dashboard.json`; любое их изменение флипает сигнатуру и форсит
+  перепарс. Не добавляй в карточку поле, зависящее от чего-то **вне** этих трёх файлов (или от `now`),
+  не расширив сигнатуру / не вынеся пересчёт в `_hub_run` — иначе кэш отдаст устаревшее значение.
 - **`/queue.json` мимо кэша `_hub`.** Очередь читается **отдельным** эндпоинтом, а не подмешивается в
   `/hub.json`, чтобы не утяжелять горячий проход телеметрии хаба. Секция очереди в `HUB_PAGE` —
   **независимый узел `#queue-root` со своим поллингом**, который `render()` не касается → дифф
@@ -237,8 +299,9 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 - **Хаб не зовёт `build_trace`.** Аналитика и счётчики строятся одним проходом `telemetry.jsonl` без
   транскриптов: транскрипты дороги и **физически отсутствуют в worktree** (живут в `~/.claude/...`).
   Поэтому токенов/cost в кросс-задачном агрегате нет (см. ADR-0010).
-- **Кэш+лок+мягкая деградация** у `_hub` (TTL 2 c) и `_changes` — не ломать; одна битая задача не топит
-  агрегат.
+- **Кэш+лок+мягкая деградация** у `_hub` (внешний TTL 3 c), per-task кэша карточек и `_changes` — не
+  ломать; одна битая задача не топит агрегат. Внешний TTL — нижняя граница (поглощает залпы поллинга);
+  per-task сигнатурный кэш экономит проход телеметрии **внутри** пересборки на промахе TTL.
 - **`worktreePath` валидируется** в `_task_root` (существование + `rev-parse --is-inside-work-tree`)
   перед использованием как `cwd` для git — битый путь молча уходит в fallback.
 - **`scripts/worktree.py` идемпотентен.** `add` на повторе переиспользует существующий worktree/ветку
@@ -267,15 +330,20 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 
 ## Как расширять
 
-- **Новое поле карточки хаба:** дополнить `_hub_run` (`scripts/server.py:740`) и потребление в
-  `runCard`/`histRow` внутри `HUB_PAGE`; помнить про дифф-поллинг (`JSON.stringify`).
+- **Новое поле карточки хаба:** дополнить `_hub_build_card` (`scripts/server.py:955`) — **не**
+  `_hub_run` — если поле выводится из трёх входных файлов (тогда оно автоматически кэшируется и
+  инвалидируется сигнатурой). Если поле зависит от `now` или чего-то **вне** трёх файлов — считать его в
+  `_hub_run` поверх кэшированной карточки (как `active`), **не** класть в сырую карточку. Потребление —
+  в `runCard`/`histRow` внутри `HUB_PAGE`; помнить про дифф-поллинг (`JSON.stringify`).
+- **Новый входной файл, от которого зависит карточка:** добавить его `_stat_sig` в `_hub_signature`
+  (`:921`), иначе его изменение не инвалидирует кэш.
 - **Новая метрика аналитики:** считать её одним проходом телеметрии в `_hub_telemetry` или агрегатом в
   `_hub_analytics` — **не** тащить транскрипты/`build_trace` в хаб (дорого, нет в worktree). Токены —
   только лениво на дашборде конкретной задачи.
 - **Сменить раскладку хаба:** правится только `HUB_PAGE` — данные `/hub.json` layout-агностичны,
   бэкенд трогать не нужно.
 - **Другой критерий active/history:** менять константы `HUB_ACTIVE_WINDOW_SEC`/`HUB_TERMINAL_PHASES`
-  и `_hub_is_active` (`scripts/server.py:782`), а не фильтр на фронте.
+  и `_hub_is_active` (`scripts/server.py:1002`), а не фильтр на фронте.
 - **Новая подкоманда `worktree.py`:** добавить парсер в `build_parser` (`scripts/worktree.py:321`) +
   `cmd_*`; держать stdlib-only и идемпотентность, git-вызовы — через `_git` (никогда не падает).
 - **Новое поле/действие в секции очереди:** правится `renderQueue`/`queueRow` в `HUB_PAGE`
@@ -284,6 +352,6 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   подмешивать очередь в `/hub.json` и **не** наполнять `#queue-root` из `render()` — оставить независимый
   поллинг `tickQueue`, иначе дифф `/hub.json` затрёт секцию.
 
-_updated: 2026-06-16 (awaiting-human-signal: косметический флаг awaiting + бейдж/подъём карточки)_
+_updated: 2026-06-25 (hub-json-mtime-cache: per-task mtime-кэш карточек хаба — сигнатура `(mtime,size)` трёх файлов `telemetry.jsonl`/`state.json`/`dashboard.json`, перепарс только изменившихся, инвариант «`active` не кэшируется» — пересчёт от `now`, прунинг исчезнувших, внешний TTL 3 c как нижняя граница; обновлены ориентиры по именам функций `_hub`/`_build_hub`/`_hub_run`/`_hub_build_card`/`_hub_telemetry`/`_hub_is_active`. Предыдущее — awaiting-human-signal: косметический флаг awaiting + бейдж/подъём карточки)_
 </content>
 </invoke>
