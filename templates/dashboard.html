@@ -1671,14 +1671,25 @@ function render(data, replies){
 
   if(data.demo && (data.demo.variants||[]).length) h += card(t("card.demo"), renderDemo(data.demo, repliesByBlock, threadsByAnchor));
 
+  // questions keyed by id: lets a plan block inline its matching choice (gate-pick-in-place)
+  const questionsById = {};
+  (data.questions||[]).forEach(item => { questionsById[item.id] = item; });
+  const planIds = new Set((data.planBlocks||[]).map(b => b.id));
+
   if((data.planBlocks||[]).length){
     let b = "";
     for(const blk of data.planBlocks){
       const has = draftItems.some(i => i.blockId === blk.id);
+      // a choice question sharing this block's id is drawn inline in the footer, above regionFooter
+      const inlineQ = questionsById[blk.id];
+      const inline = (inlineQ && inlineQ.kind === "choice")
+        ? `<div class="inline-choice">${choiceInput(inlineQ, draftItems.find(i => i.kind==="answer" && i.questionId===inlineQ.id), repliesByQ[inlineQ.id] || [])}</div>`
+        : "";
       b += `<div class="block ${has?'has-draft':''}" data-block="${esc(blk.id)}" data-anchor="${esc(blk.id)}">
         <div class="block-head"><span class="block-title">${esc(blk.title||"")}</span>
           <span class="block-id">${esc(blk.id)}</span></div>
         <div class="md block-body">${md(blk.body||"")}</div>
+        ${inline}
         ${regionFooter(blk.id, repliesByBlock, threadsByAnchor)}
       </div>`;
     }
@@ -1686,29 +1697,16 @@ function render(data, replies){
   }
 
   if((data.questions||[]).length){
-    let q = "";
+    let q = "", shown = 0;
     for(const item of data.questions){
+      // a choice already inlined into its matching plan block is skipped here (no double render)
+      if(planIds.has(item.id) && item.kind === "choice") continue;
       const ans = draftItems.find(i => i.kind==="answer" && i.questionId===item.id);
       const reps = repliesByQ[item.id] || [];
-      let input;
-      if(item.kind === "choice" && (item.options||[]).length){
-        // an answer whose text matches no option is the human's own free-form reply
-        const ownText = (ans && !item.options.includes(ans.text)) ? ans.text : "";
-        const opts = item.options.map(o =>
-          `<label class="opt"><input type="radio" name="q-${esc(item.id)}" value="${esc(o)}" ${ans&&ans.text===o?"checked":""}> ${esc(o)}</label>`).join("");
-        input = opts + `<div class="own-answer">
-          <span class="own-lbl">${esc(t("card.ownAnswer"))}</span>
-          <textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.ownAnswerPlaceholder"))}">${esc(ownText)}</textarea>
-        </div>`;
-      } else {
-        input = `<textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.answerPlaceholder"))}">${esc(ans?ans.text:"")}</textarea>`;
-      }
-      q += `<div class="question ${ans?'answered':''}" data-question="${esc(item.id)}" data-kind="${esc(item.kind||'open')}">
-        <div class="q-text">${esc(item.text)}</div>${input}
-        ${reps.map(r=>`<div class="reply"><div class="who">${esc(t("thread.who.agent"))}</div>${md(r.text)}</div>`).join("")}
-      </div>`;
+      q += choiceInput(item, ans, reps);
+      shown++;
     }
-    h += card(t("card.questions"), q);
+    if(shown) h += card(t("card.questions"), q);
   }
 
   if((data.workstreams||[]).length){
@@ -1905,6 +1903,30 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
   return intro + `<div class="variants">${v}</div>`;
 }
 function labelWs(s){ return {todo:t("ws.todo"), in_progress:t("ws.in_progress"), done:t("ws.done")}[s||"todo"] || s; }
+
+// Render one question (.question block) — choice = radios + own-answer, else free-form textarea.
+// Same markup/attributes (name="q-<id>", data-answer/-question/-kind) wherever it's drawn, so the
+// wireBlocks selectors pick it up identically inline (gate-pick-in-place) or in the Questions card.
+function choiceInput(item, ans, reps){
+  reps = reps || [];
+  let input;
+  if(item.kind === "choice" && (item.options||[]).length){
+    // an answer whose text matches no option is the human's own free-form reply
+    const ownText = (ans && !item.options.includes(ans.text)) ? ans.text : "";
+    const opts = item.options.map(o =>
+      `<label class="opt"><input type="radio" name="q-${esc(item.id)}" value="${esc(o)}" ${ans&&ans.text===o?"checked":""}> ${esc(o)}</label>`).join("");
+    input = opts + `<div class="own-answer">
+      <span class="own-lbl">${esc(t("card.ownAnswer"))}</span>
+      <textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.ownAnswerPlaceholder"))}">${esc(ownText)}</textarea>
+    </div>`;
+  } else {
+    input = `<textarea data-answer="${esc(item.id)}" placeholder="${esc(t("card.answerPlaceholder"))}">${esc(ans?ans.text:"")}</textarea>`;
+  }
+  return `<div class="question ${ans?'answered':''}" data-question="${esc(item.id)}" data-kind="${esc(item.kind||'open')}">
+    <div class="q-text">${esc(item.text)}</div>${input}
+    ${reps.map(r=>`<div class="reply"><div class="who">${esc(t("thread.who.agent"))}</div>${md(r.text)}</div>`).join("")}
+  </div>`;
+}
 
 // ----- interactions -----
 function wireBlocks(){
