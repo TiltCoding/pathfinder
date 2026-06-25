@@ -131,6 +131,17 @@
   `.actionbar.awaiting` (`:163`) красит фон/верхнюю границу из `--warn-soft`/`--warn` (токены есть в
   **обеих** темах, ADR-0015).
 
+> **Чип «N из M отмечено Делаем» на SELECT GATE (gate-dispatch-counter).** На actionbar есть чип
+> `#dispatch-chip` (`:667`, `updateDispatchChip` `:2042`) — индикатор «сколько feat-K фич помечено к
+> реализации» на гейте плана `/improve`. **M** = `choice`-вопросы с id `^feat-\d+$`, у которых есть
+> одноимённая карточка в `planBlocks` (обычные `q1`/`q2` и **drain-mode**-вопросы без парной карточки
+> **не** считаются). **N** = из них те, чей `answer.text === options[0]` («Делаем») **или** свободный
+> текст на `делаем|делай|do`. Виден только при `draftItems.length>0 && M>0` (после Submit/вне гейта —
+> `hidden`); зовётся из `updateQueue()` (`:2039`). **i18n-приём:** числа — в отдельных `<b>`
+> (`#dispatch-done`/`#dispatch-total`), т.к. локальная `t()` не подставляет плейсхолдеры; вокруг них
+> статичные ключи `actionbar.dispatchOf`/`actionbar.dispatchCount` (в обоих блоках `STR`). Чистый FE,
+> 0 правок сервера (ADR-0008).
+
 > **Именная шероховатость токена.** Подсветка дашборда берёт `--warn-soft`/`--warn`, а аналогичная
 > подсветка карточки в хабе — `--awaiting-soft`/`--warn` (`scripts/server.py`). **Значения одинаковые**
 > (`#fff7ed` светлая / `#2a2113` тёмная), имена разные — зафиксировано в ADR-0015 как осознанная
@@ -240,4 +251,4 @@
   либо потребует +1 строки в сервере — см. `areas/dashboard-changes-tab.md`-стиль решения (дерево/схема
   на фронте, бэкенд почти нетронут).
 
-_updated: 2026-06-24 (task-page-left-sidebar: хром страницы задачи стал двухколоночным — глобальный sticky `aside.task-sidebar` с INFO-кластером identity/статус/now/прогресс/ws/open-threads, топ-бар сведён к контролам+табам; инвариант «сайдбар вне `#content` и вне `switchTab`, все id сохранены»; реюз `.page-grid`/`.docs-grid` + коллапс 860px; чистый FE, 0 правок сервера/токенов/i18n). Предыдущее — task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_
+_updated: 2026-06-25 (gate-dispatch-counter: чип `#dispatch-chip` «N из M отмечено Делаем» на SELECT GATE — M=feat-K choice-вопросы с одноимёнными planBlock-карточками (drain-mode/q1/q2 не в счёте), N=ответ=options[0] или свободный «делаем/do…», видимость `draftItems.length>0 && M>0`, числа вне `t()` в отдельных `<b>`; чистый FE, 0 правок сервера). Предыдущее — task-page-left-sidebar: хром страницы задачи стал двухколоночным — глобальный sticky `aside.task-sidebar` с INFO-кластером identity/статус/now/прогресс/ws/open-threads, топ-бар сведён к контролам+табам; инвариант «сайдбар вне `#content` и вне `switchTab`, все id сохранены»; реюз `.page-grid`/`.docs-grid` + коллапс 860px; чистый FE, 0 правок сервера/токенов/i18n). Предыдущее — task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_

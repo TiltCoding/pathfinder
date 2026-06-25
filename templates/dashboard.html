@@ -242,6 +242,9 @@
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
   .queue { font-size: 13px; color: var(--muted); flex: 1; }
   .queue b { color: var(--ink); }
+  /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
+  .dispatch-chip { font-size: 13px; color: var(--muted); }
+  .dispatch-chip b { color: var(--ink); }
   /* основные действия — чёрная кнопка (дизайн: «Отправить»/«Send») */
   button.primary { background: var(--sel-bg); color: var(--sel-fg); border: none; border-radius: 8px; padding: 9px 18px; font: 600 13px var(--font-sans); cursor: pointer; }
   button.primary:hover:not(:disabled) { opacity: .9; }
@@ -661,6 +664,7 @@
   <div class="actionbar-inner">
     <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
     <div class="queue">Edit queue: <b id="queue-count">0</b></div>
+    <div class="dispatch-chip" id="dispatch-chip" hidden><b id="dispatch-done">0</b> of <b id="dispatch-total">0</b> <span class="dispatch-lbl">marked Do</span></div>
     <button class="ghost" id="btn-approve">Approve plan</button>
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
   </div>
@@ -929,6 +933,8 @@ const STR = {
     "pop.send": "Send",
     "actionbar.hint": "Mark features → Submit → Approve. No answer = Skip.",
     "actionbar.queue": "Edit queue:",
+    "actionbar.dispatchOf": "of",
+    "actionbar.dispatchCount": "marked Do",
     "actionbar.approve": "Approve plan",
     "actionbar.submit": "Send to agent for revision",
     "chat.title": "Chat with agent",
@@ -1134,6 +1140,8 @@ const STR = {
     "pop.send": "Отправить",
     "actionbar.hint": "Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.",
     "actionbar.queue": "Очередь правок:",
+    "actionbar.dispatchOf": "из",
+    "actionbar.dispatchCount": "отмечено Делаем",
     "actionbar.approve": "Утвердить план",
     "actionbar.submit": "Отправить агенту на доработку",
     "chat.title": "Чат с агентом",
@@ -1342,6 +1350,18 @@ function applyStaticStrings(){
   set("#chat-attach-hint", t("attach.hint"));
   // queue-label «Edit queue:» — переписываем сохраняя <b id="queue-count">
   const q = $(".queue"); if(q){ const c = q.querySelector("#queue-count"); q.textContent = t("actionbar.queue") + " "; if(c) q.appendChild(c); }
+  // dispatch-chip: «<b>N</b> из <b>M</b> отмечено Делаем» — перестраиваем сохраняя оба <b> с числами
+  const dc = $("#dispatch-chip");
+  if(dc){
+    const done = dc.querySelector("#dispatch-done"), total = dc.querySelector("#dispatch-total");
+    dc.textContent = "";
+    if(done) dc.appendChild(done);
+    dc.appendChild(document.createTextNode(" " + t("actionbar.dispatchOf") + " "));
+    if(total) dc.appendChild(total);
+    const lbl = document.createElement("span"); lbl.className = "dispatch-lbl";
+    lbl.textContent = " " + t("actionbar.dispatchCount");
+    dc.appendChild(lbl);
+  }
   // chat-head: «Chat with agent» + подсказка
   const ch = $(".chat-head"); if(ch){ const t1 = ch.querySelector("span"); if(t1 && !t1.classList.contains("chat-hint")) t1.textContent = t("chat.title"); const hint = ch.querySelector(".chat-hint"); if(hint) hint.textContent = t("chat.subtitle"); }
 }
@@ -2016,6 +2036,32 @@ async function loadDraft(){
 function updateQueue(){
   $("#queue-count").textContent = draftItems.length;
   $("#btn-submit").disabled = draftItems.length === 0;
+  updateDispatchChip();
+}
+// «N из M отмечено Делаем»: M — choice-вопросы по plan-блокам (feat-N), N — из них помеченные «делаем/do».
+function updateDispatchChip(){
+  const chip = $("#dispatch-chip");
+  if(!chip) return;
+  const blocks = (lastData && lastData.planBlocks) || [];
+  const featBlocks = ((lastData && lastData.questions) || []).filter(q =>
+    q.kind === "choice" && /^feat-\d+$/.test(q.id) && blocks.some(b => b.id === q.id));
+  const total = featBlocks.length;
+  const done = featBlocks.filter(q => {
+    const ans = draftItems.find(i => i.kind === "answer" && i.questionId === q.id);
+    if(!ans) return false;                              // нет ответа — не в N
+    const opts = q.options || [];
+    if(opts.length && ans.text === opts[0]) return true; // первый вариант = «Делаем»
+    const free = (ans.text || "").trim().toLowerCase();  // свободный текст «делаем/делай/do…»
+    return /^(делаем|делай|do)/.test(free);
+  }).length;
+  // показываем только когда есть очередь и есть что считать (после Submit draftItems пуст → скрыт)
+  if(draftItems.length > 0 && total > 0){
+    $("#dispatch-done").textContent = done;
+    $("#dispatch-total").textContent = total;
+    chip.hidden = false;
+  } else {
+    chip.hidden = true;
+  }
 }
 
 // ----- inline highlight of the human's left comments -----
