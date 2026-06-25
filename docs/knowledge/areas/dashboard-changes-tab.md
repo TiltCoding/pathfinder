@@ -19,7 +19,9 @@
   Кодировка зашита в обёртку (см. подводные камни), а `-c core.quotePath=false` — **точечно** в командах,
   а не глобально (обёртка зовётся и для нейтральных `cat-file`/`rev-parse`).
 - `scripts/server.py:466` — `_changes(slug)`: кеш 2 с + лок (не ломать), мягкая деградация (try/except).
-- `scripts/server.py:482` — `_build_changes(slug)`: сборка плоского списка `files`. Источники —
+- `scripts/server.py:482` — `_build_changes(slug)`: сборка плоского списка `files`. **Покрыт регресс-тестом
+  `tests/test_changes.py`** (реальный git в tempdir, 14 кейсов: классификация/числа, `-uall`-развёртка,
+  noise, выбор базы, worktree, graceful) — task-log `changes-endpoint-test` (2026-06-25). Источники —
   `git -c core.quotePath=false diff --numstat <base>` (`:489`, числа +/-) и
   `git -c core.quotePath=false status --porcelain --untracked-files=all` (`:511`, статусы, renames,
   развёрнутые untracked). **Переиспользуется** knowledge-графом (`_build_knowledge` зовёт его, чтобы
@@ -94,4 +96,6 @@
 - **Другая политика untracked-мусора:** менять предикат `_is_noise` (`:546`), а не фильтровать на фронте;
   фронт лишь применяет тумблер по полю `untracked`.
 
-_updated: 2026-06-10_
+_updated: 2026-06-25 (changes-endpoint-test: `_build_changes` покрыт `tests/test_changes.py`).
+> ⚠ номера строк `scripts/server.py` в этом доке могли подрасти от дрейфа — `_build_changes` сейчас
+> ближе к `:744`; ориентируйтесь по именам функций._
