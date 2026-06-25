@@ -140,10 +140,21 @@ class Workspace:
 
     def write_json(self, path, data):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        # Per-process temp + retrying replace, shared with _aipf so the two
+        # central writers never drift (see _aipf.atomic_temp_name/atomic_replace
+        # and write_lang): parallel runs share one store, so a fixed ".tmp" would
+        # let concurrent writers collide on the same target.
+        tmp = _aipf.atomic_temp_name(path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            _aipf.atomic_replace(tmp, path)
+        except OSError:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
 
 
 def now_iso():

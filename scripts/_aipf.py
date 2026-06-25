@@ -62,12 +62,50 @@ def read_json(path, default):
         return default
 
 
+def atomic_temp_name(path):
+    """Per-process temp name for an atomic write to `path`.
+
+    Parallel runs share one store (worktree symlink), so several server/hook
+    processes may write the same target concurrently. A fixed ".tmp" would let
+    their byte streams collide; a pid+uuid suffix keeps each writer isolated, and
+    os.replace from the same directory stays atomic. Shared by both central
+    writers (here and server.Workspace.write_json) so they never drift."""
+    return "%s.%d.%s.tmp" % (path, os.getpid(), uuid.uuid4().hex[:8])
+
+
+def atomic_replace(tmp, path):
+    """os.replace(tmp, path) with a short retry on the Windows-only transient.
+
+    On POSIX, replacing an existing file is atomic and never contends, so this
+    succeeds on the first try. On Windows, two processes/threads replacing the
+    same destination concurrently can transiently raise PermissionError(13)
+    (ERROR_ACCESS_DENIED) while the target is mid-rename; a brief bounded retry
+    rides it out. The last attempt re-raises so a genuine failure still surfaces.
+    """
+    for attempt in range(50):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 49:
+                raise
+            time.sleep(0.002)
+
+
 def atomic_write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    tmp = atomic_temp_name(path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        atomic_replace(tmp, path)
+    except OSError:
+        # Don't leave an orphaned temp behind; re-raise the real error (no fallback).
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def write_json(path, data):

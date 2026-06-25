@@ -91,8 +91,27 @@
   `python -m unittest discover -s tests`; **stdlib-only, без `pip install`** (соответствует инварианту
   «сервер/тесты — только stdlib»). Любой новый тест обязан укладываться в этот безпиповый прогон.
 
+## Атомарная запись (инвариант: per-process temp + retrying replace)
+
+- **Любая** атомарная запись файла поверх общего store идёт через `_aipf.atomic_write` /
+  `_aipf.write_json` (`scripts/_aipf.py:95`/`:111`) — **не** катать свой `tmp + os.replace`. Параллельные
+  `/feature` делят store через симлинк (ADR-0010), поэтому несколько процессов/потоков пишут один файл
+  конкурентно. Безопасность даёт связка двух мер (обе обязательны):
+  - **Per-process temp** `atomic_temp_name(path)` (`scripts/_aipf.py:65`) = `path.<pid>.<uuid8>.tmp` —
+    каждый писатель в свой temp (нет гонки на общий `path.tmp`, `os.replace` остаётся атомарным в той же FS).
+  - **Retrying replace** `atomic_replace(tmp, path)` (`scripts/_aipf.py:76`) — `os.replace` с ограниченным
+    ретраем (50×2 мс) **только** на транзиентную Windows-`PermissionError(13)` (destination держит другой
+    писатель), на исчерпании re-raise. На POSIX срабатывает с первой попытки.
+- `server.Workspace.write_json` (`scripts/server.py:141`) переиспользует **те же** хелперы — два
+  центральных писателя не дрейфуют. **ADR-0021.**
+- ⚠ **Долг:** `server.write_lang` (`scripts/server.py:209`) и attachment-upload (`scripts/server.py:1372`)
+  ещё на фиксированном/pid-only temp **без** ретрая — не образец, подтянуть отдельной задачей
+  (task-log `atomic-write-pid-temp`).
+
 ## Полезные утилиты (переиспользовать)
 
+- `scripts/_aipf.py:95` — `atomic_write(path, text)` / `:111` `write_json(path, data)` — атомарная
+  публикация файла (per-process temp + retrying replace, кросс-платформенно; см. инвариант выше, ADR-0021).
 - `scripts/_aipf.py:76` — `append_jsonl(path, obj)` — атомарная дозапись одной JSON-строки.
 - `scripts/_aipf.py:381` — `_iter_lines_from(path, offset)` — оффсетное чтение хвоста (курсор).
 - `scripts/_aipf.py:372` — `_iter_lines(path)` — построчное чтение всего файла (UTF-8, терпит ошибки).
@@ -101,4 +120,4 @@
 - `scripts/_aipf.py:25` — `now_iso_utc()` — таймстемп ISO-8601 UTC `Z`.
 - `scripts/_aipf.py:496` — `_spans_from_events(events)` — склейка start/end в спаны (паттерн парности).
 
-_updated: 2026-06-19 (конвенция языка: eng-first глобальная настройка + язык вопроса в чате, ADR-0018)_
+_updated: 2026-06-25 (инвариант атомарной записи: per-process temp + retrying replace `atomic_write`/`atomic_replace`/`atomic_temp_name`, ADR-0021; предыдущее — конвенция языка eng-first, ADR-0018)_
