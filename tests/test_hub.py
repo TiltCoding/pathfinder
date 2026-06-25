@@ -158,14 +158,17 @@ class BuildHubContractTest(unittest.TestCase):
         self.addCleanup(self._cleanup)
         self.ws = server.Workspace(self.root)
         os.makedirs(self.ws.tasks, exist_ok=True)
-        # reset the singleton hub cache so each test sees fresh data
+        # reset the singleton hub cache and the per-task card memo so each test
+        # sees fresh data (both are class-level and shared via _make_handler)
         server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
         self.handler = _make_handler(self.ws)
 
     def _cleanup(self):
         import shutil
         shutil.rmtree(self.root, ignore_errors=True)
         server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
 
     def _task(self, slug, state=None, dash=None, telemetry=None):
         if state is not None:
@@ -336,13 +339,16 @@ class AwaitingFlagTest(unittest.TestCase):
         self.addCleanup(self._cleanup)
         self.ws = server.Workspace(self.root)
         os.makedirs(self.ws.tasks, exist_ok=True)
-        # reset the singleton hub cache so each test sees fresh data
+        # reset the singleton hub cache and the per-task card memo so each test
+        # sees fresh data (both are class-level and shared via _make_handler)
         server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
         self.handler = _make_handler(self.ws)
 
     def _cleanup(self):
         shutil.rmtree(self.root, ignore_errors=True)
         server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
 
     def _task(self, slug, state=None, dash=None):
         if state is not None:
@@ -410,6 +416,165 @@ class AwaitingFlagTest(unittest.TestCase):
         run = self._run("task-done-gate")
         self.assertTrue(run["awaiting"])
         self.assertFalse(run["active"])    # terminal -> history despite the flag
+
+
+class HubCardCacheTest(unittest.TestCase):
+    """Per-task mtime/size memoization of the hub card (`_hub_card_cache`):
+    a task whose three input files are unchanged reuses its raw card without a
+    second telemetry pass, the signature invalidates on any of the three files,
+    `active` is always recomputed from `now` (never served stale from the cache),
+    vanished slugs are pruned, and the response contract is unchanged."""
+
+    # The full set of keys a hub card carries — the `/hub.json` contract. Kept
+    # here as an explicit reference so the memo refactor can't silently drop one.
+    CARD_KEYS = {
+        "slug", "title", "kind", "phase", "status", "awaiting", "iteration",
+        "progress", "createdAt", "updatedAt", "worktreePath", "branch",
+        "active", "subagents", "sessions", "events", "activity",
+        "firstTs", "lastTs", "durationMs",
+    }
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(self._cleanup)
+        self.ws = server.Workspace(self.root)
+        os.makedirs(self.ws.tasks, exist_ok=True)
+        server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
+        self.handler = _make_handler(self.ws)
+
+    def _cleanup(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+        server.Handler._hub_cache.clear()
+        server.Handler._hub_card_cache.clear()
+
+    def _task(self, slug, state=None, dash=None, telemetry=None):
+        if state is not None:
+            _write_json(self.ws.task_file(slug, "state.json"), state)
+        if dash is not None:
+            _write_json(self.ws.task_file(slug, "dashboard.json"), dash)
+        if telemetry is not None:
+            tpath = self.ws.task_file(slug, "telemetry.jsonl")
+            os.makedirs(os.path.dirname(tpath), exist_ok=True)
+            with open(tpath, "w", encoding="utf-8") as f:
+                f.write(telemetry)
+
+    def _lines(self, events):
+        return "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events)
+
+    def _seed(self, slug="task-x", phase="IMPLEMENT", updated=None,
+              title="Memo task", events=None):
+        updated = updated or _now_iso_utc()
+        events = events if events is not None else [
+            {"event": "session.start", "session_id": "s1", "ts": _iso_utc_ago(60)},
+            {"event": "tool.start", "session_id": "s1", "ts": _iso_utc_ago(30),
+             "tool": "Bash"},
+        ]
+        self._task(
+            slug,
+            state={"slug": slug, "phase": phase, "iteration": 1,
+                   "createdAt": _iso_utc_ago(600), "updatedAt": updated},
+            dash={"title": title, "phase": phase,
+                  "progress": {"done": 1, "total": 2}},
+            telemetry=self._lines(events),
+        )
+
+    def _run(self, slug, now=None):
+        return next(r for r in self.handler._build_hub(now=now)["runs"]
+                    if r["slug"] == slug)
+
+    # t1 -------------------------------------------------------------------
+    def test_reuse_skips_telemetry_pass(self):
+        # Unchanged files -> second _build_hub reuses the cached raw card and
+        # never re-reads telemetry.jsonl. Spy on the expensive _hub_telemetry.
+        self._seed("task-x")
+        calls = {"n": 0}
+        real = server.Handler._hub_telemetry
+
+        def spy(self, slug):
+            calls["n"] += 1
+            return real(self, slug)
+
+        server.Handler._hub_telemetry = spy
+        self.addCleanup(setattr, server.Handler, "_hub_telemetry", real)
+
+        first = self._run("task-x")
+        self.assertEqual(calls["n"], 1)        # built once
+        second = self._run("task-x")
+        self.assertEqual(calls["n"], 1)        # reused: no second pass
+        self.assertEqual(first, second)        # identical card
+
+    # t2 -------------------------------------------------------------------
+    def test_invalidates_on_telemetry_append(self):
+        self._seed("task-x")
+        before = self._run("task-x")
+        # Append an activity event: mtime + size both change -> signature flips.
+        tpath = self.ws.task_file("task-x", "telemetry.jsonl")
+        with open(tpath, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": "tool.start", "session_id": "s1",
+                                "ts": _now_iso_utc(), "tool": "Read"}) + "\n")
+        after = self._run("task-x")
+        self.assertEqual(after["events"], before["events"] + 1)
+        self.assertEqual(after["activity"], before["activity"] + 1)
+
+    # t3 -------------------------------------------------------------------
+    def test_invalidates_on_state_change(self):
+        self._seed("task-x", phase="IMPLEMENT")
+        before = self._run("task-x")
+        self.assertEqual(before["phase"], "IMPLEMENT")
+        # Rewrite state.json with a new phase -> signature flips -> rebuild.
+        _write_json(self.ws.task_file("task-x", "state.json"),
+                    {"slug": "task-x", "phase": "REVIEW", "iteration": 1,
+                     "createdAt": _iso_utc_ago(600), "updatedAt": _now_iso_utc()})
+        after = self._run("task-x")
+        self.assertEqual(after["phase"], "REVIEW")
+
+    # t4 -------------------------------------------------------------------
+    def test_invalidates_on_dashboard_change(self):
+        self._seed("task-x", title="Old title")
+        before = self._run("task-x")
+        self.assertEqual(before["title"], "Old title")
+        _write_json(self.ws.task_file("task-x", "dashboard.json"),
+                    {"title": "New title", "phase": "IMPLEMENT",
+                     "progress": {"done": 2, "total": 2}})
+        after = self._run("task-x")
+        self.assertEqual(after["title"], "New title")
+        self.assertEqual(after["progress"], {"done": 2, "total": 2})
+
+    # t5 (key) -------------------------------------------------------------
+    def test_active_recomputed_from_now_without_file_change(self):
+        # A non-terminal task fresh at t0 is active; with the SAME files but a
+        # `now` past the activity window it must flip to history. Proves `active`
+        # is recomputed from now and not frozen in the cached card.
+        updated = _now_iso_utc()
+        self._seed("task-x", phase="IMPLEMENT", updated=updated)
+        t0 = time.time()
+        self.assertTrue(self._run("task-x", now=t0)["active"])
+        # Same signature (no file touched), now well past the window -> history.
+        later = t0 + server.HUB_ACTIVE_WINDOW_SEC + 1
+        self.assertFalse(self._run("task-x", now=later)["active"])
+
+    # t6 -------------------------------------------------------------------
+    def test_pruning_drops_vanished_slug(self):
+        self._seed("task-a")
+        self._seed("task-b")
+        self.handler._build_hub()
+        self.assertIn("task-a", server.Handler._hub_card_cache)
+        self.assertIn("task-b", server.Handler._hub_card_cache)
+        # task-b disappears from the store -> next build prunes its memo key.
+        shutil.rmtree(self.ws.task_dir("task-b"), ignore_errors=True)
+        self.handler._build_hub()
+        self.assertIn("task-a", server.Handler._hub_card_cache)
+        self.assertNotIn("task-b", server.Handler._hub_card_cache)
+
+    # t7 -------------------------------------------------------------------
+    def test_card_key_set_is_the_contract(self):
+        self._seed("task-x")
+        run = self._run("task-x")
+        self.assertEqual(set(run.keys()), self.CARD_KEYS)
+        # And identical on the cached (reused) path too.
+        run2 = self._run("task-x")
+        self.assertEqual(set(run2.keys()), self.CARD_KEYS)
 
 
 class QueueEndpointTest(unittest.TestCase):

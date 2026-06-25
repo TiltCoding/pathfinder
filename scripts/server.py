@@ -860,6 +860,8 @@ class Handler(BaseHTTPRequestHandler):
     # ---- hub aggregate (all runs across the shared store) ---------------
     _hub_cache = {}               # singleton -> {exp, data}
     _hub_lock = threading.Lock()
+    _hub_card_cache = {}          # slug -> {sig, card}  (per-task memo, see _hub_run)
+    _hub_card_lock = threading.Lock()
 
     def _hub(self):
         """Aggregate every task in the shared store into a single render model
@@ -872,7 +874,7 @@ class Handler(BaseHTTPRequestHandler):
             if cached and now < cached["exp"]:
                 return cached["data"]
         try:
-            data = self._build_hub()
+            data = self._build_hub()  # now=time.time() inside
         except Exception as e:  # never break the page
             data = {"runs": [], "analytics": {}, "error": str(e)}
         with Handler._hub_lock:
@@ -893,25 +895,80 @@ class Handler(BaseHTTPRequestHandler):
         path = os.path.join(self.workspace.base, "dispatch-queue.json")
         return self.workspace.read_json(path, {"items": []})
 
-    def _build_hub(self):
+    def _build_hub(self, now=None):
         """Walk _list_tasks(), build a run card per task from state.json /
         dashboard.json plus one light pass over telemetry.jsonl (event counters
         only — no transcripts, no build_trace), classify active vs history, and
         compute cheap cross-task analytics. Everything per-task is wrapped so one
-        bad task cannot sink the whole aggregate."""
-        now = time.time()
+        bad task cannot sink the whole aggregate. `now` defaults to time.time();
+        tests pass it explicitly to check the active/history split deterministically."""
+        if now is None:
+            now = time.time()
         runs = []
-        for slug in self._list_tasks():
+        tasks = self._list_tasks()
+        for slug in tasks:
             try:
                 runs.append(self._hub_run(slug, now))
             except Exception:
                 continue  # skip a broken task, keep the rest
+        # Prune per-task memo so it can't grow with vanished slugs (cheap, under lock).
+        live = set(tasks)
+        with Handler._hub_card_lock:
+            for slug in [s for s in Handler._hub_card_cache if s not in live]:
+                Handler._hub_card_cache.pop(slug, None)
         return {"runs": runs, "analytics": self._hub_analytics(runs)}
 
+    def _stat_sig(self, path):
+        """Cheap file signature (st_mtime, st_size) without reading the body;
+        None when the file is missing / unreadable (OSError, like _trace's fallback).
+        size complements mtime to catch an append in the same second on coarse-
+        granularity filesystems (telemetry.jsonl is append-only)."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        return (st.st_mtime, st.st_size)
+
+    def _hub_signature(self, slug):
+        """Per-task memo signature: a tuple of _stat_sig for the three inputs a
+        card depends on, in a fixed order — telemetry.jsonl (counters),
+        state.json (phase/iteration/timestamps), dashboard.json (title/status/
+        progress). Any change to any of them flips the signature -> rebuild."""
+        ws = self.workspace
+        return (
+            self._stat_sig(ws.task_file(slug, "telemetry.jsonl")),
+            self._stat_sig(ws.task_file(slug, "state.json")),
+            self._stat_sig(ws.task_file(slug, "dashboard.json")),
+        )
+
     def _hub_run(self, slug, now):
-        """Build one run card. Fields are sourced from state.json (authoritative
-        for phase/iteration/timestamps) and dashboard.json (render model: title,
-        status, progress), with a light telemetry pass for activity counters."""
+        """Build one run card, memoized per-task by the mtime/size signature of
+        its three input files (telemetry.jsonl / state.json / dashboard.json).
+        On a signature hit the raw card is reused verbatim (no read_json, no
+        telemetry pass); `active` is ALWAYS recomputed from `now` since it depends
+        on wall-clock (HUB_ACTIVE_WINDOW_SEC) and must never be served stale from
+        the cache. The cached dict is never mutated — we return a copy."""
+        sig = self._hub_signature(slug)  # os.stat outside the lock
+        with Handler._hub_card_lock:
+            cached = Handler._hub_card_cache.get(slug)
+            if cached and cached["sig"] == sig:
+                card = cached["card"]
+            else:
+                card = None
+        if card is None:
+            card = self._hub_build_card(slug)  # read_json + telemetry pass outside the lock
+            with Handler._hub_card_lock:
+                Handler._hub_card_cache[slug] = {"sig": sig, "card": card}
+        # Recompute the only now-dependent field; everything else is file-derived.
+        return dict(card, active=self._hub_is_active(card["phase"],
+                                                     card["updatedAt"], now))
+
+    def _hub_build_card(self, slug):
+        """Raw run card WITHOUT the now-dependent `active` field — depends only on
+        the three input files, so it is safe to memoize. Fields are sourced from
+        state.json (authoritative for phase/iteration/timestamps) and
+        dashboard.json (render model: title, status, progress), with a light
+        telemetry pass for activity counters (the expensive part)."""
         ws = self.workspace
         state = ws.read_json(ws.task_file(slug, "state.json"), {})
         dash = ws.read_json(ws.task_file(slug, "dashboard.json"), {})
@@ -927,7 +984,6 @@ class Handler(BaseHTTPRequestHandler):
 
         created = state.get("createdAt") or dash.get("createdAt")
         updated = state.get("updatedAt") or dash.get("updatedAt")
-        active = self._hub_is_active(phase, updated, now)
 
         tele = self._hub_telemetry(slug)
 
@@ -945,7 +1001,6 @@ class Handler(BaseHTTPRequestHandler):
             "updatedAt": updated,
             "worktreePath": state.get("worktreePath"),
             "branch": state.get("branch"),
-            "active": active,
             "subagents": tele["subagents"],
             "sessions": tele["sessions"],
             "events": tele["events"],
