@@ -115,13 +115,23 @@ existing `questions[kind:"choice"]` + `approve-plan` machinery with **zero edits
   whose `answer.text` is «Делаем» (or a free-form "делаем…"), record them in `state.json.selected[]`, and
   advance to DISPATCH (see `phases.md` §DISPATCH, `consensus.md` §DISPATCH).
 
-**Future upgrade (Variant B) — not implemented now.** A nicer gate for the project's main interaction
-would be a real checklist: one additive render branch in `templates/dashboard.html` (e.g. for
-`questions[kind:"feature-pick"]`) drawing checkboxes + a single «Запустить выбранные» button that does
-submit+approve atomically — reusing `saveAnswer`/`[data-answer]` and `POST /draft` per `feat-K`, with
-**zero `server.py` changes** (the backend is content-agnostic). It removes Variant A's two-clicks-in-order
-caveat and the long duplicated-radio list. We keep Variant A as the starting contract; Variant B is a
-clean, additive future render branch — do not implement it unless explicitly asked.
+**Inline-choice render (Variant B) — now implemented.** The gate no longer shows a separate «Вопросы»
+card listing every `feat-K` radio twice. The `templates/dashboard.html` render now draws a `choice`
+question **inline inside the footer of the `planBlocks[]` card whose `id` it shares** (above
+`regionFooter`), via the helper `choiceInput(item, ans, reps)`. The binding is strictly
+`planIds.has(id) && kind === "choice"` (it matches the **shared id + choice kind**, not a `feat-` name
+prefix), so any card whose id has a matching `choice` question — `feat-K` here — gets its radio rendered
+right under its own brief. In the «Вопросы» loop that inlined choice is skipped (`continue`), and the
+«Вопросы» card is suppressed entirely when nothing is left to show. This is the additive, content-
+agnostic render branch foreseen earlier: **zero `server.py` edits**, `wireBlocks`/`saveAnswer`/
+`[data-answer]`/`POST /draft` untouched, so the Variant A contract above (shared `feat-K` id, free-form
+answers, no-answer = Пропускаем, Submit → Approve ordering) is unchanged — only its on-screen layout is
+nicer (the pick sits with the brief it concerns instead of in a long duplicated-radio list).
+
+**Backward compatibility.** The match is by id **and** `kind === "choice"`, never by the `feat-` prefix,
+so it touches nothing else: drain-mode `/feature` runs and the `/feature` // `/new-product` plan gates
+(whose `questions` ids are not also `planBlocks` ids, or whose questions are `open`) render exactly as
+before. Any `dashboard.json` without an id collision renders unchanged.
 
 ## The «Изменения» tab (changed files + diff)
 
