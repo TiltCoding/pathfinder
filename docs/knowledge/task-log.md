@@ -4,6 +4,41 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-25 — changes-endpoint-test (регресс-тест бэкенда вкладки «Изменения»)
+- **Что:** новый `tests/test_changes.py` (14 кейсов) — **первый** регресс-тест для
+  `Handler._build_changes` (`scripts/server.py`, модель вкладки «Изменения»:
+  `{base, files:[{path, added, removed, status, untracked}], notGit}`). Реальный git в tempdir под
+  `@skipUnless(git_available())`, прямой вызов через `_make_handler` (`Handler.__new__` без HTTP/сокета,
+  по образцу `tests/test_hub.py`), мимо 2-с кеша `_changes`. **Прод-код НЕ менялся** (тест-only).
+  Покрыто: modified(+/-) с точными числами · added-untracked · deleted · untracked-каталог развёрнут
+  `-uall` (а не строка `docs/`) · noise-фильтр 0-байтного untracked · сортировка по пути ·
+  rename(R) · `baseCommit≠HEAD` (diff против старого коммита) · битый/несуществующий base → fallback HEAD ·
+  ведущий-`-` base reject к HEAD (без падения) · absent base → HEAD · `worktreePath` направляет diff в
+  чужое рабочее дерево · не-git каталог → `notGit`/пустой список · graceful-обёртка `_changes` (любая
+  ошибка `_build_changes` → error-модель, не 500).
+- **Кросс-платформенность (по `conventions.md` §«Кросс-платформенность тестов»):** forward-slash в путях
+  модели независимо от ОС; явный LF при записи фикстур (`newline="\n"`, иначе CRLF собьёт `_count_lines`);
+  `os.path.realpath(tempfile.mkdtemp())` (tempdir-симлинк на macOS/Windows vs каноничный путь git);
+  локальный `git config user.*`/`commit.gpgsign=false`, чтобы не зависеть от глобального конфига.
+- **Зачем:** `_build_changes` — единственный нетривиальный git-парсер бэкенда (numstat × porcelain-status,
+  renames, untracked-развёртка, выбор базы) и переиспользуется knowledge-графом, но регресса не имел —
+  ловушки из area-доки (quotePath, `-uall`, ` => `/` -> `, noise) держались только на ревью. Тест
+  фиксирует контракт модели как исполнимую спецификацию.
+- **Проверка:** 14 ran / 0 skipped; полный набор 197 OK; ревью-гейты без блокеров.
+- **Источник:** дренаж аудита `improve-overall-2`, feat-3 (cand-29).
+- **Известный долг (наблюдения, НЕ чинилось в этой задаче — прод не трогали):**
+  - ⚠ **Хрупкий rename-парсинг** `rest.split(" -> ")[-1]` (`scripts/server.py:789`): при
+    `core.quotePath=false` уязвим к имени файла, содержащему литерал ` -> `. Тест покрывает только
+    happy-path rename — патологическое имя не проверяется.
+  - ⚠ **`_base_commit` гоняет `cat-file -e base^{commit}` в cwd воркфри** (`scripts/server.py:723`):
+    `baseCommit`, существующий в main, но **не** в worktree, молча падает в HEAD (различие main↔worktree
+    при общем store не учтено).
+  - **Тест-нит:** `test_rename_staged` имеет условный `skipTest` (если git не классифицировал staged `mv`
+    как `R`); `test_not_git_dir` избыточно помечен `@skipUnless(git_available())`.
+- **Без ADR** — это **добавление теста**, новых архитектурных решений нет. (Заодно сознательно избегается
+  коллизия нумерации ADR между параллельными ветками фич дренажа.)
+- **Доки:** эта запись + строка «покрыт тестом» в `areas/dashboard-changes-tab.md`.
+
 ## 2026-06-24 — feature-fast-lane (гейт TRIAGE: примитивные задачи мимо тяжёлой машины)
 - **Что:** добавлен **гейт TRIAGE (фаза §0)** в `/feature`, который запускается **до INTAKE**. Если
   задача **примитивна** (все условия: один модуль/область — **не по кол-ву файлов**, а по охвату; **нет**
