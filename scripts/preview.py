@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 import webbrowser
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -120,8 +121,13 @@ def clean():
 
 
 def _spawn_server():
-    """Запустить server.py отдельным фоновым процессом (он идемпотентен: живой
-    сервер переиспользуется, дубликат не плодится). Не блокируемся на нём."""
+    """Запустить server.py отдельным фоновым процессом с ``--force``.
+
+    ``--force`` ОБЯЗАТЕЛЕН: без него идемпотентный singleton переиспользовал бы
+    уже-живой сервер, а он мог быть поднят из старой версии кода (например, из
+    плагин-кэша) и рисовать устаревший хаб/логотип. Превью должно отражать
+    ТЕКУЩИЙ код, поэтому реапаем живой сервер этого корня и биндим свежий. Не
+    блокируемся на нём."""
     kwargs = {
         "cwd": ROOT,
         "stdout": subprocess.DEVNULL,
@@ -134,18 +140,30 @@ def _spawn_server():
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(
-        [sys.executable, SERVER, "--root", ROOT, "--no-browser"], **kwargs
+        [sys.executable, SERVER, "--root", ROOT, "--no-browser", "--force"],
+        **kwargs,
     )
 
 
-def _server_url(timeout=12):
-    """URL живого сервера из .workflow/server.json (ждём появления до timeout)."""
+def _alive(url):
+    """True, если по url отвечает живой сервер (GET /health, короткий таймаут)."""
+    try:
+        with urllib.request.urlopen(url + "/health", timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def _server_url(timeout=15):
+    """URL СВЕЖЕГО живого сервера. Ждём, пока server.json обновится после
+    ``--force``-реапа И сервер реально отвечает (иначе вернули бы мёртвый url
+    старого процесса в момент гонки реапа/бинда)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with open(SERVER_JSON, encoding="utf-8") as f:
                 url = json.load(f).get("url")
-            if url:
+            if url and _alive(url):
                 return url
         except (OSError, ValueError):
             pass
