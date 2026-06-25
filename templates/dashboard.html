@@ -620,7 +620,7 @@
       <span class="badge phase" id="phase">—</span>
       <span class="badge" id="iter"></span>
     </div>
-    <span class="status working" id="status"><span class="dot"></span><span id="status-text">…</span></span>
+    <span class="status working" id="status" role="status" aria-live="polite" aria-atomic="true"><span class="dot" aria-hidden="true"></span><span id="status-text">…</span></span>
     <div class="now-line" id="now-line" hidden></div>
     <div class="phase-track" id="ws-track"></div>
     <div class="progress"><div id="progress-bar"></div></div>
@@ -671,7 +671,7 @@
     <span class="chat-hint">steering at checkpoints</span>
     <button class="chat-x" id="chat-close" title="Close">✕</button>
   </div>
-  <div class="chat-log" id="chat-log"><p class="empty">No messages yet. Write to the agent — it will read and reply at the next checkpoint.</p></div>
+  <div class="chat-log" id="chat-log" aria-live="polite" aria-relevant="additions"><p class="empty">No messages yet. Write to the agent — it will read and reply at the next checkpoint.</p></div>
   <div class="pending-strip" id="chat-pending"></div>
   <div class="chat-input">
     <textarea id="chat-text" rows="2" placeholder="Message to the agent… (Enter — send)"></textarea>
@@ -681,7 +681,7 @@
   </div>
   <div class="attach-hint" id="chat-attach-hint">Drag, paste, or browse to attach an image</div>
 </aside>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 const SLUG = new URLSearchParams(location.search).get("slug") || "";

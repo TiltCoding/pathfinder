@@ -217,6 +217,23 @@
   Возврат на вкладку снимает бейдж (`visibilitychange`). Серверный контракт `data.status` не менялся.
 - Совместимость аддитивна: вопрос без `options` рендерится как `open`; задача без `demo` — как раньше.
 
+## Доступность: первые live-регионы (dashboard-aria-live-regions)
+
+Первый заход a11y — **только атрибутивная** правка `templates/dashboard.html` (JS/контент не трогали),
+чтобы скринридер озвучивал динамические изменения:
+
+- `#status` (обёртка статуса агента в шапке) → `role="status" aria-live="polite" aria-atomic="true"`;
+  декоративная `.dot` внутри → `aria-hidden="true"` (не зачитывается).
+- `#toast` (всплывающие уведомления) → `role="status" aria-live="polite" aria-atomic="true"`.
+- `#chat-log` → `aria-live="polite" aria-relevant="additions"`.
+
+**Ловушка (известный долг, НЕ закрыт):** `renderChat` перерисовывает `#chat-log` полным
+`innerHTML`-replace, поэтому `aria-relevant="additions"` — **best-effort**: при полной замене поддерева
+браузер не обязан анонсировать «добавления». Для надёжного анонса новых реплик нужен **инкрементальный
+append** новых `.msg` (а не replace) либо отдельный визуально-скрытый live-контейнер, в который
+дублируется только новый текст. Прочие динамические узлы (вкладки/табы — семантика и клавиатура) — вне
+этой задачи (кандидаты аудита `improve-overall-2` cand-41/42).
+
 ## Подводные камни
 
 - `_draft_add` отбрасывает неизвестные поля — нельзя протащить «id варианта» отдельным полем; он кладётся
@@ -240,4 +257,4 @@
   либо потребует +1 строки в сервере — см. `areas/dashboard-changes-tab.md`-стиль решения (дерево/схема
   на фронте, бэкенд почти нетронут).
 
-_updated: 2026-06-24 (task-page-left-sidebar: хром страницы задачи стал двухколоночным — глобальный sticky `aside.task-sidebar` с INFO-кластером identity/статус/now/прогресс/ws/open-threads, топ-бар сведён к контролам+табам; инвариант «сайдбар вне `#content` и вне `switchTab`, все id сохранены»; реюз `.page-grid`/`.docs-grid` + коллапс 860px; чистый FE, 0 правок сервера/токенов/i18n). Предыдущее — task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_
+_updated: 2026-06-25 (dashboard-aria-live-regions: первые live-регионы a11y — атрибутивная правка `#status`/`#toast`→`role="status" aria-live="polite" aria-atomic="true"`, декоративная `.dot`→`aria-hidden`, `#chat-log`→`aria-live="polite" aria-relevant="additions"`; JS/контент не тронуты; известный долг — `renderChat` делает полный innerHTML-replace, поэтому `aria-relevant` best-effort, нужен инкрементальный append или скрытый live-контейнер). Предыдущее — task-page-left-sidebar: хром страницы задачи стал двухколоночным — глобальный sticky `aside.task-sidebar` с INFO-кластером identity/статус/now/прогресс/ws/open-threads, топ-бар сведён к контролам+табам; инвариант «сайдбар вне `#content` и вне `switchTab`, все id сохранены»; реюз `.page-grid`/`.docs-grid` + коллапс 860px; чистый FE, 0 правок сервера/токенов/i18n). Предыдущее — task-image-attachments: вложения-изображения во всех каналах — `/attach`→ref→`/chat images:[…]`→`/image`, хранилище `attachments/`, лимиты 5МБ/6, png/jpeg/gif/webp, модуль-переменная pending-состояния; **исправлена устаревшая заметка** «комменты → `/draft {kind:"comment"}»: на деле `sendComment`/`saveVariantComment`/тред-реплаи идут `postAnchored()`→`/chat`, `/draft` — только `open`/`choice` + выбор варианта; ADR-0020). Предыдущее — dashboard-visibility-dialog: anchored-обсуждение, строка «Сейчас: …», чип work-stream'ов_
