@@ -1,8 +1,8 @@
 # Область: Скиллы-оркестраторы и ростеры под-агентов
 
-> Как в этом плагине устроены команды-оркестраторы (`/feature`, `/new-product`, `/improve`, `/ask`) и их
-> под-агенты: регистрация конвенцией каталогов, паттерн «SKILL.md + reference-файлы», frontmatter
-> агентов (включая `model:`) и почему ростеры `wf-*` и `np-*` раздельны. Эта область раньше
+> Как в этом плагине устроены команды-оркестраторы (`/feature`, `/new-product`, `/improve`, `/ask`,
+> `/design`) и их под-агенты: регистрация конвенцией каталогов, паттерн «SKILL.md + reference-файлы»,
+> frontmatter агентов (включая `model:`) и почему ростеры `wf-*`, `np-*` и `ds-*` раздельны. Эта область раньше
 > отсутствовала в базе знаний — следующий агент не должен заново выводить устройство оркестраторов из
 > кода (флажок из `.workflow/tasks/new-product-workflow/exploration.md:160`).
 
@@ -10,7 +10,7 @@
 
 Плагин ai-pathfinder реализует **slash-команды как скиллы-оркестраторы**. Главный агент (оркестратор)
 не пишет код сам — он исполняет машину стадий и спавнит специализированных под-агентов через Agent tool.
-Четыре команды:
+Пять команд:
 
 - **`/feature`** — работа в **существующей** кодовой базе: EXPLORE кода → план → один проход IMPLEMENT
   (`skills/feature/SKILL.md:14`). **Перед INTAKE — гейт TRIAGE** (`skills/feature/phases.md` §0): примитивная
@@ -33,12 +33,21 @@
   (`skills/ask/SKILL.md:1`). Сиблинг остальных трёх; отличие — **ничего не правит в репозитории вообще**:
   это самый лёгкий оркестратор (нет гейта плана, нет IMPLEMENT/VERIFY); единственная правка кода во всём
   воркфлоу — опциональный бейдж `kind:"ask"` в хабе (см. ADR-0016). Подробнее — секция ниже.
+- **`/design`** — **фокусный UI/UX-аудит ОДНОГО компонента** (не редактор задачи по спеке, не бэклог по
+  всему приложению): человек указывает **один** элемент интерфейса (имя и/или скриншот), рой read-only
+  `ds-auditor` критикует его по **7 UI/UX-призмам** → оркестратор сводит находки в **ОДИН аннотированный
+  демо** → человек на **гейте согласия** отмечает, что применить (дефолт **«Применить»**, opt-out) →
+  `ds-coder` реализует одобренные находки → VERIFY (`/code-review`) (`skills/design/SKILL.md:1`). Сиблинг
+  остальных четырёх; отличие — **узкий скоуп (один компонент) при широком аудите (много призм)**, и
+  **производит** редизайн сам через свой ростер `ds-*`. `description` разведён: «audit/redesign **one**
+  component» + оговорки «**NOT** a backlog app-wide (→ improve); **NOT** read-only Q&A (→ ask); **NOT** an
+  arbitrary feature build (→ feature)» (`skills/design/SKILL.md:3`). Подробнее — секция ниже.
 
 ## Ключевые файлы
 
 - `skills/feature/SKILL.md:1`, `skills/new-product/SKILL.md:1`, `skills/improve/SKILL.md:1`,
-  `skills/ask/SKILL.md:1` — корни оркестраторов: frontmatter (`name`, `description`) + тело (ментальная
-  модель, таблица под-агентов, start/resume, operating rules, телеметрия).
+  `skills/ask/SKILL.md:1`, `skills/design/SKILL.md:1` — корни оркестраторов: frontmatter (`name`,
+  `description`) + тело (ментальная модель, таблица под-агентов, start/resume, operating rules, телеметрия).
 - `skills/new-product/phases.md`, `skills/new-product/loop.md`,
   `skills/new-product/feedback-loop.md`, `skills/new-product/dashboard-guide.md`,
   `skills/new-product/state-schema.md`, `skills/new-product/knowledge-guide.md` — reference-файлы
@@ -61,6 +70,13 @@
   (центр — секция **Chat**; гейта/`approve-plan` нет), `state-schema.md` (+ask-поля `kind`/`questionLog[]`/
   `lastChatTs`), `knowledge-guide.md` (как есть, для DONE). **Не копируются** `consensus.md`/
   `dispatch-queue.md`/`loop.md`/`parallel.md` — рой `/ask` без голосования/очереди.
+- `skills/design/SKILL.md:1`, `skills/design/phases.md`, `skills/design/dashboard-guide.md`,
+  `skills/design/feedback-loop.md`, `skills/design/state-schema.md` — reference-файлы `/design`. Доменный —
+  `phases.md` (машина `INTAKE→AUDIT→COMPOSE→CONSENT GATE→IMPLEMENT→VERIFY→DONE`, список 7 призм, формат
+  **единого аннотированного демо** «Вариант А»). Переносимые: `dashboard-guide.md` (модель `demo`-блока с
+  **одним** аннотированным мокапом + контракт **CONSENT GATE** per-finding `f<k>`, дефолт «Применить»),
+  `feedback-loop.md` (старт сервера + батч на гейте), `state-schema.md` (+design-поля). Список «читай по
+  надобности» — `skills/design/SKILL.md:58`.
 - `agents/np-thinker.md:1`, `agents/np-researcher.md:1`, `agents/np-coder.md`, `agents/np-judge.md` —
   ростер `np-*` для `/new-product` (с полем `model:`).
 - `agents/wf-explorer.md:1`, `agents/wf-planner.md:1`, `agents/wf-coder.md:1`,
@@ -76,11 +92,23 @@
   Собственный файл (а не реюз `wf-explorer`), т.к. `description`/Output `wf-explorer` заточены под
   `exploration.md`/EXPLORE, а `/ask` нужны машинно-парсимые секции (числа для инфографики, шаги для схемы);
   `wf-documenter` `/ask` реюзит как есть на DONE.
+- `agents/ds-auditor.md:1`, `agents/ds-coder.md:1` — ростер `ds-*` для `/design` (**оба без `model:`** —
+  дефолт сессии, как `wf-*`). `ds-auditor` — read-only UI/UX-критик (`tools: Read, Grep, Glob, Bash` — без
+  Write/Edit, структурная гарантия read-only): аудитит компонент сквозь **одну** призму, читает `INDEX.md`
+  первым, возвращает **структурированные находки** `{ id, prism, severity, problem, location, proposal }`
+  (ключи и enum `severity` — английские/точные, оркестратор парсит детерминированно; проза `problem`/
+  `proposal` — на языке вывода). **Не рисует демо и никого не спавнит.** `ds-coder` — исполнитель
+  (`tools: Read, Write, Edit, Bash, Grep, Glob`): применяет **одну одобренную** находку из готового плана
+  (находка = план), независимые идут параллельно. **Два отдельных файла из-за разного tool-set**
+  (read-only auditor vs Write coder), а не из-за модели — реюз `wf-explorer`/`wf-coder` невозможен (их
+  контракты под EXPLORE/IMPLEMENT, плюс модель глобальна для `subagent_type`; ADR-0006). `wf-reviewer`
+  `/design` реюзит в VERIFY. Подробнее — ADR-0023.
 - `.claude-plugin/plugin.json:1` — манифест плагина: **только метаданные**, никакого перечисления
   скиллов/агентов/команд.
 - `README.md:39` — раздел про `/new-product`; раздел про `/improve` (рой/консенсус/выбор/fan-out);
-  раздел про `/ask` (read-only Q&A → визуальный ответ → чат); раздел «Layout» (канонические каталоги,
-  включая `skills/improve/`, `skills/ask/`, `wf-improver`, `ask-researcher`).
+  раздел про `/ask` (read-only Q&A → визуальный ответ → чат); раздел про `/design` (фокусный UI/UX-аудит
+  одного компонента → единый аннотированный демо → реализация); раздел «Layout» (канонические каталоги,
+  включая `skills/improve/`, `skills/ask/`, `skills/design/`, `wf-improver`, `ask-researcher`, `ds-*`).
 
 ## Регистрация: конвенция каталогов (не перечисление в манифесте)
 
@@ -311,6 +339,56 @@ INTAKE → RESEARCH → SYNTHESIZE → ANSWER → DONE
 (append-only поле, `conventions.md`). Подробнее — **ADR-0016**, рецепт «новое поле карточки хаба» —
 `areas/parallel-runs-hub.md`.
 
+## Карта `/design`: рой призм → единый аннотированный демо → гейт согласия → реализация
+
+Пятая команда (`skills/design/SKILL.md:1`) — **фокусный UI/UX-аудит ОДНОГО компонента**. В отличие от
+`/improve` (бэклог по всему приложению) и `/ask` (read-only объяснение), `/design` берёт **один** элемент,
+критикует его широко (много призм), но **узко по скоупу**, и **сам реализует** одобренные правки через свой
+ростер `ds-*`. Стадии (`state.json.phase`, `skills/design/SKILL.md:40`):
+
+```
+INTAKE → AUDIT → COMPOSE → CONSENT GATE → IMPLEMENT → VERIFY → DONE
+```
+
+- **INTAKE — вход имя и/или скриншот.** Компонент задаётся **именем и/или скриншотом**: имя → оркестратор
+  находит компонент в коде (Grep/Glob); скриншот → человек прикрепляет изображение на дашборде (контракт
+  вложений ADR-0020), оркестратор `Read`'ит сохранённый файл и передаёт визуальный контекст аудиторам.
+  Только-имя → от кода; только-скриншот → от визуала + поиск парного кода; оба → перекрёстная сверка.
+- **AUDIT — рой по 7 призмам.** Оркестратор спавнит `ds-auditor` параллельно — **по одному на призму** (или
+  группируя при перекрытии): (1) визуальная иерархия и эстетика; (2) интеракция, фидбэк и аффордансы;
+  (3) движение/микро-анимация; (4) раскладка и адаптивность; (5) копирайт/ясность; (6) доступность (a11y);
+  (7) логика потока / информационная архитектура. Каждый читает `INDEX.md` первым, аудитит **только** свою
+  призму и отдаёт находки `{ id, prism, severity, problem, location, proposal }`. Затем **оркестратор
+  консолидирует и дедуплицирует** их в один ранжированный список — аудиторы не консолидируют и никого не
+  спавнят (инвариант ADR-0006).
+- **COMPOSE — ОДИН аннотированный демо.** Оркестратор (у него Write) строит **единый** самодостаточный
+  `mockups/redesign.html`, покрывающий **все** находки в стиле **«Вариант А»**: нумерованные бейджи ①②③ +
+  боковая легенда (номер → проблема → что изменилось) + тогл **«До/После»**. Инлайн-CSS/JS, без CDN/сети
+  (под CSP). `dashboard.json.demo` — **единственный** вариант (`selectionId:"design-demo"`,
+  `variants:[{id:"redesign",…}]`), а **не** pick-one набор: человек смотрит цельную картину правок, не
+  выбирает «один дизайн». Подаётся штатным `demo`-механизмом (`GET /mockup` в sandbox-iframe) — **0 правок
+  сервера**. Почему один демо, а не N — **ADR-0023**.
+- **CONSENT GATE — per-finding `f<k>`, дефолт «Применить» (opt-out).** Каждая находка = карточка
+  `planBlocks[].id = f<k>` + вопрос `questions[kind:"choice"].id = f<k>`, `options:["Применить",
+  "Пропустить"]`. **Дефолт — «Применить»**: нет ответа = находка применяется (намеренная **инверсия**
+  opt-in выбора фич в `/improve` — человек уже сам указал компонент). Человек снимает галки с ненужных →
+  **«Отправить»** (Submit) → **«Утвердить план»** (`approve-plan` = «реализуй оставшийся набор»). Порядок
+  Submit→Approve обязателен (`draft.json` не READABLE). **0 правок сервера/HTML** — реюз контракта
+  `feat-K` (`questions[choice]`+`approve-plan`, ADR-0013), отличается только дефолт. Подробнее — **ADR-0023**.
+- **IMPLEMENT — только одобренное.** На каждую находку «Применить» (или сгруппированный work-stream
+  связанных) оркестратор спавнит `ds-coder` с Write/Edit; план = сама находка, кодеры просто применяют;
+  независимые идут параллельно.
+- **VERIFY — только `/code-review`.** В отличие от `/feature` (оба ревью-гейта), `/design` гоняет
+  `wf-reviewer` (реюз из feature) + **только** `/code-review` (без `/security-review` — фокусные UI/UX-правки
+  компонента редко несут поверхность безопасности; человек запустит вручную при нужде).
+- **DONE.** Узкий скоуп → база знаний растится **лайтово** самим оркестратором (строка в `task-log.md`),
+  без полного прохода `wf-documenter`.
+
+**`/design` поверх существующего контракта.** Находки = `planBlocks`/`questions[choice]`, демо =
+`demo`/`mockups`, гейт = `approve-plan`, попадание в хаб — автоматически. **0 правок `server.py`** — пятый
+потребитель ride-the-contract (после `/feature`-фидбэка, `/new-product`-гейтов, `/improve`-гейта, `/ask`);
+lineage ADR-0008/0013/0016. Ростер `ds-*` без пина модели — **ADR-0023** (lineage ADR-0006).
+
 ## Как расширять
 
 - **Новая команда-оркестратор:** создать `skills/<command>/SKILL.md` (frontmatter + тело по образцу),
@@ -329,4 +407,4 @@ INTAKE → RESEARCH → SYNTHESIZE → ANSWER → DONE
   `wf-improver` совмещает scout и vote, `agents/wf-improver.md:9`). Отдельный файл нужен только когда
   режимам требуются **разные модели** (`model` глобальна для `subagent_type`) или несовместимые `tools`.
 
-_updated: 2026-06-24 (feature-fast-lane: гейт TRIAGE §0 перед INTAKE — примитивные задачи по Fast Lane без сервера/дашборда/роя/гейта, `state.json.lane`, клапан эскалации fast→full)_
+_updated: 2026-06-25 (design-command: пятая команда `/design` — фокусный UI/UX-аудит одного компонента, рой `ds-auditor` по 7 призмам → единый аннотированный демо «Вариант А» → гейт согласия per-finding `f<k>` дефолт «Применить» → `ds-coder`; новый ростер `ds-*` без пина модели, 0 правок сервера, ADR-0023. Предыдущее — request-language-wins: язык вывода = язык запроса человека (ADR-0022). Ранее — feature-fast-lane: гейт TRIAGE §0, Fast Lane, `state.json.lane`)_

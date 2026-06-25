@@ -181,6 +181,50 @@ chat, and edits nothing. Use `/feature` to actually make a change, `/improve` fo
 of improvements, `/new-product` for greenfield. `/ask` runs its own read-only `ask-researcher` sub-agent
 (no pinned model, like the `wf-*` roster) and reuses the workflow's `wf-documenter` on DONE.
 
+## `/design` — deep UI/UX audit of one component → one annotated demo → implement
+
+A fifth command, `/design <component>`, runs a **focused UI/UX audit of a single interface component**
+and then implements the edits you approve. Point it at **one** element — by **name and/or a screenshot**
+— and it critiques that component broadly (many design prisms) while keeping the **scope narrow** (just
+that component). Unlike `/improve` (a backlog across the whole app) and `/ask` (read-only Q&A), `/design`
+both critiques **and redesigns** the chosen component, reusing the same companion server, dashboard, and
+telemetry, with **zero server changes**.
+
+Its stages are:
+
+`INTAKE → AUDIT → COMPOSE → CONSENT GATE → IMPLEMENT → VERIFY → DONE`
+
+— resumable via the same `.workflow/tasks/<slug>/state.json`.
+
+- **INTAKE** takes the component by **name and/or screenshot**: a name locates it in code (Grep/Glob); a
+  screenshot is attached on the dashboard (the image-attachment contract) and the orchestrator `Read`s the
+  saved file to pass visual context to the auditors.
+- **AUDIT** is a **swarm**: the orchestrator spawns read-only `ds-auditor` sub-agents in parallel, one per
+  **UI/UX prism** — visual hierarchy & aesthetics, interaction/feedback/affordances, motion, layout &
+  responsiveness, copy/clarity, accessibility, and flow/IA. Each reads the knowledge base first and returns
+  structured findings (`{ id, prism, severity, problem, location, proposal }`); the orchestrator then
+  **consolidates and dedups** them into one ranked list.
+- **COMPOSE** has the orchestrator build **one** self-contained annotated mockup (`mockups/redesign.html`):
+  numbered badges ①②③ on the redesigned component + a side legend (number → problem → what changed) + a
+  **«Before/After»** toggle. It is a **single** demo of all proposed edits — not a pick-one set of competing
+  designs — rendered inline in the dashboard (sandboxed, no CDN).
+- **CONSENT GATE** is **per-finding**, not plan-approve. Each finding is one card + one «Apply / Skip»
+  choice with the **default «Apply»** (opt-out: no answer means *apply*) — the deliberate inverse of
+  `/improve`'s opt-in feature pick, since you already chose the component. You uncheck what you don't want,
+  **submit**, then **approve** ("implement the remaining set"). It reuses the dashboard's existing `choice`
+  questions + the «Approve plan» signal with **zero edits to the server or HTML**.
+- **IMPLEMENT** spawns a `ds-coder` per approved finding (the plan *is* the finding); independent ones run
+  in parallel.
+- **VERIFY** runs `wf-reviewer` plus the **`/code-review`** gate (no `/security-review` — focused UI/UX
+  edits of one component rarely add a security surface; run it by hand if needed).
+
+**How it differs from the others:** `/feature` implements one predefined task, `/improve` discovers and
+queues improvements app-wide, `/ask` only explains read-only; `/design` **critiques and redesigns one
+chosen component**, then implements the human-approved subset of its findings. It runs its own `ds-*`
+roster — `ds-auditor` (read-only critic) and `ds-coder` (implementer) — two files because their tool-sets
+differ (read-only vs. Write/Edit), neither with a pinned model (they inherit the session model). The
+single-annotated-demo design and the opt-out consent gate are recorded in **ADR-0023**.
+
 **The evolutionary build-loop (in brief).** Each BUILD phase runs a loop: `np-coder` first materializes
 **executable tests** from the thinker's spec (without seeing the implementation plan), and those tests
 are **frozen** (paths + hashes in state). Then each iteration: implement → run the frozen tests →
@@ -206,7 +250,8 @@ skills/feature/   the /feature orchestrator skill + reference files
 skills/new-product/  the /new-product orchestrator skill + reference files
 skills/improve/   the /improve orchestrator skill + reference files (swarm → consensus → feature fan-out)
 skills/ask/       the /ask orchestrator skill + reference files (read-only Q&A → visual answer → chat)
-agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, wf-improver, ask-researcher, np-* (thinker, researcher, coder, judge)
+skills/design/    the /design orchestrator skill + reference files (one-component UI/UX audit → annotated demo → implement)
+agents/           wf-explorer, wf-planner, wf-coder, wf-reviewer, wf-documenter, wf-improver, ask-researcher, ds-* (auditor, coder), np-* (thinker, researcher, coder, judge)
 scripts/          server.py (feedback server) + telemetry_hook.py + _aipf.py (shared, stdlib)
 templates/        dashboard.html + artifact & knowledge-base templates
 evals/            fixtures, scenarios, rubrics for measuring the workflow
