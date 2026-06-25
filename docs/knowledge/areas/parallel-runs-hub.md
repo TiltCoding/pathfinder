@@ -56,8 +56,21 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
 - `scripts/worktree.py:114` — `record_worktree_in_state(state, worktree_path, branch)`: **чистая**
   функция (без I/O и git) — выставляет `worktreePath`/`branch`/`updatedAt` в dict. Вынесена чистой
   ради offline-теста пути записи без реального worktree.
-- `scripts/worktree.py:130` — `_write_state_fields(...)`: читает `state.json`, ставит поля, пишет
-  обратно; терпит отсутствие файла (минтит минимальный — `add` может опередить INTAKE на resume).
+- `_write_state_fields(root, slug, worktree_path, branch)` (ориентир по имени функции) — читает
+  `state.json`, ставит `worktreePath`/`branch`, пишет обратно. **Различает три исходных состояния файла
+  через предчтение `os.path.exists` ДО `read_json`** (read_json graceful-дефолт не даёт отличить
+  «нет файла» от «битый»):
+  - **`merged`** — файл был валидным dict: поля дозаписаны в существующий state (обычный путь).
+  - **`created`** — файла не было: минтит минимальный (`add` может опередить INTAKE на resume).
+  - **`recovered`** — файл есть, но непарсимый/не-dict: **битый state.json НЕ затирается молча** — он
+    отправляется в карантин через `_quarantine_corrupt_state` (переименование в
+    `state.json.corrupt-<TS>`, где `<TS>` = `%Y%m%d-%H%M%S`+pid **без двоеточий** — NTFS запрещает `:`,
+    `os.replace` атомарен и кросс-платформенен), печатается warning, затем минтится свежий минимальный.
+  - **`overwritten`** — битый, но карантин не удался (`os.replace` упал): файл перезаписан минимальным,
+    печатается честный warning «не удалось сохранить» (не ложный note, будто оригинал лежит рядом).
+  Возврат — `(state, status:str)` со статусом из списка выше (раньше было `(state, created:bool)`).
+  Единственный вызывающий `cmd_add` (`scripts/worktree.py:354`) печатает разный note по статусу.
+  **`read_json` НЕ менялся** — graceful-контракт сохранён (на него опирается `test_corrupt_json_is_graceful`).
 - `scripts/worktree.py:148` — `_ensure_workflow_symlink(main_root, wt_dir)`: создаёт симлинк, только
   если его нет; корректный симлинк не трогает (идемпотентный resume); **никогда не падает** — неудачный
   симлинк не должен срывать весь `add`.
@@ -243,6 +256,11 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   перед использованием как `cwd` для git — битый путь молча уходит в fallback.
 - **`scripts/worktree.py` идемпотентен.** `add` на повторе переиспользует существующий worktree/ветку
   (resume), не падает; `record_worktree_in_state` перезаписывает поля теми же значениями.
+- **Битый `state.json` не теряется молча.** `_write_state_fields` никогда не затирает непарсимый
+  `state.json` без следа: оригинал уходит в карантин `state.json.corrupt-<TS>`, и только потом минтится
+  свежий минимальный (статус `recovered`). Это защищает полузаписанный/затёртый INTAKE-снимок
+  оркестратора (`phase`/`iteration`/`dispatched`/`questions`) от потери при гонке `add`↔INTAKE. Если
+  карантин невозможен (`os.replace` упал) — статус `overwritten` с честным warning, а не ложный note.
 - **`remove` НЕ удаляет историю.** `git worktree remove` + снятие симлинка, но
   `<main>/.workflow/tasks/<slug>/` остаётся — история видна в секции «История» хаба.
 
@@ -264,6 +282,12 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   (`active/<session_id>.json`) это чинит; оркестратор пишет его **дополнительно** к `active.json`.
 - **`phase`/`iteration` в телеметрии бывают `null`** — поэтому критерий active/history и поля карточки
   берутся из `state.json`/`dashboard.json`, а не из событий.
+- **Карантин ≠ авто-откат (известный долг).** `_write_state_fields` спасает оригинал в
+  `.corrupt-<TS>`, но **не** восстанавливает поля из последнего валидного снимка — INTAKE надо
+  прогнать заново. Авто-откат на last-good (`.bak` перед затиранием) — **отдельная задача**, не сделана.
+- **Защищён только writer (известный долг).** Укреплён лишь `_write_state_fields` (деструктивный путь).
+  Читатели `state.json` (`telemetry_hook`, `_hub_run`) сейчас не деструктивны (graceful через
+  `read_json`), но симметрично укрепить их — отдельный follow-up.
 
 ## Как расширять
 
@@ -284,6 +308,8 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   подмешивать очередь в `/hub.json` и **не** наполнять `#queue-root` из `render()` — оставить независимый
   поллинг `tickQueue`, иначе дифф `/hub.json` затрёт секцию.
 
-_updated: 2026-06-16 (awaiting-human-signal: косметический флаг awaiting + бейдж/подъём карточки)_
+_updated: 2026-06-25 (state-json-corrupt-recovery: `_write_state_fields` различает missing/corrupt/valid,
+битый `state.json` уходит в карантин `state.json.corrupt-<TS>` вместо молчаливого затирания, возврат
+сменён на `(state, status)` со статусами created/recovered/merged/overwritten)_
 </content>
 </invoke>
