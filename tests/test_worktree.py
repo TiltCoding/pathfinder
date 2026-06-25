@@ -22,6 +22,10 @@ unresolved target, so canonical roots are required to exercise the idempotent
 "symlink ok" path on the real code (production behaviour, unchanged).
 """
 
+import contextlib
+import glob
+import io
+import json
 import os
 import shutil
 import sys
@@ -244,6 +248,92 @@ class ListWorktreesPorcelainTest(unittest.TestCase):
     def test_git_failure_yields_empty(self):
         worktree._git = lambda *a, **k: (1, "", "fatal: not a git repo")
         self.assertEqual(worktree.list_worktrees("/nope"), [])
+
+
+class WriteStateFieldsCorruptTest(unittest.TestCase):
+    """`worktree._write_state_fields`: corrupt/missing/valid state.json paths.
+
+    Filesystem only (tempfile + addCleanup), no git: the helper just reads,
+    mutates and writes the task's state.json. Целевое поведение: битый
+    state.json не затирается молча — он переименовывается в
+    state.json.corrupt-<TS>, в stderr печатается предупреждение, а worktree-поля
+    пишутся на свежий валидный state. missing/valid пути не меняются.
+    """
+
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.slug = "my-slug"
+        self.spath = _aipf.task_file(self.root, self.slug, "state.json")
+        os.makedirs(os.path.dirname(self.spath), exist_ok=True)
+        self.wt_dir = worktree.worktree_dir(self.root, self.slug)
+
+    def _call(self):
+        """Запускает _write_state_fields, перехватывая stderr; отдаёт его текст."""
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            worktree._write_state_fields(
+                self.root, self.slug, self.wt_dir, "my-branch")
+        return buf.getvalue()
+
+    def _corrupt_siblings(self):
+        return glob.glob(self.spath + ".corrupt-*")
+
+    def _read_new_state(self):
+        with open(self.spath, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_corrupt_is_preserved_and_replaced(self):
+        bad = '{"phase": "IMPLEMENT", "dispatched": [сломанный'
+        with open(self.spath, "w", encoding="utf-8") as f:
+            f.write(bad)
+
+        stderr = self._call()
+
+        # Битый файл сохранён рядом под state.json.corrupt-<TS> с исходным текстом.
+        siblings = self._corrupt_siblings()
+        self.assertEqual(len(siblings), 1,
+                         "expected exactly one state.json.corrupt-* sibling")
+        with open(siblings[0], "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), bad)
+        # Имя без двоеточий (валидно на Windows).
+        self.assertNotIn(":", os.path.basename(siblings[0]))
+
+        # Новый state.json — валидный JSON-словарь с worktree-полями.
+        state = self._read_new_state()
+        self.assertIsInstance(state, dict)
+        self.assertEqual(state.get("worktreePath"), os.path.abspath(self.wt_dir))
+        self.assertEqual(state.get("branch"), "my-branch")
+
+        # Видимое предупреждение в stderr.
+        self.assertTrue(stderr.strip(), "expected a visible warning on stderr")
+
+    def test_missing_creates_fresh_without_corrupt(self):
+        self.assertFalse(os.path.exists(self.spath))
+
+        self._call()
+
+        self.assertTrue(os.path.isfile(self.spath))
+        state = self._read_new_state()
+        self.assertIsInstance(state, dict)
+        self.assertEqual(state.get("worktreePath"), os.path.abspath(self.wt_dir))
+        self.assertEqual(state.get("branch"), "my-branch")
+        self.assertEqual(self._corrupt_siblings(), [],
+                         "missing state.json must not produce a .corrupt sibling")
+
+    def test_valid_preserves_existing_fields(self):
+        _aipf.write_json(self.spath, {"phase": "PLAN", "iteration": 3})
+
+        self._call()
+
+        state = self._read_new_state()
+        # Существующие поля сохранены, worktree-поля добавлены.
+        self.assertEqual(state.get("phase"), "PLAN")
+        self.assertEqual(state.get("iteration"), 3)
+        self.assertEqual(state.get("worktreePath"), os.path.abspath(self.wt_dir))
+        self.assertEqual(state.get("branch"), "my-branch")
+        self.assertEqual(self._corrupt_siblings(), [],
+                         "valid state.json must not produce a .corrupt sibling")
 
 
 if __name__ == "__main__":

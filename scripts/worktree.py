@@ -29,6 +29,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _aipf  # noqa: E402  (shared helpers: layout, read/write_json, now_iso_utc)
@@ -147,22 +148,78 @@ def record_worktree_in_state(state, worktree_path, branch):
     return state
 
 
+def _quarantine_corrupt_state(spath):
+    """Move an unparseable state.json aside to `state.json.corrupt-<TS>`.
+
+    Never silently overwrite a state.json we couldn't read: a JSONDecodeError
+    there usually means the orchestrator's INTAKE write (phase/iteration/
+    dispatched/questions) is half-written or clobbered, and minting a fresh
+    minimal state on top would lose it. We rename the byte-for-byte original
+    aside instead, then let the caller mint a fresh one.
+
+    `<TS>` = local time + pid with NO colons (NTFS forbids ':' in names; that
+    is also why `now_iso` is unusable here). `os.replace` is atomic and works
+    cross-platform. Returns the quarantine basename, or None if the move failed
+    (in which case the caller proceeds to overwrite — losing a file we already
+    can't read is the lesser evil than aborting `add`)."""
+    ts = time.strftime("%Y%m%d-%H%M%S") + "-" + str(os.getpid())
+    dest = spath + ".corrupt-" + ts
+    try:
+        os.replace(spath, dest)
+    except OSError:
+        return None
+    return os.path.basename(dest)
+
+
 def _write_state_fields(root, slug, worktree_path, branch):
     """Read the task's state.json, set worktreePath/branch, write it back.
 
     Tolerant: if state.json is missing we create a minimal one (the
     orchestrator usually writes it in INTAKE, but `add` may run first on a
-    resume). Returns (state, created) where `created` is True if we minted it.
+    resume). A *corrupt* state.json (present but unparseable) is NOT silently
+    overwritten — it is quarantined to `state.json.corrupt-<TS>` with a visible
+    warning, then a fresh minimal one is minted (see _quarantine_corrupt_state).
+
+    Returns (state, status) where status is one of:
+        "created"     — file was missing, we minted a minimal one
+        "recovered"   — file was corrupt, quarantined, minted a minimal one
+        "overwritten" — file was corrupt but quarantine failed; we had to
+                        overwrite it (a visible stderr warning was printed)
+        "merged"      — file was a valid dict, worktree fields merged in
     """
     spath = _aipf.task_file(root, slug, "state.json")
+    # os.path.exists BEFORE the read so we can tell "missing" (no file) from
+    # "corrupt" (file there, but read_json's graceful default kicked in). This
+    # keeps read_json's contract untouched (its default is relied on elsewhere,
+    # e.g. test_corrupt_json_is_graceful).
+    existed = os.path.exists(spath)
     existing = _aipf.read_json(spath, None)
-    created = existing is None
-    state = existing if isinstance(existing, dict) else {}
-    if created:
+    if isinstance(existing, dict):
+        status = "merged"
+        state = existing
+    elif existed:
+        # present but unparseable (or non-dict json) -> quarantine, don't clobber
+        name = _quarantine_corrupt_state(spath)
+        if name:
+            print("warning: битый state.json сохранён как " + name
+                  + ", создаю новый", file=sys.stderr)
+            status = "recovered"
+        else:
+            # quarantine провалился — файл будет перезаписан, сохранить его не
+            # удалось. Честно скажем об этом, чтобы cmd_add не утверждал ниже,
+            # будто оригинал лежит рядом как state.json.corrupt-*.
+            print("warning: битый state.json не удалось сохранить (" + spath
+                  + "), файл перезаписан", file=sys.stderr)
+            status = "overwritten"
+        state = {}
+        state.setdefault("slug", slug)
+    else:
+        status = "created"
+        state = {}
         state.setdefault("slug", slug)
     state = record_worktree_in_state(state, worktree_path, branch)
     _aipf.write_json(spath, state)
-    return state, created
+    return state, status
 
 
 def _clear_state_worktree_fields(root, slug):
@@ -294,10 +351,19 @@ def cmd_add(args):
     # Keep the .workflow symlink out of the worktree's diff (shared exclude).
     _ensure_git_exclude(root)
 
-    _, created = _write_state_fields(root, slug, wt_dir, branch)
-    if created:
+    _, status = _write_state_fields(root, slug, wt_dir, branch)
+    if status == "created":
         print("note: state.json was missing -> created a minimal one "
               "(the orchestrator normally writes it in INTAKE)")
+    elif status == "recovered":
+        print("note: state.json was corrupt -> quarantined as "
+              "state.json.corrupt-* and minted a minimal one "
+              "(rerun the orchestrator's INTAKE to restore phase/iteration)")
+    elif status == "overwritten":
+        print("note: state.json was corrupt and could NOT be quarantined -> "
+              "overwritten with a minimal one (the original was lost; see the "
+              "warning above; rerun the orchestrator's INTAKE to restore "
+              "phase/iteration)")
     print("recorded worktreePath/branch in "
           + _aipf.task_file(root, slug, "state.json"))
 
