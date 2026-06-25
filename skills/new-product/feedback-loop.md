@@ -60,8 +60,8 @@ The dashboard renders from `dashboard.json` and `replies.json`, which **you** wr
 
 **Judge verdicts** (new — written each scored iteration in BUILD and once at SHIP). A judge entry is a
 `runs[]` item with `kind: "judge"` and a deterministic id `judge-<phase>-i<iter>` (SHIP uses
-`judge-ship`). Its `summary` is **markdown in the global default language**
-(`~/.claude/ai-pathfinder/settings.json`, default English) carrying the **merged** verdict: the
+`judge-ship`). Its `summary` is **markdown in the run language `state.json.lang`** (the human's request
+language) carrying the **merged** verdict: the
 `weighted_total` (0–100), the per-dimension score table, and the test pass/fail line; `findings` are the
 judges' `actionable_critique` ranked by severity (a `blocking_issue` maps to `severity: "high"`):
 

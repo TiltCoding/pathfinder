@@ -16,11 +16,13 @@ Goal: capture what we are auditing and stand up the workspace.
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `iteration: 0`. In a git repo,
   record `baseCommit` = `git rev-parse HEAD`. Seed `prisms[]` with the default prism list (below) — or
   the subset the brief constrains you to.
-- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
-  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
-  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt — it is the
-  **default** output language for artifacts/dashboard/knowledge (chat/reply channels still follow the
-  human's message language).
+- **Resolve the run language** — **the human's request language wins.** Auto-detect the language of the
+  human's request and record it in `state.json` as `lang`; fall back to the global setting
+  `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`; graceful → `"en"`) **only** when there
+  is no human request (autonomous/eval runs). Pass `lang` to every sub-agent in its spawn prompt — it is
+  the output language for all human-facing output (terminal narration, candidate texts, dashboard,
+  chat/replies). `docs/knowledge/**` and git commit messages stay English regardless (unless the human
+  explicitly asks otherwise).
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
 - Advance to SCOUT.
@@ -78,8 +80,8 @@ loop, exactly like `/feature`'s plan gate — but the gate is **feature-pick**, 
   **«Вручную»** (no answer ⇒ manual) — the safe, back-compatible behavior. This single choice flips the
   whole queue to autonomous at DISPATCH; the drainer's contract is in `dispatch-queue.md`
   §"Autonomous drain (opt-in)".
-- In the `summary`, tell the human the contract in the **global default language** (from
-  `~/.claude/ai-pathfinder/settings.json`, default English): pick the **Do / Skip** choice per feature
+- In the `summary`, tell the human the contract in the **run language `state.json.lang`** (the human's
+  request language): pick the **Do / Skip** choice per feature
   (or type a free-form note like "do it, but without X"), then **Submit** to record the choice, then
   **Approve plan** to dispatch the picked ones. State the defaults explicitly: **no answer = Skip**, and
   the order **Submit → Approve** is required (the draft is not readable before submit). Also explain the

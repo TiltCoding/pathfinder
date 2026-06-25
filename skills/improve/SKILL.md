@@ -129,13 +129,17 @@ runs through you.
 - **Headless/eval mode** (`--eval` argument or `AIPF_EVAL=1`): use fixed swarm/vote counts, skip the
   human gate (auto-pick top-K or auto-approve), consume any pre-seeded `submissions/`, and seed the
   chosen feature runs without a human present. This lets the whole workflow run unattended.
-- **Output language.** The default output language for artifacts, dashboard, and knowledge base is the
-  global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
-  defaulting to **English** when unset/unreadable. **Exception:** in the human-facing reply channels —
-  `chat.jsonl` (role `agent`, including anchored threads) and `replies.json` — reply in the **same
-  language as the human message you are answering** (auto-detect from that message text); this overrides
-  the default. Machine-parsed candidate (`cand:`) keys and fixed schema headers stay English. These
-  skill/agent instructions stay English.
+- **Output language — the human's request language wins.** Resolve the run language at INTAKE: **use the
+  language of the human's request** (auto-detect from their message) and record it in `state.json.lang`;
+  fall back to the global plugin setting (`~/.claude/ai-pathfinder/settings.json`, `{"lang":"en"|"ru"}`,
+  default **English**) **only** when there is no human request to detect from (autonomous/eval runs).
+  Pass `lang` to every sub-agent. **The resolved language is mandatory for everything the human reads:**
+  your own terminal narration, the dashboard content, candidate titles/problem/change descriptions and
+  gate texts, and the reply channels `chat.jsonl` (role `agent`, including anchored threads) and
+  `replies.json`. **Always English regardless of the run language** (unless the human explicitly asks
+  otherwise): `docs/knowledge/**`, the README, and git commit messages — plus machine-parsed candidate
+  (`cand:`) keys and fixed schema headers, which are never translated. These skill/agent instruction
+  files stay English.
 - **Prefer reuse.** Sub-agents must read `docs/knowledge/INDEX.md` first and match existing patterns
   before proposing candidates.
 

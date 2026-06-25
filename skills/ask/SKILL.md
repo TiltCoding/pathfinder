@@ -109,13 +109,15 @@ draw the visualizations, and never spawn sub-agents. The orchestrator owns every
   a simple clarification is answered inline, a substantive new question triggers a new mini-swarm. The
   task auto-advances to `DONE` after ~24h of chat silence or on the human's explicit request. See
   `feedback-loop.md`.
-- **Output language.** The default output language for the dashboard chrome and knowledge base is the
-  global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
-  defaulting to **English** when unset/unreadable. **Exception (overrides the default):** because `/ask`
-  *is* a reply to the human, write the whole answer — `summary`, `planBlocks`, and the `chat.jsonl`
-  (role `agent`) follow-ups — in the **same language as the question/chat message you are answering**
-  (auto-detect from that message text). Fixed schema keys and machine-parsed digest headers stay English.
-  These skill/agent instructions stay English.
+- **Output language — the human's request language wins.** Resolve the run language at INTAKE: **use the
+  language of the question** (auto-detect), record it in `state.json.lang`, and pass it to every
+  sub-agent; fall back to the global plugin setting (`~/.claude/ai-pathfinder/settings.json`,
+  `{"lang":"en"|"ru"}`, default **English**) **only** when there is no human question to detect from
+  (eval runs). Because `/ask` *is* a reply to the human, write the whole answer — your terminal
+  narration, `summary`, `planBlocks`, and the `chat.jsonl` (role `agent`) follow-ups — in that language.
+  **Always English regardless of the run language** (unless the human explicitly asks otherwise):
+  `docs/knowledge/**` — plus fixed schema keys and machine-parsed digest headers, which are never
+  translated. These skill/agent instruction files stay English.
 - **Headless/eval mode** (`--eval` argument or `AIPF_EVAL=1`): use a fixed small swarm, **skip the chat
   loop** — produce the first answer and advance straight to `DONE`. This lets the whole workflow run
   unattended.

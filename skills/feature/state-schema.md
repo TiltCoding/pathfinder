@@ -52,10 +52,12 @@ Field notes:
 - **`baseCommit`**: the git `HEAD` captured at INTAKE. The companion server diffs the working tree
   against it to populate the **Changes** tab (`/changes`). Absent in non-git projects — the server
   then falls back to `HEAD`.
-- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
-  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
-  generated artifacts/dashboard/knowledge; chat (`chat.jsonl`) and `replies.json` instead follow the
-  language of the human's message. Pass it to sub-agents in their spawn prompt.
+- **`lang`**: the resolved run language (`"en"` | `"ru"`). **The human's request language wins** —
+  auto-detect it at INTAKE; fall back to `~/.claude/ai-pathfinder/settings.json` (graceful → `"en"`)
+  only when there is no human request (autonomous/eval runs). It is the language for **all human-facing
+  output**: terminal narration, artifacts, dashboard, gate cards, choice labels, chat (`chat.jsonl`) and
+  `replies.json`. `docs/knowledge/**` and git commit messages stay English regardless (unless the human
+  explicitly asks otherwise). Pass it to sub-agents in their spawn prompt.
 - **`worktreePath`**: the absolute path of the task's own git working tree. Set for **every** task now
   that each task runs in its own worktree (see `parallel.md`). The server diffs the **Changes** tab
   against this tree instead of the project root. Written by `scripts/worktree.py` (append-only); read by

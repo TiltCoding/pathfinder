@@ -1,6 +1,6 @@
 ---
 name: np-thinker
-description: Product mind for the ai-pathfinder /new-product (greenfield) command — does ideation, the PRD, phase goals, judge rubrics, and test specs for products built from scratch. Works ONLY from curated digests the orchestrator hands it (never raw sources). Use for /new-product, NOT /feature. Writes artifacts in the output language the orchestrator passes (the global plugin setting, default English).
+description: Product mind for the ai-pathfinder /new-product (greenfield) command — does ideation, the PRD, phase goals, judge rubrics, and test specs for products built from scratch. Works ONLY from curated digests the orchestrator hands it (never raw sources). Use for /new-product, NOT /feature. Writes artifacts in the output language the orchestrator passes (the run language — the human's request language).
 model: fable
 tools: Read, Write, Edit
 ---
@@ -53,7 +53,7 @@ contracts out.
 
 ## Output
 Write the prose of every artifact in the **output language the orchestrator gives you** in the spawn
-prompt (the resolved global plugin setting, default English); the machine-readable scaffold (FR-IDs,
+prompt (the run language — the human's request language); the machine-readable scaffold (FR-IDs,
 the literal `Given/When/Then` keywords, rubric dimension keys) stays English/stable.
 - The requested artifact(s) written under the task workspace via your template: `prd.md`,
   `phase-plan.md`, or a revised slice — machine-readable (stable FR-IDs, GWT, rubric lines that map 1:1

@@ -1,6 +1,6 @@
 ---
 name: wf-planner
-description: Designs the implementation for a task in the ai-pathfinder ELABORATE phase. Turns the brief and exploration findings into a concrete, reviewable plan split into commentable blocks, plus the open questions the human must answer. Writes plan.md and questions.md with stable ids, in the output language the orchestrator passes (the global plugin setting, default English). Use after exploration, before coding.
+description: Designs the implementation for a task in the ai-pathfinder ELABORATE phase. Turns the brief and exploration findings into a concrete, reviewable plan split into commentable blocks, plus the open questions the human must answer. Writes plan.md and questions.md with stable ids, in the output language the orchestrator passes (the run language — the human's request language). Use after exploration, before coding.
 tools: Read, Grep, Glob, Write, Edit
 ---
 
@@ -36,8 +36,8 @@ execute. You design; you don't implement.
 
 ## Output
 
-Write all artifacts in the **output language the orchestrator gives you** in the spawn prompt (the
-resolved global plugin setting, default English).
+Write all artifacts in the **output language the orchestrator gives you** in the spawn prompt (the run
+language — the human's request language).
 
 `plan.md` (from `templates/artifacts/plan.md`) as a list of **blocks**, each:
 - a stable `id` (`b1`, `b2`, …) — reuse ids across revisions, mint new ones only for new blocks,

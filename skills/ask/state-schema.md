@@ -40,10 +40,11 @@ Field notes (base):
   against it for the **Changes** tab — `/ask` edits no code, so its own Changes tab is usually
   empty. Absent in non-git projects (the server falls back to `HEAD`).
 - **`serverPort`**: the companion server port (mirrors `.workflow/server.json`).
-- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
-  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). It is the **default** language
-  for generated chrome/knowledge; the answer (`summary`/`planBlocks`) and chat replies still follow the
-  language of the question/message. Pass it to sub-agents in their spawn prompt.
+- **`lang`**: the resolved run language (`"en"` | `"ru"`). **The question's language wins** — auto-detect
+  it at INTAKE; fall back to `~/.claude/ai-pathfinder/settings.json` (graceful → `"en"`) only when there
+  is no human question (eval runs). The whole answer (terminal narration, `summary`/`planBlocks`) and
+  chat replies follow it. `docs/knowledge/**` stays English regardless (unless the human explicitly asks
+  otherwise). Pass it to sub-agents in their spawn prompt.
 - **`lastSignalCount`**: how many `signals.json` entries you have already accounted for. Serves as the
   `/wait` long-poll baseline (`sinceSignal`) in the `ANSWER` chat loop and keeps you from re-processing
   old signals.
@@ -85,7 +86,7 @@ two scenarios stay compatible. Write each one as the matching stage produces it.
 - **`.workflow/active.json`** — `{ slug, updatedAt }`, rewritten on every start/resume. Lets the
   telemetry hooks map a Claude Code session to the active task for session-level events.
 - **`.workflow/tasks/<slug>/research/<n>.md`** — the per-facet digests written by `ask-researcher`
-  (prose in the global default language; fixed-schema headers stay English), consolidated by you at
+  (prose in the run language `state.json.lang`; fixed-schema headers stay English), consolidated by you at
   RESEARCH/ANSWER. Referenced by `questionLog`.
 - **`.workflow/tasks/<slug>/mockups/`** — the self-contained `infographic.html` and `process.svg` you
   draw at SYNTHESIZE, served read-only by `GET /mockup`. Names must match `MOCKUP_RE`.

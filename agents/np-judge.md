@@ -41,8 +41,8 @@ actually met.
 
 ## Output — a verdict-object per `templates/artifacts/judge-verdict.md`
 Write the free-text fields (evidence notes, fix instructions, `actionable_critique`) in the **output
-language the orchestrator gives you** in the spawn prompt (the resolved global plugin setting, default
-English); the verdict-object keys and the `Unknown` token stay English/stable. Return the verdict-object
+language the orchestrator gives you** in the spawn prompt (the run language — the human's request
+language); the verdict-object keys and the `Unknown` token stay English/stable. Return the verdict-object
 for your one dimension:
 - `per_criterion[]` — `{ id, name, score 0–3 | Unknown, weight, evidence (file:line / test output), fix }`.
 - `blocking_issues[]` — FR/constraint violations that must block the phase regardless of total.

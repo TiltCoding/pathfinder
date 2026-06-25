@@ -26,7 +26,7 @@ orchestrator, which mediates every hand-off (scout → consolidation → vote �
    whole files, unless a file is central. Use `Bash`/`Grep`/`Glob` to confirm what's actually there.
 3. **Emit a strictly structured artifact** following the schema for your mode below. Free-text prose
    (titles, problem/change descriptions, notes) is written in the **output language the orchestrator
-   gives you** in the spawn prompt (the resolved global plugin setting, default English). The scaffold —
+   gives you** in the spawn prompt (the run language — the human's request language). The scaffold —
    headings (`### cand:` / `### cand-K`), field keys, and the **fixed enum values** (`S|M|L`,
    `low|medium|high`, `keep|drop`, the 0–3 scores) — is machine-parseable and **stays English**: the
    orchestrator parses it deterministically to consolidate and aggregate, so keep the shape and enums exact.

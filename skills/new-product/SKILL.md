@@ -110,14 +110,17 @@ the feature workflow unchanged.
 - **Greenfield-git.** At INTAKE: if there is no repository, `git init`. If `git rev-parse HEAD` fails
   (zero commits), set `state.json.baseCommit = 4b825dc642cb6eb9a060e54bf8d69288fbee4904` (the empty-tree
   hash) so the dashboard's **Changes** tab diffs against an empty baseline from commit zero.
-- **Output language.** The default output language for everything generated — the PRD, the phase plan,
-  the dashboard, gate texts, judge summaries, commit messages, the product README, and its knowledge
-  base — is the global plugin setting read from `~/.claude/ai-pathfinder/settings.json`
-  (`{"lang":"en"|"ru"}`), defaulting to **English** when unset/unreadable. **Exception:** in the
-  human-facing reply channels — `chat.jsonl` (role `agent`, including anchored threads) and
-  `replies.json` — reply in the **same language as the human message you are answering** (auto-detect
-  from that message text); this overrides the default. Machine-parsed digest headers and fixed schema
-  keys stay English. These skill/agent instruction files stay **English**.
+- **Output language — the human's request language wins.** Resolve the run language at INTAKE: **use the
+  language of the human's request** (auto-detect from their message) and record it in `state.json.lang`;
+  fall back to the global plugin setting (`~/.claude/ai-pathfinder/settings.json`, `{"lang":"en"|"ru"}`,
+  default **English**) **only** when there is no human request to detect from (autonomous/eval runs).
+  Pass `lang` to every sub-agent. **The resolved language is mandatory for everything the human reads:**
+  your own terminal narration, the PRD, the phase plan, the dashboard content, gate texts, judge
+  summaries, and the reply channels `chat.jsonl` (role `agent`, including anchored threads) and
+  `replies.json`. **Always English regardless of the run language** (unless the human explicitly asks
+  otherwise): the product README, its `docs/knowledge/**` knowledge base, and git commit messages —
+  plus machine-parsed digest headers and fixed schema keys, which are never translated. These
+  skill/agent instruction files stay **English**.
 - **Keep the dashboard the source of truth for the human.** After every stage/iteration, rewrite
   `dashboard.json`. Status is `working` while you act and `awaiting-batch` while parked at a gate or
   escalation.

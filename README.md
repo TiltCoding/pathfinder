@@ -272,11 +272,14 @@ owns the server. Useful flags: `--port N` (prefer a specific port), `--no-browse
 
 ## Conventions
 
-- **Language.** The dashboard and hub UI are **English-first** with an EN/RU toggle; the choice is a
-  global plugin setting stored in `~/.claude/ai-pathfinder/settings.json` and changed from the runs hub.
-  Artifacts and the knowledge base are written in the language of that global setting (default
-  **English**), while the agent's chat and inline replies answer in the **language of the human's
-  message**. The skill/agent instructions themselves stay **English** (more reliable triggering).
+- **Language.** The agent answers in the **language of the human's request** — auto-detected and applied
+  to everything the human reads: the terminal narration, the dashboard content, the working artifacts
+  (brief/plan/questions/summary/PRD), gate texts, and the chat/inline replies. The global plugin setting
+  in `~/.claude/ai-pathfinder/settings.json` (default **English**, changed from the runs hub via the
+  EN/RU toggle) is the **fallback** when there is no human request (autonomous/eval runs) and the
+  language of the dashboard/hub **UI chrome**. The **knowledge base** (`docs/knowledge/**`), the README,
+  and **git commit messages** stay **English** regardless (unless you explicitly ask otherwise). The
+  skill/agent instructions themselves stay **English** (more reliable triggering).
 - `${CLAUDE_PLUGIN_ROOT}` locates the server and templates at runtime.
 
 ## Telemetry & MCP

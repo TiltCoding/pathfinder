@@ -76,11 +76,13 @@ Goal: capture the task and stand up the workspace.
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `iteration: 0`. In a git repo,
   record `baseCommit` = `git rev-parse HEAD` so the dashboard's **Changes** tab can diff the task's
   work against the starting point.
-- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
-  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
-  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt — it is the
-  **default** output language for artifacts/dashboard/knowledge (chat/reply channels still follow the
-  human's message language).
+- **Resolve the run language** — **the human's request language wins.** Auto-detect the language of the
+  human's request and record it in `state.json` as `lang`; fall back to the global setting
+  `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`; graceful → `"en"`) **only** when there
+  is no human request (autonomous/eval runs). Pass `lang` to every sub-agent in its spawn prompt — it is
+  the output language for all human-facing output (terminal narration, artifacts, dashboard,
+  chat/replies). `docs/knowledge/**` and git commit messages stay English regardless (unless the human
+  explicitly asks otherwise).
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
   `dashboard.json` (summary from the brief, status `working`) and give the user the URL.
 - **Stand the task up in its own git worktree at this point** (always — see `parallel.md`):

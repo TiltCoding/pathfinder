@@ -119,13 +119,17 @@ several calls). Give each the task slug and workspace path so it writes artifact
   - **Autonomous mode is a SEPARATE predicate from `AIPF_EVAL` — do not merge the two.** Autonomous
     skips the PLAN GATE park like eval, but **keeps** VERIFY + the review gates and chat steering;
     eval skips the review gates. See `../improve/dispatch-queue.md` §"Autonomous drain (opt-in)".
-- **Output language.** The default output language for artifacts, dashboard, and knowledge base is the
-  global plugin setting read from `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`),
-  defaulting to **English** when unset/unreadable. **Exception:** in the human-facing reply channels —
-  `chat.jsonl` (role `agent`, including anchored threads) and `replies.json` — reply in the **same
-  language as the human message you are answering** (auto-detect from that message text); this overrides
-  the default. Machine-parsed digest/candidate headers and fixed schema keys stay English. These
-  skill/agent instructions stay English.
+- **Output language — the human's request language wins.** Resolve the run language at INTAKE: **use the
+  language of the human's request** (auto-detect from their message) and record it in `state.json.lang`;
+  fall back to the global plugin setting (`~/.claude/ai-pathfinder/settings.json`, `{"lang":"en"|"ru"}`,
+  default **English**) **only** when there is no human request to detect from (autonomous/eval runs).
+  Pass `lang` to every sub-agent. **The resolved language is mandatory for everything the human reads:**
+  your own terminal narration, the dashboard content, brief/exploration/plan/questions/summary, gate
+  texts and choice options, and the reply channels `chat.jsonl` (role `agent`, including anchored
+  threads) and `replies.json`. **Always English regardless of the run language** (unless the human
+  explicitly asks otherwise): `docs/knowledge/**`, the README, and git commit messages — plus
+  machine-parsed digest/candidate headers and fixed schema keys, which are never translated. These
+  skill/agent instruction files stay English.
 - **Prefer reuse.** Sub-agents must read `docs/knowledge/INDEX.md` first and match existing patterns
   before proposing new code.
 

@@ -37,7 +37,7 @@ Emit a **strictly structured digest** with the fixed, machine-parseable headings
 keys stay English and exact** (the orchestrator parses them deterministically to consolidate facets,
 build the process diagram from the reasoning steps, and the infographic from the numbers); the **prose
 under each heading** is written in the **output language the orchestrator gives you** in the spawn prompt
-(the resolved global plugin setting, default English). Keep the shape exact:
+(the run language — the human's request language). Keep the shape exact:
 
 ```
 ## Answer

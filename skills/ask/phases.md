@@ -13,11 +13,12 @@ Goal: capture the question and stand up the workspace.
 - Write the user's question into `brief.md` (from `templates/artifacts/brief.md`) **as a question, not a
   spec**: the exact question, any scope the user gave (e.g. "dashboard only"), and what to focus on.
   Ask the user only for a real blocker you cannot infer — a question is light, not a task brief.
-- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
-  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
-  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt (it is the
-  **default** for generated chrome/knowledge; the answer and chat replies still follow the question's
-  language).
+- **Resolve the run language** — **the question's language wins.** Auto-detect the language of the
+  question and record it in `state.json` as `lang`; fall back to the global setting
+  `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`; graceful → `"en"`) **only** when there
+  is no human question (eval runs). Pass `lang` to every sub-agent in its spawn prompt — the whole answer
+  (terminal narration, `summary`, `planBlocks`) and chat replies follow it. `docs/knowledge/**` stays
+  English regardless (unless the human explicitly asks otherwise).
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `kind: "ask"`, the resolved
   `lang`. In a git repo, record `baseCommit` = `git rev-parse HEAD`.
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
@@ -37,8 +38,8 @@ Goal: gather the evidence to answer, from every facet the question touches.
 - **Spawn `ask-researcher` in parallel, one per facet** — usually **2–4**; a narrow question needs only
   **1–2**. Keep the facets disjoint so researchers don't overlap. Each one **reads `INDEX.md` first**,
   then surveys its facet of the code with `path:line` evidence, writes its digest to `research/<n>.md`
-  (prose in the global default language — `~/.claude/ai-pathfinder/settings.json`, default English; the
-  fixed-schema **headers stay English** per `agents/ask-researcher.md`), and returns a short summary to you.
+  (prose in the run language `state.json.lang` — the question's language; the fixed-schema **headers stay
+  English** per `agents/ask-researcher.md`), and returns a short summary to you.
 - **Consolidate the digests yourself** into a single picture: merge the `## Answer` theses, union the
   `## Sources`, order the `## Reasoning steps` into one reasoning path, collect the `## Facts/relations`
   facts, and note any `## Confidence/gaps`. This consolidated picture is what you synthesize from —

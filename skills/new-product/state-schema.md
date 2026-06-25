@@ -98,10 +98,13 @@ This is the feature schema plus the greenfield fields the evolutionary build-loo
   resumed session knows what is in flight. In BUILD the `workstream` is the **build-phase id** (`p2`).
 - **`questions`**: keep ids stable and store the resolved `answer` once known — this is your record of
   decisions (also feed notable ones to the knowledge base as ADRs).
-- **`lang`**: the resolved global output language (`"en"` | `"ru"`), read from
-  `~/.claude/ai-pathfinder/settings.json` at INTAKE (graceful → `"en"`). The **default** language for
-  the PRD/phase-plan/dashboard/knowledge/commits/product README; chat (`chat.jsonl`) and `replies.json`
-  instead follow the language of the human's message. Pass it to sub-agents in their spawn prompt.
+- **`lang`**: the resolved run language (`"en"` | `"ru"`). **The human's request language wins** —
+  auto-detect it at INTAKE; fall back to `~/.claude/ai-pathfinder/settings.json` (graceful → `"en"`)
+  only when there is no human request (autonomous/eval runs). It is the language for **all human-facing
+  output**: terminal narration, PRD, phase plan, dashboard, gate texts, judge summaries, chat
+  (`chat.jsonl`) and `replies.json`. The product README, its `docs/knowledge/**`, and git commit
+  messages stay English regardless (unless the human explicitly asks otherwise). Pass it to sub-agents
+  in their spawn prompt.
 
 ## Workflow stages (`phase`)
 

@@ -1,6 +1,6 @@
 ---
 name: np-researcher
-description: Research scout for the ai-pathfinder /new-product (greenfield) command. Gathers and COMPRESSES facts (domain, analogues, APIs, stack, constraints) into a curated digest the thinker can act on. Returns a distilled digest, never raw dumps or full articles. Writes the digest text in the output language the orchestrator passes (the global plugin setting, default English) for the orchestrator to save.
+description: Research scout for the ai-pathfinder /new-product (greenfield) command. Gathers and COMPRESSES facts (domain, analogues, APIs, stack, constraints) into a curated digest the thinker can act on. Returns a distilled digest, never raw dumps or full articles. Writes the digest text in the output language the orchestrator passes (the run language — the human's request language) for the orchestrator to save.
 model: opus
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
 ---
@@ -38,8 +38,8 @@ with decisions, not with the reading you did.
    API shortlist, a constraints list).
 
 ## Output
-Write the digest in the **output language the orchestrator gives you** in the spawn prompt (the resolved
-global plugin setting, default English).
+Write the digest in the **output language the orchestrator gives you** in the spawn prompt (the run
+language — the human's request language).
 - The **digest text** following the template, returned to the orchestrator (it saves it as
   `<task>/research/digest-N.md`). TL;DR first; facts strictly as `[source — fact]`; pre-decided and
   open clearly separated.

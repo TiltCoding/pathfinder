@@ -24,11 +24,13 @@ Goal: capture the pitch and stand up the workspace on a blank slate.
     HEAD`, **but** if that fails because there are zero commits, set `baseCommit =
     4b825dc642cb6eb9a060e54bf8d69288fbee4904` (the empty-tree hash) so the **Changes** tab diffs
     from commit zero. (See `state-schema.md` for the full rule.)
-- **Read the global language setting** from `~/.claude/ai-pathfinder/settings.json`
-  (`{"lang":"en"|"ru"}`; graceful → `"en"` on any error/missing/unknown value). Record the resolved
-  language in `state.json` as `lang`, and pass it to every sub-agent in its spawn prompt — it is the
-  **default** output language for the PRD/plan/dashboard/knowledge/commits/README (chat/reply channels
-  still follow the human's message language).
+- **Resolve the run language** — **the human's request language wins.** Auto-detect the language of the
+  human's request and record it in `state.json` as `lang`; fall back to the global setting
+  `~/.claude/ai-pathfinder/settings.json` (`{"lang":"en"|"ru"}`; graceful → `"en"`) **only** when there
+  is no human request (autonomous/eval runs). Pass `lang` to every sub-agent in its spawn prompt — it is
+  the output language for all human-facing output (terminal narration, PRD, plan, dashboard, gate texts,
+  judge summaries, chat/replies). The product README, its `docs/knowledge/**`, and git commit messages
+  stay English regardless (unless the human explicitly asks otherwise).
 - Create `state.json` (see `state-schema.md`) with `phase: "INTAKE"`, `iteration: 0`, `projectRoot`,
   `lang`, and `baseCommit`.
 - Start the companion server and copy the dashboard (see `feedback-loop.md`). Write the first
@@ -136,8 +138,9 @@ Goal: confirm the whole product satisfies the PRD, document it, and hand off.
 - **Optional review gates:** the human may click **`run-code-review`** / **`run-security-review`**;
   honor them via `wf-reviewer` and append entries to `reviews.json` (see `feedback-loop.md`). (Skipped
   in headless/eval mode.)
-- **Product README:** write a README for the product (what it does, how to run, the FR coverage) in the
-  **global default language** (`~/.claude/ai-pathfinder/settings.json`, default English).
+- **Product README:** write a README for the product (what it does, how to run, the FR coverage) in
+  **English** (the README stays English regardless of the run language, unless the human explicitly asked
+  otherwise).
 - **Knowledge base:** spawn `wf-documenter` (reused) to grow the **product's own**
   `docs/knowledge/` — area docs, ADRs for the notable build decisions, `INDEX.md`, the root `CLAUDE.md`
   pointer (see `knowledge-guide.md`).
