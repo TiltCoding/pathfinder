@@ -86,10 +86,16 @@
 
 ### CI
 
-- **`.github/workflows/ci.yml`** — matrix `os: [ubuntu/macos/windows-latest] × python: [3.11, 3.12, 3.13]`,
-  `on: [push, pull_request]`, `fail-fast: false` (видеть все падающие комбинации сразу). Единственный шаг —
-  `python -m unittest discover -s tests`; **stdlib-only, без `pip install`** (соответствует инварианту
-  «сервер/тесты — только stdlib»). Любой новый тест обязан укладываться в этот безпиповый прогон.
+- **`.github/workflows/ci.yml`** — `on: [push, pull_request]`, два job'а:
+  - **`test`** — matrix `os: [ubuntu/macos/windows-latest] × python: [3.11, 3.12, 3.13]`, `fail-fast: false`
+    (видеть все падающие комбинации сразу), единственный шаг `python -m unittest discover -s tests`.
+  - **`lint`** — single `ubuntu-latest` + python 3.13, шаг `python scripts/check_stdlib.py`: проверяет
+    несущие инварианты — **stdlib-only** (`scripts/*.py` импортируют лишь stdlib + локальные модули) и
+    **no-CDN** (`templates/*.html` без внешних `src`/`href`/`@import` на `http(s)`). Локально тот же гейт
+    запускается через `dev.py lint`.
+
+  Оба job'а **stdlib-only, без `pip install`** (соответствует инварианту «сервер/тесты — только stdlib»).
+  Любой новый тест обязан укладываться в этот безпиповый прогон.
 
 ## Полезные утилиты (переиспользовать)
 
@@ -101,4 +107,4 @@
 - `scripts/_aipf.py:25` — `now_iso_utc()` — таймстемп ISO-8601 UTC `Z`.
 - `scripts/_aipf.py:496` — `_spans_from_events(events)` — склейка start/end в спаны (паттерн парности).
 
-_updated: 2026-06-19 (конвенция языка: eng-first глобальная настройка + язык вопроса в чате, ADR-0018)_
+_updated: 2026-06-25 (ci-lint-gate-wire: CI-job `lint` реально подключён в `ci.yml` — stdlib-only + no-CDN гейт `scripts/check_stdlib.py` проверяется на каждый push/PR; раздел «CI» описывает оба job'а). Ранее — конвенция языка: eng-first глобальная настройка + язык вопроса в чате, ADR-0018_
