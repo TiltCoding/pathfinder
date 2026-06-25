@@ -22,6 +22,38 @@
   CDN-ссылку; 183 теста `unittest` зелёные. Ревью-гейты (code/security) — без находок.
 - **Без ADR** — мелкая механическая правка конфигурации CI (подключение уже существующего гейта), не
   новое архитектурное решение.
+## 2026-06-25 — atomic-write-pid-temp (кросс-платформенная атомарная запись под конкуренцию)
+- **Что:** Центральная атомарная запись стала безопасной при **конкурентных писателях в общий store**.
+  - `scripts/_aipf.py`: `atomic_write` теперь пишет через **per-process temp** `atomic_temp_name(path)`
+    (`:65`) = `path.<pid>.<uuid8>.tmp` вместо общего `path.tmp` (убирает гонку на temp), публикует через
+    новый `atomic_replace(tmp, path)` (`:76`) — `os.replace` с **ограниченным ретраем** (50×2 мс) **только**
+    на транзиентную Windows-`PermissionError(13)`, на исчерпании **re-raise**. При любой `OSError` чистит
+    осиротевший temp и **re-raise**'ит исходную ошибку (без тихого фолбэка). `write_json` чинится транзитивно.
+  - `scripts/server.py`: `Workspace.write_json` (`:141`) **переиспользует** те же `_aipf`-хелперы
+    (`atomic_temp_name`/`atomic_replace`) — два центральных писателя больше не дрейфуют; убран лишний
+    `import uuid`.
+  - `tests/test_atomic_write.py` (новый, **10 тестов**): round-trip обоих писателей, отсутствие
+    осиротевших temp, очистка+re-raise на ошибке записи, конкурентная запись **N процессов/потоков** в
+    один путь.
+- **Зачем:** параллельные `/feature` делят один store через симлинк (ADR-0010) — несколько процессов и
+  потоков сервера пишут один и тот же файл (`state.json`/`draft.json`/`server.json`/`settings.json`).
+  Прежняя схема `path.tmp` + `os.replace` (1) давала гонку на общий temp (полу-записанный файл) и
+  (2) случайно падала на Windows, где `os.replace` атомарен по результату, но кидает транзиентную
+  `PermissionError`, если destination в этот момент держит другой писатель. Нужны **обе** меры:
+  per-process temp **И** ретрай replace.
+- **Ключевой инвариант (в ADR):** кросс-платформенная атомарная запись с конкурентами требует
+  per-process temp + ограниченного ретрая `os.replace` на транзиентную Windows-`PermissionError`. Это
+  **переиспользуемый** инвариант для всех будущих писателей поверх общего store — брать
+  `_aipf.atomic_temp_name`/`atomic_replace`, не катать свой temp+replace.
+- **Известный долг (зафиксирован, НЕ реализован):** `server.write_lang` (`scripts/server.py:209`,
+  `path + ".%d.tmp" % pid` + голый `os.replace`) и attachment-upload (`scripts/server.py:1372`,
+  `path + ".tmp"`) ещё **не** на общем хелпере (без ретрая) — подтянуть отдельной задачей; комментарий
+  ~`scripts/server.py:145` ссылается на `write_lang` как на образец — теперь неточно. Плюс sweep старых
+  осиротевших `*.tmp`.
+- **Источник:** дренаж аудита `improve-overall-2`, feat-2 (cand-14).
+- **Verify:** 193 теста зелёные (10 новых), ревью-гейты без блокеров.
+- **ADR:** `decisions/ADR-0021-cross-platform-atomic-write-pid-temp-retry.md`. Конвенции дополнены
+  (`conventions.md` §«Полезные утилиты» — `atomic_write`/`atomic_replace`/`atomic_temp_name` + инвариант).
 
 ## 2026-06-24 — feature-fast-lane (гейт TRIAGE: примитивные задачи мимо тяжёлой машины)
 - **Что:** добавлен **гейт TRIAGE (фаза §0)** в `/feature`, который запускается **до INTAKE**. Если
