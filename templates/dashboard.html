@@ -130,9 +130,16 @@
   .task-sidebar > * { margin: 0; }
   .task-sidebar h1.title { font-size: 16px; line-height: 1.3; }
   .page-main { min-width: 0; }
-  .page-main > .wrap { max-width: none; margin: 0; padding-left: 0; padding-right: 0; }
+  /* the inner panes already sit inside the padded .page-grid.wrap — drop their own
+     top padding (and the first card's top margin below) so content lines up with the
+     sidebar's top edge instead of starting ~52px lower */
+  .page-main > .wrap { max-width: none; margin: 0; padding: 0 0 64px; }
+  .page-main > main > :first-child { margin-top: 0; }
 
-  .now-line { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; color: var(--ink-soft); }
+  /* render as flowing text so the "Now:" label stays inline before the value and the
+     value wraps naturally — a flex row with align-items:center floated the short label
+     against the vertical centre of a multi-line value */
+  .now-line { min-width: 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft); overflow-wrap: anywhere; }
   .now-line.stale { opacity: .55; }
   .now-line b { color: var(--ink); font-weight: 600; }
   .phase-track { display: flex; gap: 3px; flex-wrap: wrap; }
