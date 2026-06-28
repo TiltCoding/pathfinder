@@ -43,10 +43,18 @@ The dashboard renders from `dashboard.json` and `replies.json`, which **you** wr
 
 ```json
 { "runs": [
-  { "id": "r1", "kind": "code-review", "status": "done", "ts": "...",
+  { "id": "r1", "kind": "code-review", "status": "done",
+    "startedAt": "...", "ts": "...",
     "summary": "Краткий итог.", "findings": [
       { "severity": "high", "file": "src/x.py", "line": 42, "text": "…" } ] } ] }
 ```
+
+**Write it atomically** (`scripts/_aipf.py` `write_json` → `atomic_write`, ADR-0021), never a raw
+truncate-write: under an autonomous `/loop /feature` drain this is a read-modify-write into the shared
+store across sessions. Each run carries a **`startedAt`** when it goes `status:"running"`; on resume a
+stale `running` (has `startedAt`, no terminal status, not actually in flight) is treated as `failed` and
+the gate is **re-run** — a VERIFY resume-invariant (feat-16), mirroring the dispatch-queue's stale-
+`in-progress` recovery. See `phases.md` §VERIFY.
 
 ## Parking at a checkpoint and consuming a batch
 

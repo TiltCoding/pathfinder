@@ -167,11 +167,21 @@ Goal: confirm the change actually works.
   clear blocker to surface.
 - **Review gates (auto):** after `wf-reviewer` is green, run the `/code-review` and `/security-review`
   skills over the diff as gates. Capture each run into `reviews.json` (see `feedback-loop.md` for the
-  shape): set `status: "running"` before you invoke the skill and rewrite it to `done`/`failed` with a
-  short `summary` and the ranked `findings` (severity, `file:line`, text) when it returns. The
-  dashboard's **«Изменения»** tab renders these and surfaces the change diff next to them. Treat
-  high-severity findings as fix-or-justify before DONE. (Only headless/eval mode skips these gates;
+  shape): set `status: "running"` **with a `startedAt`** before you invoke the skill and rewrite it to
+  `done`/`failed` with a short `summary` and the ranked `findings` (severity, `file:line`, text) when it
+  returns. The dashboard's **«Изменения»** tab renders these and surfaces the change diff next to them.
+  Treat high-severity findings as fix-or-justify before DONE. (Only headless/eval mode skips these gates;
   in **autonomous** mode `/code-review` + `/security-review` STILL run, exactly like a normal run.)
+  - **Write `reviews.json` atomically** (feat-16). Under an autonomous `/loop /feature` drain this is a
+    read-modify-write into the **shared store** across sessions, so use the project's atomic writer
+    (`scripts/_aipf.py` `write_json` → `atomic_write`, ADR-0021), never a raw truncate-write — a
+    half-written `reviews.json` would corrupt the only quality record of the gate.
+  - **Stale-`running` is a resume-invariant of VERIFY** (feat-16). The gate's pass/fail rests on
+    `reviews.json`, so a `running` entry whose session died (it has a `startedAt`, no terminal status,
+    and the run isn't actually in flight) must NOT be trusted as "still running" forever. On resume,
+    treat a stale `running` (older than a short threshold) as **`failed`** and **re-run that review
+    gate** before DONE — never reach DONE with a `running`/unresolved high-severity gate. This mirrors
+    the dispatch-queue's stale-`in-progress` recovery (feat-14).
 - A human can also request a re-run from the dashboard: the **`run-code-review`** / **`run-security-review`**
   signals arrive on your `/wait` baseline like any other signal — when you see one, re-run that skill
   and append a fresh entry to `reviews.json`.

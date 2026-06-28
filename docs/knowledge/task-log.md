@@ -4,6 +4,24 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — review-gate-atomic-writes (атомарная запись reviews.json + stale-running)
+- **Что:** зафиксирован контракт записи `reviews.json` (журнал VERIFY-гейтов). Фича feat-16/cand-25,
+  на `main`. Контракт-фича (кода нет — `_aipf.write_json` уже атомарен; предписываем его использовать).
+  - **phases.md §VERIFY:** запись `reviews.json` **атомарно** (`_aipf.write_json`→`atomic_write`,
+    ADR-0021), не сырым truncate — под автономным `/loop /feature` это read-modify-write в общий store
+    по сессиям; полузапись убила бы единственный журнал гейтов. Каждый run несёт `startedAt` при
+    `running`. **Resume-инвариант VERIFY:** stale `running` (есть startedAt, нет терминала, не в полёте)
+    → трактуется как `failed` и гейт **перезапускается**; не дойти до DONE с висящим `running`/
+    high-severity. Зеркало stale-`in-progress` recovery очереди (feat-14).
+  - **feedback-loop.md:** в shape `reviews.json` добавлен `startedAt`; нота про атомарную запись +
+    stale-running.
+- **Зачем:** review-гейт — единственная страховка качества автономного дренажа (ADR-0019); его журнал
+  не должен застревать в `running` после краша или биться при полузаписи.
+- **Тест:** `tests/test_review_gate_contract.py` (2 кейса) — phases.md предписывает atomic+stale+re-run;
+  feedback-loop shape несёт startedAt + atomic-ноту (контракт-проза не дрейфует).
+- **Файлы:** `skills/feature/phases.md`, `skills/feature/feedback-loop.md`,
+  `tests/test_review_gate_contract.py` (новый). Тесты: 285 зелёных (2 новых), `check_stdlib` чист.
+
 ## 2026-06-28 — start-intent-router (лёгкий роутер /start)
 - **Что:** добавлен **`/start`** — конверсационный роутер намерения. Фича feat-15/cand-19, на `main`.
   **Единственный файл** `skills/start/SKILL.md` (frontmatter `name: start`, без reference-бандла — роутер
