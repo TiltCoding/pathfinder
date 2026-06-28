@@ -4,6 +4,28 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — docs-command (команда /docs — генерация/рефреш доков + аудит дрейфа)
+- **Что:** добавлена команда **`/docs`** — только-документация для области + аудит дрейфа док↔код. Фича
+  feat-19/cand-15, на `main`. Новый `skills/docs/`: `SKILL.md` (name: docs, description разведён от
+  ask/feature/improve) + `phases.md` (`INTAKE→AUDIT→COMPOSE→PLAN GATE→WRITE→DONE`) + общие reference-файлы
+  (из `skills/feature/`).
+- **Машина:** AUDIT (`ask-researcher` read-only сверяет area-доки/README/ADR/`INDEX.md` с **кодом** →
+  drift-список `{doc path:line, claim, code path:line, reality, fix}`) → COMPOSE правок → гейт плана
+  (дифф доков, вкладка «Изменения») → WRITE (`wf-documenter` пишет + рефрешит `INDEX.md`). **Реюзит
+  ростер** (ask-researcher + wf-documenter) — нового агента нет.
+- **Инварианты:** **не меняет поведение** кода (нашёл код-баг → не чинит, это `/feature`); docs/README —
+  **eng-first**; регистрация конвенцией каталога.
+- **Тест:** `tests/test_docs_command.py` (3 кейса) — frontmatter `name: docs`+description, reference-файлы,
+  фазы машины.
+- **Файлы:** `skills/docs/*` (новый каталог), `tests/test_docs_command.py` (новый),
+  `docs/knowledge/areas/orchestrator-skills.md` (7-я полноценная команда). Тесты: 298 зелёных (3 новых),
+  `check_stdlib` чист.
+
+## 2026-06-28 — queue.py UTF-8 stdout fix (мелкий, найден в дренаже)
+- **Что:** `queue.py` форсит UTF-8 на `stdout`/`stderr` (errors=replace) на старте `main()`. Заголовки
+  айтемов с non-ASCII (кириллица «доки↔код») роняли `queue.py next` на Windows-консоли (legacy codepage,
+  `UnicodeEncodeError`). Реконфиг с гардом под старые Python. Найдено при дренаже feat-19.
+
 ## 2026-06-28 — trace-incremental-rebuild (мемоизация парсинга транскриптов /trace)
 - **Что:** убрано главное узкое место вкладки «Трейсинг». Фича feat-18/cand-33, на `main`.
   - **`parse_transcript_usage` мемоизирована** по `(path, mtime, size)` (`_aipf._USAGE_CACHE`, бакет 512
