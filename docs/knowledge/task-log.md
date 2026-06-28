@@ -4,6 +4,24 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — workflow-phase-rail (живой граф фаз воркфлоу + анонс смены фазы)
+- **Что:** в `templates/dashboard.html` добавлен степпер фаз в сайдбаре (`renderPhaseRail`): узлы
+  фаз done/active/upcoming с подсветкой текущей, плюс sr-only `aria-live`-диктор `#phase-announce`,
+  объявляющий ТОЛЬКО дельту при фактической смене фазы. Фича feat-2/cand-1, приземлена на `main`.
+- **Зачем:** машина стадий нигде не показывалась как конвейер — только бейдж `#phase`. Теперь видно,
+  где прогон сейчас, что пройдено и что впереди; смена фазы доступна скринридеру.
+- **Как:** последовательности фаз захардкожены на вид прогона (`PHASE_SEQUENCES`: feature / improve /
+  design). `kind` (`dashboard.json`/`state.json`) авторитетен, если есть; иначе последовательность
+  **выводится** из текущей фазы (активные фазы feature/improve уникальны → вывод точен). i18n: подписи
+  фаз добавлены в оба STR-словаря (`en`/`ru`); парность ловит `tests/test_settings.py`. **0 правок
+  сервера** — чистый FE поверх существующих полей.
+- **Ловушка (зафиксировать):** имя `phaseLabel` уже занято объектным лейблером таймлайна «Трейсинг»
+  (`m.lkey`/`m.label`) ниже по файлу — function-declaration позже перетирает раньше. Новый лейблер
+  назван `railLabel`, чтобы не коллизить. Проверено в браузере (preview-сервер): рейл рендерит
+  `Explore·Elaborate·Plan gate (done) → Implement (active) → Verify·Done (upcoming)`, диктор — «Phase:
+  Implement».
+- **Файлы:** `templates/dashboard.html`. Тесты: 260 зелёных, `check_stdlib` чист.
+
 ## 2026-06-28 — dispatch-queue-cli (queue.py: атомарный CLI очереди дренажа)
 - **Что:** добавлен `scripts/queue.py` — stdlib-CLI для `.workflow/dispatch-queue.json` с подкомандами
   `next` / `done` / `fail` / `skip` / `status` / `append` / `validate`; обёртка `python dev.py queue`;

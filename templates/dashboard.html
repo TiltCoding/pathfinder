@@ -148,6 +148,18 @@
   .phase-track .seg.cur { background: linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));
     background-size: 220% 100%; animation: pf-shim 1.6s linear infinite; }
   .progress { display: none; }   /* одиночная полоса заменена трекером фаз */
+  /* workflow phase rail (feat-2): stepper of done/active/upcoming phases */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .phase-rail { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px;
+    margin: 2px 0 0; padding: 0; font: 11px var(--font-mono); }
+  .phase-rail li { display: flex; align-items: center; gap: 5px; color: var(--ink-soft); opacity: .55; }
+  .phase-rail li::before { content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--line); flex: none; }
+  .phase-rail li.done { opacity: .9; }
+  .phase-rail li.done::before { background: var(--ok); }
+  .phase-rail li.active { opacity: 1; color: var(--accent); font-weight: 650; }
+  .phase-rail li.active::before { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .ws-summary { display: inline-flex; align-items: center; gap: 8px; font: 12px var(--font-mono);
     color: var(--muted); }
   .ws-summary .bar { display: inline-flex; height: 8px; width: 84px; border-radius: 999px; overflow: hidden; background: var(--line); flex: none; }
@@ -652,6 +664,8 @@
       <span class="badge" id="iter"></span>
     </div>
     <span class="status working" id="status" role="status" aria-live="polite" aria-atomic="true"><span class="dot" aria-hidden="true"></span><span id="status-text">…</span></span>
+    <ol class="phase-rail" id="phase-rail" hidden></ol>
+    <div class="sr-only" id="phase-announce" aria-live="polite" aria-atomic="true"></div>
     <div class="now-line" id="now-line" hidden></div>
     <div class="phase-track" id="ws-track"></div>
     <div class="progress"><div id="progress-bar"></div></div>
@@ -722,6 +736,7 @@ const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
+let lastPhaseAnnounced = null;   // sr-only диктор объявляет ТОЛЬКО при фактической смене фазы
 let connLost = false;
 let prevStatus = null;          // прошлый data.status — детект перехода working→awaiting
 let baseTitle = document.title; // статичный <title>; восстанавливается при снятии бейджа
@@ -960,6 +975,22 @@ const STR = {
     "loading.changes": "Loading changes…",
     "loading.docs": "Loading documentation…",
     "loading.trace": "Loading tracing…",
+    // workflow phase rail (feat-2)
+    "phase.announce": "Phase: ",
+    "phase.EXPLORE": "Explore",
+    "phase.ELABORATE": "Elaborate",
+    "phase.PLAN GATE": "Plan gate",
+    "phase.IMPLEMENT": "Implement",
+    "phase.VERIFY": "Verify",
+    "phase.DONE": "Done",
+    "phase.INTAKE": "Intake",
+    "phase.SCOUT": "Scout",
+    "phase.CONSENSUS": "Consensus",
+    "phase.PROPOSE": "Propose",
+    "phase.DISPATCH": "Dispatch",
+    "phase.AUDIT": "Audit",
+    "phase.COMPOSE": "Compose",
+    "phase.CONSENT GATE": "Consent gate",
     // popover / actionbar / chat panel
     "pop.placeholder": "Comment on the selection…",
     "pop.hint": "Enter — send · Esc — cancel",
@@ -1173,6 +1204,22 @@ const STR = {
     "loading.changes": "Загрузка изменений…",
     "loading.docs": "Загрузка документации…",
     "loading.trace": "Загрузка трейсинга…",
+    // workflow phase rail (feat-2)
+    "phase.announce": "Фаза: ",
+    "phase.EXPLORE": "Исследование",
+    "phase.ELABORATE": "Планирование",
+    "phase.PLAN GATE": "Гейт плана",
+    "phase.IMPLEMENT": "Реализация",
+    "phase.VERIFY": "Проверка",
+    "phase.DONE": "Готово",
+    "phase.INTAKE": "Приём",
+    "phase.SCOUT": "Разведка",
+    "phase.CONSENSUS": "Консенсус",
+    "phase.PROPOSE": "Предложение",
+    "phase.DISPATCH": "Диспетч",
+    "phase.AUDIT": "Аудит",
+    "phase.COMPOSE": "Компоновка",
+    "phase.CONSENT GATE": "Гейт согласия",
     "pop.placeholder": "Комментарий к выделенному…",
     "pop.hint": "Enter — отправить · Esc — отмена",
     "pop.send": "Отправить",
@@ -1687,11 +1734,53 @@ async function api(path, opts){
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), 1800); }
 
 // ----- rendering -----
+// Workflow phase sequences per run kind (feat-2). Phases match dashboard.json.phase
+// uppercased. `kind` (dashboard.json/state.json) is authoritative when present; else
+// we infer the sequence from which one contains the current phase (active phases of
+// feature/improve are unique, so inference is exact for them).
+const PHASE_SEQUENCES = {
+  feature: ["EXPLORE","ELABORATE","PLAN GATE","IMPLEMENT","VERIFY","DONE"],
+  improve: ["INTAKE","SCOUT","CONSENSUS","PROPOSE","DISPATCH","DONE"],
+  design:  ["INTAKE","AUDIT","COMPOSE","CONSENT GATE","IMPLEMENT","VERIFY","DONE"],
+};
+function phaseSeqFor(data){
+  const kind = data && data.kind;
+  if(kind && PHASE_SEQUENCES[kind]) return PHASE_SEQUENCES[kind];
+  const p = (data && data.phase ? String(data.phase) : "").toUpperCase();
+  if(!p) return null;
+  for(const k of ["feature","improve","design"]){
+    if(PHASE_SEQUENCES[k].includes(p)) return PHASE_SEQUENCES[k];
+  }
+  return null;
+}
+// NB: `railLabel` (not `phaseLabel` — that name is already taken by the Gantt
+// timeline's object-based labeler later in the file). Localizes a phase token.
+function railLabel(tok){ const k = "phase." + tok; const v = t(k); return v === k ? tok : v; }
+function renderPhaseRail(data){
+  const el = $("#phase-rail"); if(!el) return;
+  const seq = phaseSeqFor(data);
+  const cur = (data && data.phase ? String(data.phase) : "").toUpperCase();
+  if(!seq || !seq.includes(cur)){ el.hidden = true; el.innerHTML = ""; return; }
+  const idx = seq.indexOf(cur);
+  el.innerHTML = seq.map((tok,i) => {
+    const cls = i < idx ? "done" : (i === idx ? "active" : "upcoming");
+    return `<li class="${cls}"${i===idx?' aria-current="step"':''}>${esc(railLabel(tok))}</li>`;
+  }).join("");
+  el.hidden = false;
+  // объявляем только дельту — не вешаем aria-live на перерисовываемый #phase
+  if(cur !== lastPhaseAnnounced){
+    const ann = $("#phase-announce");
+    if(ann) ann.textContent = t("phase.announce") + railLabel(cur);
+    lastPhaseAnnounced = cur;
+  }
+}
+
 function render(data, replies){
   lastData = data; lastReplies = replies;
   const slugEl = $("#slug"); if(slugEl) slugEl.textContent = data.slug || SLUG || "";
   $("#title").textContent = data.title || t("header.task");
   $("#phase").textContent = data.phase || "—";
+  renderPhaseRail(data);
   $("#iter").textContent = data.iteration ? (t("header.iteration") + " " + data.iteration) : "";
   const st = $("#status"), stt = $("#status-text");
   // детект перехода в awaiting — только по фронту (анти-спам: первый render задаёт базовый статус
