@@ -387,8 +387,34 @@ def estimate_cost(model, fresh_in, out, cache_read, cache_create):
         + cache_create / 1e6 * p["cw"] + cache_read / 1e6 * p["cr"], 4)
 
 
+# Per-transcript usage memo (feat-18): re-parsing a multi-megabyte transcript on
+# every /trace poll is the dominant cost of build_trace. Keyed by (path, mtime,
+# size) so an unchanged transcript returns its cached usage without a re-read; a
+# changed file (new mtime/size) misses and re-parses. Bounded by a simple clear so
+# a long run with many growing transcripts can't grow it without limit.
+_USAGE_CACHE = {}
+_USAGE_CACHE_MAX = 512
+
+
+def _usage_key(path):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (path, int(st.st_mtime), st.st_size)
+
+
 def parse_transcript_usage(path):
-    """Aggregate one transcript file into a per-run usage record (numbers only)."""
+    """Aggregate one transcript file into a per-run usage record (numbers only).
+
+    Memoized by (path, mtime, size) — an unchanged transcript is never re-parsed
+    (feat-18). Returns a shallow copy so a caller (build_trace adds `_fe`) can't
+    mutate the cached record."""
+    key = _usage_key(path)
+    if key is not None:
+        hit = _USAGE_CACHE.get(key)
+        if hit is not None:
+            return dict(hit)
     out = fresh_in = cache_read = cache_create = 0
     peak_ctx = 0
     msgs = 0
@@ -427,7 +453,7 @@ def parse_transcript_usage(path):
     fe, le = _ts_to_epoch(first), _ts_to_epoch(last)
     dur = int((le - fe) * 1000) if (fe and le and le >= fe) else None
     total_in = fresh_in + cache_read + cache_create
-    return {
+    result = {
         "role": role, "models": models, "model": models[0] if models else None,
         "msgs": msgs, "out": out, "freshIn": fresh_in,
         "cacheRead": cache_read, "cacheCreate": cache_create,
@@ -437,6 +463,11 @@ def parse_transcript_usage(path):
         "costUsd": estimate_cost(models[0] if models else None,
                                  fresh_in, out, cache_read, cache_create),
     }
+    if key is not None:
+        if len(_USAGE_CACHE) >= _USAGE_CACHE_MAX:
+            _USAGE_CACHE.clear()
+        _USAGE_CACHE[key] = result
+    return dict(result)
 
 
 def parse_transcript_messages(path):

@@ -31,6 +31,11 @@
   `tool_result`); классификатор `_action_type` (`:422`), аргумент `_action_arg` (`:432`).
 - `scripts/_aipf.py:263` — `find_subagent_meta`: чтение sidecar `agent-*.meta.json` (мост спан→транскрипт).
 - `scripts/_aipf.py:528` — `build_trace`: тяжёлая посмертная модель `/trace` (спаны + usage + `summary`).
+  **Перф (feat-18):** `parse_transcript_usage` мемоизирована по `(path, mtime, size)` (`_USAGE_CACHE`,
+  бакет 512 с простым clear) — неизменённый транскрипт НЕ перечитывается на каждый поллинг `/trace`
+  (главная стоимость build_trace); возвращается shallow-копия, чтобы `build_trace` (дописывает `_fe`) не
+  портил кэш. Кэш `_trace` сервера ключуется сигнатурой `(mtime,size)` telemetry.jsonl + TTL 3с (даёт
+  периодический рефреш токенов растущих транскриптов, теперь дешёвый).
 - `scripts/server.py:185` — роутинг `/trace/feed`; `scripts/server.py:342` — `_trace_feed`.
 - `scripts/server.py:193`/`:199` — роутинг `/trace/messages`/`/trace/actions`; `scripts/server.py:362` —
   `_trace_messages`, `:394` — `_trace_actions`, `:439` — `_agent_description`, `:466` — `_resolve_transcript`.

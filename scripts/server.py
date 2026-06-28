@@ -704,9 +704,10 @@ class Handler(BaseHTTPRequestHandler):
         ws = self.workspace
         tpath = ws.task_file(slug, "telemetry.jsonl")
         try:
-            mt = os.path.getmtime(tpath)
+            st = os.stat(tpath)
+            mt = (int(st.st_mtime), st.st_size)   # (mtime,size) signature (feat-18)
         except OSError:
-            mt = 0
+            mt = (0, 0)
         now = time.time()
         with Handler._trace_lock:
             cached = Handler._trace_cache.get(slug)
