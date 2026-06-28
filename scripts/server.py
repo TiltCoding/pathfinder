@@ -140,10 +140,10 @@ class Workspace:
 
     def write_json(self, path, data):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        # Per-process temp + retrying replace, shared with _aipf so the two
-        # central writers never drift (see _aipf.atomic_temp_name/atomic_replace
-        # and write_lang): parallel runs share one store, so a fixed ".tmp" would
-        # let concurrent writers collide on the same target.
+        # Per-process temp + retrying replace, shared with _aipf so all store
+        # writers never drift (see _aipf.atomic_temp_name/atomic_replace; write_lang
+        # and _attach use the same helpers): parallel runs share one store, so a
+        # fixed ".tmp" would let concurrent writers collide on the same target.
         tmp = _aipf.atomic_temp_name(path)
         try:
             with open(tmp, "w", encoding="utf-8") as f:
@@ -202,17 +202,18 @@ def write_lang(lang, base=None):
     if lang not in LANGS:
         return DEFAULT_LANG
     path = settings_path(base)
-    # Per-process temp name: the settings file is global (one per machine), so
-    # servers of different project roots may write it concurrently. A shared
-    # ".tmp" name would let their byte streams collide; a pid-suffixed temp
-    # keeps each writer isolated and os.replace stays atomic (last-writer-wins).
-    tmp = path + ".%d.tmp" % os.getpid()
+    # Shared per-process temp + retrying replace (the same helpers as
+    # Workspace.write_json): the settings file is global (one per machine), so
+    # servers of different project roots may write it concurrently. A pid+uuid
+    # temp keeps each writer isolated, and atomic_replace rides out the
+    # Windows-only transient PermissionError instead of silently losing the write.
+    tmp = _aipf.atomic_temp_name(path)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"lang": lang, "ts": now_iso()}, f,
                       ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        _aipf.atomic_replace(tmp, path)
         return lang
     except OSError:
         # Persist failed (read-only home, disk full, lock). Don't claim success:
@@ -1427,13 +1428,16 @@ class Handler(BaseHTTPRequestHandler):
         # confine to the attachments dir (defence in depth against traversal)
         if os.path.commonpath([path, os.path.realpath(attach_dir)]) != os.path.realpath(attach_dir):
             return self._json(400, {"ok": False, "error": "name"})
-        # Atomic write: temp file then os.replace, under the per-slug lock.
-        tmp = path + ".tmp"
+        # Atomic write under the per-slug lock: per-process temp (no fixed
+        # ".tmp" that two concurrent uploads to one task would collide on) +
+        # retrying replace for the Windows transient — same helpers as the
+        # other store writers.
+        tmp = _aipf.atomic_temp_name(path)
         try:
             with ws.lock(slug):
                 with open(tmp, "wb") as f:
                     f.write(data)
-                os.replace(tmp, path)
+                _aipf.atomic_replace(tmp, path)
         except OSError:
             try:
                 if os.path.exists(tmp):
