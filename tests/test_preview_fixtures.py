@@ -124,13 +124,21 @@ class PreviewParityTest(unittest.TestCase):
     def test_stamped_index_is_byte_identical_to_template(self):
         tmp = tempfile.mkdtemp(prefix="preview-parity-")
         tasks = os.path.join(tmp, ".workflow", "tasks")
-        orig_tasks, orig_sweep = preview.TASKS_DIR, preview._sweep_legacy
+        orig_tasks = preview.TASKS_DIR
+        orig_sweep = preview._sweep_legacy
+        orig_resolve = preview._resolve_base_commit
         preview.TASKS_DIR = tasks
-        preview._sweep_legacy = lambda: None  # don't reach into the live store
+        preview._sweep_legacy = lambda: None        # don't reach into the live store
+        # the parity assertion is about index.html == template; baseCommit
+        # resolution is irrelevant and spawns a git subprocess (no timeout) — stub
+        # it out so the test is pure-filesystem and can't hang/flake on CI.
+        preview._resolve_base_commit = lambda *a, **k: None
         try:
             names = preview.install()
         finally:
-            preview.TASKS_DIR, preview._sweep_legacy = orig_tasks, orig_sweep
+            preview.TASKS_DIR = orig_tasks
+            preview._sweep_legacy = orig_sweep
+            preview._resolve_base_commit = orig_resolve
             # install() prints progress; nothing else to clean but the tmp tree
         try:
             self.assertTrue(names, "preview.install() stamped no fixtures")

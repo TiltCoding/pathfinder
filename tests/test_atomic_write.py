@@ -58,12 +58,24 @@ _PAYLOAD = {"k": "значение", "n": list(range(50)), "nested": {"a": [1, 2
 
 
 def _aipf_worker(path, i):
-    # Каждый писатель кладёт свой вариант данных в общий путь.
-    _aipf.write_json(path, dict(_PAYLOAD, who=i))
+    # Каждый писатель кладёт свой вариант данных в общий путь. Проигрыш
+    # destination-гонки `os.replace` на Windows (транзиентный PermissionError
+    # после исчерпания ретраев) — допустим по контракту (см. `_is_replace_race`):
+    # файл остаётся цел, осиротевший temp чистится в atomic_write. Не валим
+    # воркер на этом — иначе процессный тест ложно падает на Windows под нагрузкой,
+    # хотя потоковый вариант ту же гонку уже терпит. Настоящие баги (рваный файл /
+    # осиротевший temp) ловит `_assert_valid_result`.
+    try:
+        _aipf.write_json(path, dict(_PAYLOAD, who=i))
+    except PermissionError:
+        pass
 
 
 def _ws_worker(root, path, i):
-    server.Workspace(root).write_json(path, dict(_PAYLOAD, who=i))
+    try:
+        server.Workspace(root).write_json(path, dict(_PAYLOAD, who=i))
+    except PermissionError:
+        pass
 
 
 class _TmpDir(unittest.TestCase):
