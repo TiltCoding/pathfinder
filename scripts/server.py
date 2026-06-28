@@ -273,10 +273,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        if extra_headers:
-            for k, v in extra_headers.items():
-                self.send_header(k, v)
+        eh = extra_headers or {}
+        if "Cache-Control" not in eh:   # callers may opt into no-cache for ETag revalidation
+            self.send_header("Cache-Control", "no-store")
+        for k, v in eh.items():
+            self.send_header(k, v)
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -395,7 +396,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/chat":
             if not slug:
                 return self._json(400, {"error": "missing slug"})
-            return self._json(200, self._chat_get(slug))
+            # Conditional GET keyed on chat.jsonl (mtime,size): an unchanged log
+            # returns a bodiless 304 instead of re-parsing the whole file each poll.
+            cpath = self.workspace.task_file(slug, "chat.jsonl")
+            etag = self._file_etag(cpath)
+            headers = {"Cache-Control": "no-cache"}
+            if etag:
+                headers["ETag"] = etag
+                if self.headers.get("If-None-Match") == etag:
+                    return self._send(304, b"", extra_headers=headers)
+            body = json.dumps(self._chat_get(slug),
+                              ensure_ascii=False).encode("utf-8")
+            return self._send(200, body, extra_headers=headers)
         if path == "/knowledge":
             if not slug:
                 return self._json(400, {"error": "missing slug"})
@@ -476,6 +488,15 @@ class Handler(BaseHTTPRequestHandler):
         return INDEX_LANDING.replace("<!--TASKS-->", f"<ul>{items}</ul>")
 
     # ---- file serving --------------------------------------------------
+    def _file_etag(self, path):
+        """Weak validator for a file's current content: W/"<mtime_ns>-<size>".
+        None when the file can't be stat'd (treated as having no ETag)."""
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        return 'W/"%d-%d"' % (st.st_mtime_ns, st.st_size)
+
     def _serve_task_file(self, slug, name, content_type="application/json; charset=utf-8"):
         if not slug or name not in READABLE_FILES:
             return self._json(404, {"error": "not found"})
@@ -484,9 +505,20 @@ class Handler(BaseHTTPRequestHandler):
             if name.endswith(".json"):
                 return self._json(200, {})
             return self._json(404, {"error": "not found"})
+        # Conditional GET: the 3s/5s pollers re-fetch /data, /replies unchanged most
+        # of the time. A weak (mtime,size) ETag + no-cache lets the browser
+        # revalidate and take a bodiless 304 instead of re-reading + re-shipping the
+        # file. The browser transparently serves the cached body to JS, so the
+        # front-end sees an unchanged 200 — no client change needed.
+        etag = self._file_etag(path)
+        headers = {"Cache-Control": "no-cache"}
+        if etag:
+            headers["ETag"] = etag
+            if self.headers.get("If-None-Match") == etag:
+                return self._send(304, b"", content_type, extra_headers=headers)
         with open(path, "rb") as f:
             data = f.read()
-        return self._send(200, data, content_type)
+        return self._send(200, data, content_type, extra_headers=headers)
 
     def _serve_mockup(self, slug, name):
         """Serve a self-contained visual-demo file from <task>/mockups/.
