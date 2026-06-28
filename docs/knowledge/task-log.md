@@ -4,6 +4,26 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — dispatch-queue-cli (queue.py: атомарный CLI очереди дренажа)
+- **Что:** добавлен `scripts/queue.py` — stdlib-CLI для `.workflow/dispatch-queue.json` с подкомандами
+  `next` / `done` / `fail` / `skip` / `status` / `append` / `validate`; обёртка `python dev.py queue`;
+  тест `tests/test_queue.py` (14 кейсов). Первая фича дренажа очереди improve-platform-vision (feat-1/
+  cand-21), приземлена **последовательно на `main`**.
+- **Зачем:** очередь — единственный durable-носитель состояния дренажа, и до сих пор её статусы правил
+  **только промпт-агент** ручной правкой JSON, без атомарной записи (а файл в общем store под
+  конкуренцией, ADR-0010/0021). Полузапись читалась назад как `{"items": []}`, и дренаж молча считал
+  очередь пустой. CLI снимает это: все мутации идут через `_aipf.atomic_write` (ADR-0021), как
+  `worktree.py` сняло worktree-танец.
+- **Ключевой инвариант:** `queue.load_queue(path) → (data, status)` **различает `missing` (нет очереди)
+  и `corrupt` (есть, но не парсится)** — битая очередь сообщается громко (exit 1), не выдаётся за
+  слитую. `queue.validate(obj) → [errors]` (top-level/per-item ключи, enum статусов, плотный 1-based
+  `n`, дубль slug) — импортируется тестом и будущей фичей контракт-теста (`dispatch-queue-schema-
+  validation`, feat-8). `next` печатает поля `KEY=VALUE` и exit 3, когда pending нет.
+- **Контракт:** `skills/improve/dispatch-queue.md` дополнен секцией «Mutate via the CLI, never by hand»
+  — скиллы зовут CLI вместо ручной JSON-правки.
+- **Файлы:** `scripts/queue.py` (новый), `tests/test_queue.py` (новый), `dev.py` (подкоманда `queue`),
+  `skills/improve/dispatch-queue.md`. Тесты: 260 зелёных (14 новых), `check_stdlib` чист.
+
 ## 2026-06-28 — improve-platform-vision (аудит-прогон: рой→консенсус→выбор→диспетч; 17 фич в очередь)
 - **Что:** запущен `/improve` со слугом `improve-platform-vision` под запрос человека «развитие
   платформы» — новые скиллы/команды, заметная визуализация процесса на дашборде, аналог

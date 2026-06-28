@@ -53,6 +53,15 @@ def cmd_preview(args):
     return _run(cmd)
 
 
+def cmd_queue(args):
+    """Pass through to the dispatch-queue CLI (scripts/queue.py).
+
+    Terminal visibility into the /improve drain queue without a browser:
+    `python dev.py queue status` (default), or any queue.py subcommand."""
+    rest = args.rest or ["status"]
+    return _run([sys.executable, os.path.join("scripts", "queue.py")] + rest)
+
+
 def cmd_lint(args):
     checker = os.path.join(ROOT, "scripts", "check_stdlib.py")
     if os.path.exists(checker):
@@ -95,6 +104,12 @@ def main(argv=None):
     p_preview.add_argument("--clean", action="store_true",
                            help="удалить _preview-* задачи и выйти")
     p_preview.set_defaults(func=cmd_preview)
+
+    p_queue = sub.add_parser("queue",
+                             help="статус/драйв очереди дренажа /improve (scripts/queue.py)")
+    p_queue.add_argument("rest", nargs=argparse.REMAINDER,
+                         help="подкоманда queue.py (по умолчанию: status)")
+    p_queue.set_defaults(func=cmd_queue)
 
     p_lint = sub.add_parser("lint", help="линт-гейт stdlib-инвариантов (стаб до feat-8)")
     p_lint.set_defaults(func=cmd_lint)

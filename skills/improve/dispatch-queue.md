@@ -16,11 +16,32 @@ is exactly why a drain no longer leaves all features stacked on one branch. The 
 one-at-a-time by default; the per-item worktrees mean the human *can* also run several concurrently,
 but that is not required.
 
+## Mutate via the CLI, never by hand (`scripts/queue.py`)
+
+The queue lives in the shared store under concurrency, so **every status transition goes through
+`scripts/queue.py`** (stdlib, atomic writes via `_aipf.atomic_write` — ADR-0021), not a hand edit of
+the JSON. A half-written file would otherwise read back as `{"items": []}` and the drain would silently
+believe the queue is empty. Subcommands:
+
+- `python scripts/queue.py next` — take the lowest-`n` `pending` item → `in-progress` (+`startedAt`),
+  print its fields (`slug`/`featId`/`briefPath`/`baseCommit`/`autonomous`…) as `KEY=VALUE` lines.
+  Exit `3` when nothing is pending (queue drained).
+- `python scripts/queue.py done|skip <slug>` / `fail <slug> --reason R` — move an item to its terminal
+  status (+`doneAt`, and `failReason` for `fail`).
+- `python scripts/queue.py status` — progress `N/M` + the next pending item (also `python dev.py queue`).
+- `python scripts/queue.py append --slug … --feat-id … --brief …` — the `/improve` writer side.
+- `python scripts/queue.py validate` — check the queue against the schema.
+
+Reads **distinguish missing (no queue) from corrupt (present but unparseable)** — a broken queue is
+reported loudly, never treated as drained. `queue.validate(obj) → [errors]` and `queue.load_queue(path)
+→ (data, status)` are importable for tests/tooling.
+
 ## The queue file
 
 One project-level file at **`.workflow/dispatch-queue.json`** (not per-task, so `/feature` finds it
 without knowing the `/improve` slug). It is the single durable source of truth for the drain — it
-survives the `/clear` between features. Append/extend-only in spirit; statuses move forward only.
+survives the `/clear` between features. Append/extend-only in spirit; statuses move forward only
+(mutated through `scripts/queue.py`, above).
 
 ```json
 {
