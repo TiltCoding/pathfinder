@@ -1,7 +1,7 @@
 # Область: Скиллы-оркестраторы и ростеры под-агентов
 
 > Как в этом плагине устроены команды-оркестраторы (`/feature`, `/new-product`, `/improve`, `/ask`,
-> `/design`) и их под-агенты: регистрация конвенцией каталогов, паттерн «SKILL.md + reference-файлы»,
+> `/design`, `/test`) и их под-агенты: регистрация конвенцией каталогов, паттерн «SKILL.md + reference-файлы»,
 > frontmatter агентов (включая `model:`) и почему ростеры `wf-*`, `np-*` и `ds-*` раздельны. Эта область раньше
 > отсутствовала в базе знаний — следующий агент не должен заново выводить устройство оркестраторов из
 > кода (флажок из `.workflow/tasks/new-product-workflow/exploration.md:160`).
@@ -42,11 +42,18 @@
   **производит** редизайн сам через свой ростер `ds-*`. `description` разведён: «audit/redesign **one**
   component» + оговорки «**NOT** a backlog app-wide (→ improve); **NOT** read-only Q&A (→ ask); **NOT** an
   arbitrary feature build (→ feature)» (`skills/design/SKILL.md:3`). Подробнее — секция ниже.
+- **`/test`** — **только-тесты для существующего модуля/области** (не фича, не ревью диффа): человек
+  называет цель → `wf-explorer` read-only находит непокрытые ветви/контракты → `wf-planner` собирает
+  **план тестов** → **гейт плана** (как у `/feature`) → `wf-coder` пишет `tests/test_*.py` по
+  `conventions.md` §tests → VERIFY (**зелёный прогон = гейт** + `wf-reviewer` бракует тавтологии)
+  (`skills/test/SKILL.md:1`). **Реюзит ростер `wf-*`** — нового агента нет; **не меняет поведение** кода
+  (нашёл баг → не чинит, это `/feature`). `description` разведён от feature/review/improve/ask. Шестая
+  команда; регистрируется конвенцией каталога (без правок `plugin.json`).
 
 ## Ключевые файлы
 
 - `skills/feature/SKILL.md:1`, `skills/new-product/SKILL.md:1`, `skills/improve/SKILL.md:1`,
-  `skills/ask/SKILL.md:1`, `skills/design/SKILL.md:1` — корни оркестраторов: frontmatter (`name`,
+  `skills/ask/SKILL.md:1`, `skills/design/SKILL.md:1`, `skills/test/SKILL.md:1` — корни оркестраторов: frontmatter (`name`,
   `description`) + тело (ментальная модель, таблица под-агентов, start/resume, operating rules, телеметрия).
 - `skills/new-product/phases.md`, `skills/new-product/loop.md`,
   `skills/new-product/feedback-loop.md`, `skills/new-product/dashboard-guide.md`,

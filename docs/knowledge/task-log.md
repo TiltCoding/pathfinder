@@ -4,6 +4,25 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — test-command (шестая команда /test — генерация тестов)
+- **Что:** добавлена команда **`/test`** — только-тесты для существующего модуля/области. Фича
+  feat-13/cand-13, на `main`. Новый каталог `skills/test/`: `SKILL.md` (frontmatter `name: test`,
+  description разведён от feature/review/improve/ask) + `phases.md` (машина
+  `INTAKE→ANALYZE→PLAN→PLAN GATE→IMPLEMENT→VERIFY→DONE`) + общие reference-файлы (dashboard-guide,
+  feedback-loop, state-schema, knowledge-guide, parallel — скопированы из `skills/feature/`).
+- **Машина:** ANALYZE (`wf-explorer` read-only находит непокрытые ветви/контракты → gap-list) → PLAN
+  (`wf-planner` → план тестов) → гейт плана → IMPLEMENT (`wf-coder` пишет `tests/test_*.py` по
+  `conventions.md` §tests) → VERIFY (**зелёный прогон = гейт**, `wf-reviewer` бракует тавтологии).
+  **Реюзит ростер `wf-*`** — нового агента нет.
+- **Инварианты:** **не меняет поведение** кода (нашёл баг → не чинит, это `/feature`); тесты по
+  конвенции (оффлайн unittest, sys.path-хак, tempfile, кросс-платформенность); регистрация **конвенцией
+  каталога** (`plugin.json` не трогаем — это работа `/release`).
+- **Тест:** `tests/test_test_command.py` (3 кейса) — frontmatter `name: test`+description, наличие
+  reference-файлов, фазы машины в phases.md.
+- **Файлы:** `skills/test/*` (новый каталог), `tests/test_test_command.py` (новый),
+  `docs/knowledge/areas/orchestrator-skills.md` (шестая команда). Тесты: 277 зелёных (3 новых),
+  `check_stdlib` чист. (Эффект — после refresh плагина появится команда `/test`.)
+
 ## 2026-06-28 — hub-live-now-command-center (живой «Сейчас» по всем задачам в хабе)
 - **Что:** `/hub` из пассивного списка стал командным центром. Фича feat-12/cand-8, на `main`.
   - **Сервер:** `_hub_build_card` добавил в карточку `now`/`nowAt` из `dashboard.json` (уже в
