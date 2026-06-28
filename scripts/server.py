@@ -297,7 +297,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "ts": now_iso(),
                                     "pid": os.getpid(),
                                     "port": getattr(self, "server_port", None),
-                                    "root": os.path.realpath(ws.root) if ws else None})
+                                    "root": os.path.realpath(ws.root) if ws else None,
+                                    # source = path of THIS running server.py, so a
+                                    # reader (e.g. preview.py) can detect a server
+                                    # bound from a stale plugin-cache copy vs the repo.
+                                    "source": os.path.realpath(__file__)})
         if path == "/data":
             return self._serve_task_file(slug, "dashboard.json")
         if path == "/mockup":

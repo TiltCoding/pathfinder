@@ -194,6 +194,25 @@ def _alive(url):
         return False
 
 
+def _check_source(url):
+    """Сверить, что поднятый превью-сервер — это РЕПО-``server.py``, а не копия из
+    плагин-кэша. ``GET /health`` отдаёт ``source`` (путь работающего server.py);
+    если он не совпадает с ``SERVER`` (``ROOT/scripts/server.py``), превью рисует
+    хаб из устаревшего кода — предупреждаем (graceful: нет поля/сети → молчим)."""
+    try:
+        with urllib.request.urlopen(url + "/health", timeout=2) as r:
+            src = json.load(r).get("source")
+    except Exception:
+        return
+    if src and os.path.realpath(src) != os.path.realpath(SERVER):
+        print(
+            f"  ! превью-сервер поднят из {src},\n"
+            f"    а не из репо {SERVER} — хаб может отражать устаревший код;\n"
+            f"    обнови плагин из репо или перезапусти превью",
+            file=sys.stderr,
+        )
+
+
 def _server_url(timeout=15):
     """URL СВЕЖЕГО живого сервера. Ждём, пока server.json обновится после
     ``--force``-реапа И сервер реально отвечает (иначе вернули бы мёртвый url
@@ -238,6 +257,7 @@ def main(argv=None):
               file=sys.stderr)
         return 1
 
+    _check_source(url)
     hub = url + "/hub"
     print(f"хаб:  {hub}")
     for n in names:

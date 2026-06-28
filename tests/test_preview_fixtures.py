@@ -23,13 +23,25 @@ Run with:
     python3 -m unittest discover -s tests   # full suite
 """
 
+import hashlib
 import json
 import os
 import re
+import shutil
+import sys
+import tempfile
 import unittest
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _FIXTURES = os.path.join(_REPO, "templates", "fixtures")
+
+sys.path.insert(0, os.path.join(_REPO, "scripts"))
+import preview  # noqa: E402  (scripts/preview.py — the harness under test)
+
+
+def _sha256(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 # mirrors the server's mockup name guard: no spaces, no traversal, ascii only
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -93,6 +105,46 @@ class PreviewFixturesTest(unittest.TestCase):
                     self.assertTrue(
                         os.path.isfile(os.path.join(d, "mockups", fileref)),
                         f"{name}/mockups/{fileref} referenced but missing")
+
+
+class PreviewParityTest(unittest.TestCase):
+    """The guarantee behind the user-facing promise: the dashboard the preview
+    shows is byte-identical to the dashboard agents render in a live run.
+
+    `preview.install()` stamps `templates/dashboard.html` verbatim as each task's
+    `index.html` (a plain copy — the same step the skills' feedback-loop does for a
+    live run). This test pins that to a checked invariant: if anyone replaces the
+    copy with a transform (minify, token-inject), the stamped `index.html` would no
+    longer equal the template and this fails in CI instead of drifting silently.
+
+    Runs `install()` in an isolated tempfile root (monkeypatching `TASKS_DIR` and
+    neutralizing `_sweep_legacy`) so it never touches the live `.workflow/` store.
+    """
+
+    def test_stamped_index_is_byte_identical_to_template(self):
+        tmp = tempfile.mkdtemp(prefix="preview-parity-")
+        tasks = os.path.join(tmp, ".workflow", "tasks")
+        orig_tasks, orig_sweep = preview.TASKS_DIR, preview._sweep_legacy
+        preview.TASKS_DIR = tasks
+        preview._sweep_legacy = lambda: None  # don't reach into the live store
+        try:
+            names = preview.install()
+        finally:
+            preview.TASKS_DIR, preview._sweep_legacy = orig_tasks, orig_sweep
+            # install() prints progress; nothing else to clean but the tmp tree
+        try:
+            self.assertTrue(names, "preview.install() stamped no fixtures")
+            template_hash = _sha256(preview.TEMPLATE)
+            for name in names:
+                idx = os.path.join(tasks, name, "index.html")
+                self.assertTrue(os.path.isfile(idx),
+                                f"{name}/index.html was not stamped")
+                self.assertEqual(
+                    _sha256(idx), template_hash,
+                    f"{name}/index.html differs from templates/dashboard.html — "
+                    f"preview would no longer match the live dashboard")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
