@@ -275,6 +275,46 @@ def _extract_str_keys(text, *, source):
     return keys(en_at, ru_at), keys(ru_at, end_at)
 
 
+def _extract_str_map(text, *, source):
+    """Like `_extract_str_keys` but returns `(en_map, ru_map)` of key -> value.
+
+    Same pragmatic assumptions (flat `"dotted.key": "value"`, one per line); the
+    value is the first double-quoted string literal after the key's colon
+    (escaped chars handled), so a trailing `// comment` or `,` is ignored. Lines
+    whose value isn't a simple double-quoted literal are skipped (only used for
+    the cross-file value comparison, which intersects on keys present in both)."""
+    lines = text.splitlines()
+    start = next((i for i, ln in enumerate(lines)
+                  if re.match(r"\s*const STR\s*=\s*\{", ln)), None)
+    assert start is not None, f"{source}: `const STR = {{` block not found"
+
+    en_at = ru_at = end_at = None
+    for i in range(start + 1, len(lines)):
+        ln = lines[i]
+        if en_at is None and re.match(r"\s*en:\s*\{", ln):
+            en_at = i
+        elif ru_at is None and re.match(r"\s*ru:\s*\{", ln):
+            ru_at = i
+        elif ru_at is not None and re.match(r"\s*\};", ln):
+            end_at = i
+            break
+    assert en_at is not None, f"{source}: STR.en section not found"
+    assert ru_at is not None, f"{source}: STR.ru section not found"
+    assert end_at is not None, f"{source}: STR closing `}};` not found"
+
+    kv_re = re.compile(r'^\s*"([\w.]+)"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+    def kv(lo, hi):
+        out = {}
+        for ln in lines[lo + 1:hi]:
+            m = kv_re.match(ln)
+            if m:
+                out[m.group(1)] = m.group(2)
+        return out
+
+    return kv(en_at, ru_at), kv(ru_at, end_at)
+
+
 class DictionaryCompletenessTest(unittest.TestCase):
     """en/ru key sets must match in both inline `STR` dictionaries (ADR-0015
     completeness invariant): a key present in one language but not the other is
@@ -301,6 +341,38 @@ class DictionaryCompletenessTest(unittest.TestCase):
             text = f.read()
         en, ru = _extract_str_keys(text, source="server.py HUB_PAGE")
         self._assert_parity(en, ru, "HUB_PAGE STR")
+
+
+class CrossFileStrParityTest(unittest.TestCase):
+    """A STR key shared by dashboard.html and HUB_PAGE must carry the SAME value
+    in both (per language). The within-file completeness test catches an en/ru
+    gap inside one file but never compares the two copies — so a shared key whose
+    text was edited in one file and not the other (the documented drift risk in
+    dashboard-i18n.md) would slip through. This closes that gap."""
+
+    def _maps(self):
+        with open(_DASHBOARD, "r", encoding="utf-8") as f:
+            d_en, d_ru = _extract_str_map(f.read(), source="dashboard.html")
+        with open(_SERVER, "r", encoding="utf-8") as f:
+            h_en, h_ru = _extract_str_map(f.read(), source="server.py HUB_PAGE")
+        return d_en, d_ru, h_en, h_ru
+
+    def test_shared_keys_have_matching_values(self):
+        d_en, d_ru, h_en, h_ru = self._maps()
+        self.assertTrue(d_en and h_en,
+                        "extractor stale — no values extracted")
+        for lang, dmap, hmap in (("en", d_en, h_en), ("ru", d_ru, h_ru)):
+            shared = set(dmap) & set(hmap)
+            self.assertTrue(
+                shared,
+                f"{lang}: no shared STR keys between dashboard.html and "
+                f"HUB_PAGE — extractor stale?")
+            mismatches = {k: (dmap[k], hmap[k])
+                          for k in sorted(shared) if dmap[k] != hmap[k]}
+            self.assertEqual(
+                mismatches, {},
+                f"{lang}: shared STR keys differ between dashboard.html and "
+                f"HUB_PAGE (drift): {mismatches}")
 
 
 if __name__ == "__main__":
