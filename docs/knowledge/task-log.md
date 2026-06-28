@@ -4,6 +4,22 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — gate-dispatch-preview (превью набора фич к диспетчу на SELECT GATE)
+- **Что:** на SELECT GATE `/improve` после Submit и до Approve в actionbar показывается панель
+  `#dispatch-preview` — ранговый список «уйдут в диспетч фичи: N» с title'ами. Фича feat-9/cand-10,
+  на `main`, чистый FE.
+- **Зачем:** человек жал Submit→Approve вслепую к итоговому набору (был только чип «N отмечено»).
+- **Ключевой момент (контракт):** после Submit клиент чистит `draftItems`, а `draft.json` не в
+  `READABLE_FILES` — значит выбор после Submit **не прочитать с сервера**. Решение: снимок выбора
+  делается на КЛИЕНТЕ в момент Submit (`markedFeatures()` → `dispatchPreview`, ДО очистки draft) и
+  показывается до Approve. Прячется, как только человек снова правит (`draftItems` непуст → снимок
+  устарел), и очищается на Approve. Контракт Submit→Approve и POST-флоу не тронуты.
+- **Реюз:** Do-детект из `updateDispatchChip` (первый option ИЛИ свободный текст `^делаем|делай|do`);
+  порядок — по `planBlocks` (ранговый feat-1…feat-K). i18n `dispatch.preview.title` в `en`/`ru`.
+- **0 правок сервера.** Проверено в браузере: feat-1+feat-3 (вкл. свободное «делаем, но без X»),
+  feat-2 «Пропускаем» исключён; прячется при правке; очищается на Approve.
+- **Файлы:** `templates/dashboard.html`. Тесты: 269 зелёных, `check_stdlib` чист.
+
 ## 2026-06-28 — dispatch-queue-schema-validation (контракт-тест очереди + карантин битой)
 - **Что:** схема `.workflow/dispatch-queue.json` зафиксирована исполнимой спекой. Фича feat-8/cand-22,
   на `main`. Строит поверх `queue.validate`/`load_queue` из feat-1 (dispatch-queue-cli):

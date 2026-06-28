@@ -287,6 +287,16 @@
   /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
   .dispatch-chip { font-size: 13px; color: var(--muted); }
   .dispatch-chip b { color: var(--ink); }
+  /* dispatch preview (feat-9): ranked list of what Approve will queue */
+  .dispatch-preview { max-width: 1200px; margin: 0 auto; padding: 10px 20px 0; }
+  .dispatch-preview .dp-head { font-size: 12px; font-weight: 600; color: var(--ink-soft); margin-bottom: 4px; }
+  .dispatch-preview .dp-head b { color: var(--accent); }
+  .dispatch-preview .dp-list { list-style: none; margin: 0; padding: 0; max-height: 132px; overflow-y: auto;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1px 16px; }
+  .dispatch-preview .dp-list li { display: flex; align-items: center; gap: 7px; font-size: 12px;
+    color: var(--ink-soft); min-width: 0; }
+  .dispatch-preview .dp-n { flex: none; width: 18px; text-align: right; color: var(--muted); font: 11px var(--font-mono); }
+  .dispatch-preview .dp-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* основные действия — чёрная кнопка (дизайн: «Отправить»/«Send») */
   button.primary { background: var(--sel-bg); color: var(--sel-fg); border: none; border-radius: 8px; padding: 9px 18px; font: 600 13px var(--font-sans); cursor: pointer; }
   button.primary:hover:not(:disabled) { opacity: .9; }
@@ -720,6 +730,7 @@
 </div>
 
 <div class="actionbar" id="actionbar">
+  <div class="dispatch-preview" id="dispatch-preview" hidden></div>
   <div class="actionbar-inner">
     <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
     <div class="queue">Edit queue: <b id="queue-count">0</b></div>
@@ -751,6 +762,7 @@
 const SLUG = new URLSearchParams(location.search).get("slug") || "";
 const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
+let dispatchPreview = null;   // snapshot of «Делаем» picks taken at Submit (feat-9), shown until Approve
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
 let lastPhaseAnnounced = null;   // sr-only диктор объявляет ТОЛЬКО при фактической смене фазы
@@ -1022,6 +1034,7 @@ const STR = {
     "actionbar.dispatchCount": "marked Do",
     "actionbar.approve": "Approve plan",
     "actionbar.submit": "Send to agent for revision",
+    "dispatch.preview.title": "Approve will dispatch — features:",
     "chat.title": "Chat with agent",
     "chat.subtitle": "steering at checkpoints",
     "chat.close": "Close",
@@ -1253,6 +1266,7 @@ const STR = {
     "actionbar.dispatchCount": "отмечено Делаем",
     "actionbar.approve": "Утвердить план",
     "actionbar.submit": "Отправить агенту на доработку",
+    "dispatch.preview.title": "Утвердить — уйдут в диспетч фичи:",
     "chat.title": "Чат с агентом",
     "chat.subtitle": "стиринг на чекпоинтах",
     "chat.close": "Закрыть",
@@ -2234,6 +2248,7 @@ function updateQueue(){
   if(uh){ uh.hidden = !unsent; if(unsent) uh.textContent = draftItems.length + " " + t("actionbar.unsent"); }
   const sb = $("#btn-submit"); if(sb) sb.classList.toggle("attn", unsent);
   updateDispatchChip();
+  renderDispatchPreview();
 }
 // «N из M отмечено Делаем»: M — choice-вопросы по plan-блокам (feat-N), N — из них помеченные «делаем/do».
 function updateDispatchChip(){
@@ -2259,6 +2274,42 @@ function updateDispatchChip(){
   } else {
     chip.hidden = true;
   }
+}
+// The «Делаем»-marked features in ranked (planBlocks) order — the set that would be
+// dispatched. Same Do-detection as updateDispatchChip (incl. free-form «делаем…»).
+function markedFeatures(){
+  const blocks = (lastData && lastData.planBlocks) || [];
+  const qById = {};
+  ((lastData && lastData.questions) || []).forEach(q => { if(q.kind === "choice") qById[q.id] = q; });
+  const picked = [];
+  for(const b of blocks){
+    if(!/^feat-\d+$/.test(b.id)) continue;
+    const q = qById[b.id]; if(!q) continue;
+    const ans = draftItems.find(i => i.kind === "answer" && i.questionId === b.id);
+    if(!ans) continue;
+    const opts = q.options || [];
+    const isDo = (opts.length && ans.text === opts[0])
+      || /^(делаем|делай|do)/.test((ans.text || "").trim().toLowerCase());
+    if(isDo) picked.push({ id: b.id, title: b.title || q.text || b.id });
+  }
+  return picked;   // planBlocks order = ranked feat-1…feat-K
+}
+// Preview (feat-9): after Submit froze the picks (draftItems cleared) and before
+// Approve, list exactly what will be dispatched, in ranked order — so the human
+// doesn't approve blind. Snapshot lives in dispatchPreview (set at Submit); hidden
+// the moment they start editing again (draftItems non-empty → stale).
+function renderDispatchPreview(){
+  const el = $("#dispatch-preview"); if(!el) return;
+  const gate = lastData && lastData.status === "awaiting-batch";
+  if(!dispatchPreview || !dispatchPreview.length || !gate || draftItems.length){
+    if(!el.hidden){ el.hidden = true; el.innerHTML = ""; }
+    return;
+  }
+  const items = dispatchPreview.map((f, i) =>
+    `<li><span class="dp-n">${i + 1}</span><span class="dp-title">${esc(f.title)}</span></li>`).join("");
+  el.innerHTML = `<div class="dp-head">${esc(t("dispatch.preview.title"))} <b>${dispatchPreview.length}</b></div>`
+    + `<ol class="dp-list">${items}</ol>`;
+  el.hidden = false;
 }
 
 // ----- inline highlight of the human's left comments -----
@@ -2413,8 +2464,10 @@ async function sendAnchoredReply(anchor, text){
 $("#btn-submit").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(!draftItems.length) return;
+  const picks = markedFeatures();   // snapshot BEFORE clearing the draft (feat-9)
   const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
   if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // keep draft on failure — nothing was sent
+  dispatchPreview = picks.length ? picks : null;
   draftItems = []; rerender(); toast(t("toast.sentBatch") + r.submission);
 };
 $("#btn-approve").onclick = async () => {
@@ -2427,6 +2480,7 @@ $("#btn-approve").onclick = async () => {
   }
   const r = await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
   if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // signal didn't land — don't falsely confirm
+  dispatchPreview = null; renderDispatchPreview();   // dispatched → drop the preview (feat-9)
   toast(t("toast.planApproved"));
 };
 
