@@ -4,6 +4,17 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — attach-magic-byte-check (безопасность: проверка сигнатуры изображения в /attach)
+- **Что:** диспетченная из `improve-overall-3` фича feat-8 (`cand-39`). `/attach` (`_attach`) после
+  decode и до записи проверяет **magic-bytes** декодированных байт против заявленного `ext`
+  (PNG `\x89PNG\r\n\x1a\n`, JPEG `\xff\xd8\xff`, GIF `GIF87a/89a`, WebP `RIFF....WEBP`) — модульный
+  хелпер `image_magic_ok(ext, data)`; несовпадение → `400 "format"`, файл не пишется. Тесты в
+  `tests/test_attach.py` (mismatch→400, не-PNG GIF→200).
+- **Зачем:** `_attach` доверял клиентскому mime и не проверял сами байты → под `att-*.png` можно было
+  положить произвольный груз, который оркестратор затем `Read`'ит как изображение. Defence-in-depth.
+- **Прод:** `scripts/server.py`. **Тест:** `tests/test_attach.py`. Контракты `/attach` (allow-list mime,
+  кап, traversal-гард) сохранены. Проверено: 235 тестов зелёные, lint OK.
+
 ## 2026-06-28 — read-body-size-cap (надёжность/безопасность: глобальный кап тела POST)
 - **Что:** диспетченная из `improve-overall-3` фича feat-6 (`cand-15`). `Handler._read_body`
   (`scripts/server.py`) получил **глобальный кап** `MAX_BODY_BYTES` (8 МБ, выше base64-раздутого

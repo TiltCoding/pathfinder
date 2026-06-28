@@ -176,6 +176,31 @@ class AttachEndpointTest(AttachBase):
         self.assertEqual(h.status, 400)
         self.assertEqual(r.get("error"), "size")
 
+    def test_reject_magic_mismatch(self):
+        # Valid base64 + an allowed image mime, but the decoded bytes are not
+        # actually that image type: the magic-byte check rejects it 400 "format"
+        # and writes nothing (the trusted-mime gap is closed).
+        b64 = base64.b64encode(b"this is plainly not an image").decode("ascii")
+        h = self._do_attach({"name": "fake.png", "mime": "image/png", "dataB64": b64})
+        r = h.json_body()
+        self.assertEqual(h.status, 400)
+        self.assertFalse(r.get("ok"))
+        self.assertEqual(r.get("error"), "format")
+        self.assertFalse(os.path.isdir(self._attach_dir()))
+
+    def test_accept_non_png_by_magic(self):
+        # A non-PNG format whose header matches its declared type passes the check
+        # (the guard is per-format, not PNG-only): a GIF89a header → 200, written.
+        gif = b"GIF89a" + b"\x00" * 16
+        b64 = base64.b64encode(gif).decode("ascii")
+        h = self._do_attach({"name": "x.gif", "mime": "image/gif", "dataB64": b64})
+        r = h.json_body()
+        self.assertEqual(h.status, 200)
+        self.assertTrue(r.get("ok"))
+        self.assertTrue(r["file"].endswith(".gif"))
+        with open(os.path.join(self._attach_dir(), r["file"]), "rb") as f:
+            self.assertEqual(f.read(), gif)
+
     def test_reject_undecodable_base64(self):
         h = self._do_attach({"name": "x.png", "mime": "image/png", "dataB64": "!!!not base64!!!"})
         r = h.json_body()

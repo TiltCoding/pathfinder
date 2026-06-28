@@ -101,6 +101,24 @@ ATTACH_EXT_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"
                    "gif": "image/gif", "webp": "image/webp"}
 
 
+def image_magic_ok(ext, data):
+    """True if `data` begins with a signature matching the saved `ext`.
+
+    Defence in depth: /attach trusts the client-declared mime, but the bytes are
+    client-controlled. Verify they actually are the claimed image type before
+    writing them under att-*.<ext> (the orchestrator later Reads them as images),
+    so arbitrary content can't be stashed under an image name."""
+    if ext == "png":
+        return data[:8] == b"\x89PNG\r\n\x1a\n"
+    if ext == "jpg":
+        return data[:3] == b"\xff\xd8\xff"
+    if ext == "gif":
+        return data[:6] in (b"GIF87a", b"GIF89a")
+    if ext == "webp":
+        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    return False
+
+
 def safe_slug(slug):
     if not slug or not SLUG_RE.match(slug):
         return None
@@ -1450,6 +1468,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"ok": False, "error": "decode"})
         if len(data) > ATTACH_MAX_BYTES:
             return self._json(400, {"ok": False, "error": "size"})
+        # Verify the decoded bytes really are the claimed image type, not just a
+        # trusted client mime (defence in depth — never write non-image content).
+        if not image_magic_ok(ext, data):
+            return self._json(400, {"ok": False, "error": "format"})
         # Safe, unique, server-generated name (no client-controlled separators).
         servername = "att-%s.%s" % (os.urandom(4).hex(), ext)
         if not ATTACH_RE.match(servername):
