@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _aipf  # noqa: E402  (shared helpers: layout, atomic write_json, now_iso)
@@ -50,7 +51,10 @@ QUEUE_RELPATH = os.path.join(".workflow", "dispatch-queue.json")
 STATUSES = ("pending", "in-progress", "done", "skipped", "failed")
 TERMINAL = ("done", "skipped", "failed")
 
-# Per-item keys required by the writer<->drainer contract (dispatch-queue.md).
+# Top-level + per-item keys required by the writer<->drainer contract
+# (dispatch-queue.md). `validate()` pins them so the contract is an executable
+# spec, not prose — a drift fails CI (tests/test_dispatch_queue.py).
+TOP_REQUIRED = ("version", "source", "mode", "baseCommit", "items")
 ITEM_REQUIRED = ("n", "featId", "slug", "briefPath", "status")
 
 
@@ -111,8 +115,9 @@ def validate(data):
     errors = []
     if not isinstance(data, dict):
         return ["queue is not a JSON object"]
-    if "version" not in data:
-        errors.append("missing top-level 'version'")
+    for k in TOP_REQUIRED:
+        if k not in data:
+            errors.append("missing top-level '%s'" % k)
     items = data.get("items")
     if not isinstance(items, list):
         return errors + ["missing or non-list 'items'"]
@@ -144,20 +149,48 @@ def _save(path, data):
     _aipf.write_json(path, data)
 
 
+def _quarantine_corrupt(path):
+    """Move an unparseable queue aside to `dispatch-queue.json.corrupt-<TS>`.
+
+    Mirrors the state.json recovery in `worktree.py` (state-json-corrupt-recovery):
+    never silently overwrite or drop a queue we could not read — a JSONDecodeError
+    usually means a writer's mutation was half-written or an agent edit clobbered
+    it, and treating it as an empty/absent queue would lose the whole drain. We
+    rename the byte-for-byte original aside (visible warning) so a human can
+    recover it. `<TS>` = local time + pid with NO colons (NTFS forbids ':' in
+    names). Returns the quarantine basename, or None if the move failed."""
+    ts = time.strftime("%Y%m%d-%H%M%S") + "-" + str(os.getpid())
+    dest = path + ".corrupt-" + ts
+    try:
+        os.replace(path, dest)
+    except OSError:
+        return None
+    return os.path.basename(dest)
+
+
 def _load_or_die(path):
     """Load for a mutating command; print a clear reason and exit on trouble.
 
     Returns the queue dict, or calls sys.exit with a non-zero code. A *corrupt*
-    queue is never treated as empty — that is the whole point."""
+    queue is never treated as empty — it is quarantined aside (so it doesn't
+    masquerade as a drained queue) and the command fails loud."""
     data, status = load_queue(path)
     if status == "missing":
         print("no dispatch queue at " + path + " (nothing queued)",
               file=sys.stderr)
         raise SystemExit(3)
     if status in ("corrupt", "malformed"):
-        print("error: dispatch queue is " + status + " (NOT empty) at " + path
-              + "\n  fix or remove the file before draining; a broken queue is "
-              "not the same as a drained one.", file=sys.stderr)
+        name = _quarantine_corrupt(path)
+        if name:
+            print("error: dispatch queue was " + status + " (NOT empty) — "
+                  "quarantined as " + name + " at " + os.path.dirname(path)
+                  + "\n  a broken queue is not a drained one; recover it or "
+                  "re-run /improve DISPATCH to rewrite the queue.",
+                  file=sys.stderr)
+        else:
+            print("error: dispatch queue is " + status + " (NOT empty) at "
+                  + path + " and could not be quarantined — fix it by hand.",
+                  file=sys.stderr)
         raise SystemExit(1)
     return data
 
@@ -266,8 +299,8 @@ def cmd_append(args):
     data, status = load_queue(path)
     if status == "missing":
         data = {"version": 1, "source": "improve-runtime",
-                "mode": "sequential-feature", "createdAt": _aipf.now_iso(),
-                "items": []}
+                "mode": "sequential-feature", "baseCommit": None,
+                "createdAt": _aipf.now_iso(), "items": []}
     elif status in ("corrupt", "malformed"):
         print("error: refusing to append to a " + status + " queue at " + path,
               file=sys.stderr)

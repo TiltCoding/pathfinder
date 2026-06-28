@@ -4,6 +4,25 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — dispatch-queue-schema-validation (контракт-тест очереди + карантин битой)
+- **Что:** схема `.workflow/dispatch-queue.json` зафиксирована исполнимой спекой. Фича feat-8/cand-22,
+  на `main`. Строит поверх `queue.validate`/`load_queue` из feat-1 (dispatch-queue-cli):
+  - **Ужесточён `queue.validate`:** `TOP_REQUIRED = version/source/mode/baseCommit/items` (было только
+    `version`); плюс прежние per-item ключи, enum статусов, плотный 1-based `n`, дубль slug. `cmd_append`
+    теперь сеет `baseCommit: None`, чтобы созданная им очередь проходила контракт.
+  - **Карантин битой очереди:** `_quarantine_corrupt` переносит непарсимый файл в
+    `dispatch-queue.json.corrupt-<TS>` (без `:` — NTFS) + громкий warning, `_load_or_die` зовёт его на
+    `corrupt`/`malformed` и падает exit 1. Битая очередь больше НЕ выглядит как слитая. Зеркало
+    `state-json-corrupt-recovery` (`worktree.py`).
+  - **`tests/test_dispatch_queue.py`** (новый, 9 кейсов): контракт через `queue.validate` (все статусы
+    валидны; каждый пропущенный top-level/per-item ключ ловится; enum; дыра/порядок `n`; дубль slug) +
+    карантин (corrupt→exit 1 + файл уехал в `.corrupt-*`; missing→exit 3, не карантин). Валит CI при дрейфе.
+- **Зачем:** очередь — durable-носитель дренажа, но её схема нигде не проверялась; `_queue` (server.py)
+  сливал missing/empty/corrupt в `{"items":[]}` — провал был невидим.
+- **Файлы:** `scripts/queue.py`, `tests/test_dispatch_queue.py` (новый), `tests/test_queue.py` (правка
+  валид-теста под полный top-level), `skills/improve/dispatch-queue.md`. Тесты: 269 зелёных (9 новых),
+  `check_stdlib` чист; живая очередь дренажа валидна (17 items).
+
 ## 2026-06-28 — improve-swarm-vote-viz (визуализация роя и голосования /improve)
 - **Что:** рой 7 скаутов и панель 3 голосующих в `/improve` теперь видны на дашборде. Фича feat-4/
   cand-3, на `main`. Две части:

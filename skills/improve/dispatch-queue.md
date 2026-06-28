@@ -33,8 +33,12 @@ believe the queue is empty. Subcommands:
 - `python scripts/queue.py validate` — check the queue against the schema.
 
 Reads **distinguish missing (no queue) from corrupt (present but unparseable)** — a broken queue is
-reported loudly, never treated as drained. `queue.validate(obj) → [errors]` and `queue.load_queue(path)
-→ (data, status)` are importable for tests/tooling.
+never treated as drained: a mutating command **quarantines** it aside as `dispatch-queue.json.corrupt-<TS>`
+with a loud warning and fails (exit 1), mirroring the state.json corrupt-recovery. `queue.validate(obj)
+→ [errors]` pins the schema as an executable contract — required top-level keys `version/source/mode/
+baseCommit/items`, required per-item keys `n/featId/slug/briefPath/status`, `status` ∈ the enum, and a
+dense 1-based `n` in ranked order; `tests/test_dispatch_queue.py` fails CI on any drift.
+`queue.load_queue(path) → (data, status)` and `queue.validate` are importable for tests/tooling.
 
 ## The queue file
 

@@ -95,7 +95,8 @@ class LoadQueueTest(unittest.TestCase):
 class ValidateTest(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(q.validate(
-            {"version": 1, "items": [_item(1, "a"), _item(2, "b")]}), [])
+            {"version": 1, "source": "improve-runtime", "mode": "sequential-feature",
+             "baseCommit": "abc1234", "items": [_item(1, "a"), _item(2, "b")]}), [])
 
     def test_bad_n_sequence_and_status_and_dup(self):
         bad = {"version": 1, "items": [
