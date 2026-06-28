@@ -66,13 +66,20 @@ several calls). Give each the task slug and workspace path so it writes artifact
 
 0. **Queue mode (a `/improve` drain).** If you were invoked with **no explicit task** and a
    `.workflow/dispatch-queue.json` exists with at least one `pending` item, you are draining an
-   `/improve` queue. Pick the lowest-`n` `pending` item, set it `in-progress` (+`startedAt`), and adopt
-   its `slug` as the active task and its `briefPath` as the **given** brief — so you **skip INTAKE
-   elicitation** and go straight to EXPLORE. The worktree you stand up in step 1 forks the queue's
-   `baseCommit` (pass `--base <baseCommit>`), so each drained item lands on its own branch off that base
-   and stays independently reviewable. At DONE you mark the item `done` and tell the human to `/clear` +
-   `/feature` for the next. Full contract: **`../improve/dispatch-queue.md`**. (If there is no queue or
-   the human named a task, skip this and use step 1.)
+   `/improve` queue. **Pick the next item with `scripts/queue.py next`** (it atomically takes the
+   lowest-`n` `pending` item → `in-progress` (+`startedAt`) and prints its `slug`/`briefPath`/`baseCommit`/
+   `autonomous`; **and it first self-heals a crashed drain** — any stale `in-progress` whose session died
+   mid-flight is returned to `pending` and re-picked, never lost — feat-14). Adopt its `slug` as the
+   active task and its `briefPath` as the **given** brief — so you **skip INTAKE elicitation** and go
+   straight to EXPLORE. The worktree you stand up in step 1 forks the queue's `baseCommit` (pass
+   `--base <baseCommit>`), so each drained item lands on its own branch off that base and stays
+   independently reviewable. At DONE you mark the item `done` (`scripts/queue.py done <slug>`) and tell
+   the human to `/clear` + `/feature` for the next. **If the feature can't reach DONE** (VERIFY won't go
+   green and isn't fix-or-justifiable, a hard-block with no human, worktree failure), mark it
+   `scripts/queue.py fail <slug> --reason "…"` and — in an autonomous drain — escalate (anchored
+   `chat.jsonl` `needsAnswer:true` + `state.json.questions[]`) and continue with the next item, never
+   abandoning it silently. Full contract incl. recovery/failure: **`../improve/dispatch-queue.md`**
+   §"Recovery & failure". (If there is no queue or the human named a task, skip this and use step 1.)
    - **Autonomous flag.** When entering queue mode, read the queue's top-level **`autonomous`** field:
      if `true`, drain this queue **autonomously** (no PLAN GATE park — self-resolve open questions and
      auto-approve — but VERIFY and the review gates are kept; see PLAN GATE / VERIFY in `phases.md`).

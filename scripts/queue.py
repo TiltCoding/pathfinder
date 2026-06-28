@@ -36,6 +36,7 @@ server and worktree CLI via `_aipf` (same sys.path trick used elsewhere).
 """
 
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -56,6 +57,14 @@ TERMINAL = ("done", "skipped", "failed")
 # spec, not prose — a drift fails CI (tests/test_dispatch_queue.py).
 TOP_REQUIRED = ("version", "source", "mode", "baseCommit", "items")
 ITEM_REQUIRED = ("n", "featId", "slug", "briefPath", "status")
+
+# An item is set `in-progress` BEFORE its `/feature` runs; if that session dies
+# mid-flight the item sticks there forever and the drain (which picks the lowest-n
+# `pending`) skips it, silently losing the feature. The drain is sequential — only
+# one item is genuinely running at a time — so an `in-progress` whose `startedAt` is
+# older than this threshold is a crashed session, safe to return to `pending`
+# (feat-14). Generous default; override with `next --max-running-age`.
+DEFAULT_STALE_SECS = 1800
 
 
 # ---- root / path resolution -------------------------------------------------
@@ -202,6 +211,36 @@ def _find_item(data, slug):
     return None
 
 
+def _age_secs(iso):
+    """Seconds since an ISO-8601 local timestamp (as written by `_aipf.now_iso`),
+    or None if absent/unparseable. Naive local time on both sides."""
+    if not iso:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(iso))
+    except (ValueError, TypeError):
+        return None
+    return (datetime.datetime.now() - dt).total_seconds()
+
+
+def _recover_stale(data, max_age):
+    """Return any `in-progress` item older than `max_age` to `pending` so a crashed
+    drain doesn't lose it (feat-14). Tags it `resumedFrom:"in-progress"` for
+    visibility and clears `startedAt`. Returns the list of recovered slugs (caller
+    persists). A None/unparseable `startedAt` is left alone (can't judge its age)."""
+    recovered = []
+    for it in data.get("items", []):
+        if it.get("status") != "in-progress":
+            continue
+        age = _age_secs(it.get("startedAt"))
+        if age is not None and age > max_age:
+            it["status"] = "pending"
+            it["resumedFrom"] = "in-progress"
+            it["startedAt"] = None
+            recovered.append(it.get("slug"))
+    return recovered
+
+
 def _print_item_fields(data, it):
     """Emit a drained item's fields as KEY=VALUE lines (machine-parseable)."""
     out = {
@@ -223,8 +262,14 @@ def _print_item_fields(data, it):
 def cmd_next(args):
     path = queue_path(args.root or find_root())
     data = _load_or_die(path)
+    # step 0: self-heal — return any crashed (stale in-progress) item to pending
+    # so the sequential drain resumes it instead of losing it (feat-14).
+    max_age = getattr(args, "max_running_age", DEFAULT_STALE_SECS)
+    recovered = _recover_stale(data, max_age)
     pending = [it for it in data["items"] if it.get("status") == "pending"]
     if not pending:
+        if recovered:
+            _save(path, data)
         print("no pending items (queue drained or all in-progress/terminal)",
               file=sys.stderr)
         return 3
@@ -232,7 +277,23 @@ def cmd_next(args):
     it["status"] = "in-progress"
     it["startedAt"] = _aipf.now_iso()
     _save(path, data)
+    if recovered:
+        print("recovered %d stale in-progress -> pending: %s"
+              % (len(recovered), ", ".join(recovered)), file=sys.stderr)
     _print_item_fields(data, it)
+    return 0
+
+
+def cmd_recover(args):
+    path = queue_path(args.root or find_root())
+    data = _load_or_die(path)
+    recovered = _recover_stale(data, args.age)
+    if recovered:
+        _save(path, data)
+        print("recovered %d stale in-progress -> pending: %s"
+              % (len(recovered), ", ".join(recovered)))
+    else:
+        print("no stale in-progress items (none older than %gs)" % args.age)
     return 0
 
 
@@ -345,7 +406,17 @@ def build_parser():
     sub = p.add_subparsers(dest="cmd")
 
     n = sub.add_parser("next", help="take the lowest-n pending item -> in-progress")
+    n.add_argument("--max-running-age", dest="max_running_age", type=float,
+                   default=DEFAULT_STALE_SECS,
+                   help="seconds after which a stale in-progress item is recovered "
+                        "to pending before picking (default %d)" % DEFAULT_STALE_SECS)
     n.set_defaults(func=cmd_next)
+
+    rc = sub.add_parser("recover",
+                        help="return stale in-progress items (crashed drains) to pending")
+    rc.add_argument("--age", type=float, default=DEFAULT_STALE_SECS,
+                    help="staleness threshold in seconds (default %d)" % DEFAULT_STALE_SECS)
+    rc.set_defaults(func=cmd_recover)
 
     d = sub.add_parser("done", help="mark an item done")
     d.add_argument("slug")

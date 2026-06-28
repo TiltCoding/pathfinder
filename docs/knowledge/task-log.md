@@ -4,6 +4,26 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — drain-recovery-stale-failed (восстановление дренажа: stale in-progress + failed)
+- **Что:** у дренажа очереди появились **определённые** пути восстановления/отказа. Фича feat-14/
+  cand-23, на `main`. Краш-сессия больше не теряет фичу молча.
+  - **Код (`queue.py`):** `next` теперь **шаг 0 — self-heal**: любой `in-progress` со `startedAt` старше
+    `--max-running-age` (дефолт 1800с) возвращается в `pending` (`resumedFrom:"in-progress"`, `startedAt`
+    очищен) и переподбирается. Дренаж последовательный → залипший `in-progress` = мёртвая сессия, безопасно
+    резюмить. Standalone `queue.py recover [--age N]`. Хелперы `_age_secs`/`_recover_stale`.
+  - **Контракт (доки):** `dispatch-queue.md` §«Recovery & failure» — оба пути: stale→pending (self-heal)
+    и unreachable-DONE→`failed`+`failReason` с эскалацией (anchored `chat.jsonl` `needsAnswer` +
+    `state.questions[]`, реюз hard-block ADR-0019), затем продолжить со следующего; `dispatched[]` —
+    снимок-на-DISPATCH (очередь канонична). `feature/SKILL.md` queue-mode шаг 0 зовёт `queue.py next`
+    (авто-recovery) и определяет failure-путь.
+  - **Счётчик failed в хабе УЖЕ был** (`renderQueue` считает `failed` → `failMeta` «· N сбоев»,
+    `hubq.failure*`) — критерий выполнен существующим кодом; добавлять не пришлось.
+- **Тест:** `tests/test_dispatch_queue.py` `StaleRecoveryTest` (3 кейса): stale→pending но recent не
+  трогаем; `next` без pending восстанавливает залипший и переподбирает; свежий `in-progress` переживает
+  `next`.
+- **Файлы:** `scripts/queue.py`, `tests/test_dispatch_queue.py`, `skills/improve/dispatch-queue.md`,
+  `skills/feature/SKILL.md`. Тесты: 280 зелёных (3 новых), `check_stdlib` чист.
+
 ## 2026-06-28 — test-command (шестая команда /test — генерация тестов)
 - **Что:** добавлена команда **`/test`** — только-тесты для существующего модуля/области. Фича
   feat-13/cand-13, на `main`. Новый каталог `skills/test/`: `SKILL.md` (frontmatter `name: test`,

@@ -13,6 +13,7 @@ Run with:
     python3 -m unittest discover -s tests
 """
 
+import datetime
 import io
 import os
 import sys
@@ -119,6 +120,71 @@ class QuarantineTest(unittest.TestCase):
             rc, _, err = self._run(d, ["next"])
             self.assertEqual(rc, 3)               # "nothing queued", distinct from corrupt
             self.assertNotIn("quarantined", err)
+
+
+def _ago(secs):
+    """ISO local timestamp `secs` ago, in the format `_aipf.now_iso` writes."""
+    dt = datetime.datetime.now() - datetime.timedelta(seconds=secs)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+class StaleRecoveryTest(unittest.TestCase):
+    """A crashed drain leaves an item `in-progress` forever; the next drain must
+    return a stale one to `pending` instead of losing it (feat-14)."""
+
+    def _run(self, root, argv):
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = q.main(["--root", root] + argv)
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 1
+        return rc, out.getvalue(), err.getvalue()
+
+    def _seed(self, root, items, **top):
+        base = os.path.join(root, ".workflow")
+        os.makedirs(base, exist_ok=True)
+        data = _queue(items, **top)
+        with io.open(os.path.join(base, "dispatch-queue.json"), "w",
+                     encoding="utf-8") as f:
+            f.write(__import__("json").dumps(data))
+
+    def test_recover_stale_but_not_recent(self):
+        with tempfile.TemporaryDirectory() as d:
+            stale = dict(_item(1, "stale", "in-progress"), startedAt=_ago(4000))
+            recent = dict(_item(2, "recent", "in-progress"), startedAt=_ago(10))
+            self._seed(d, [stale, recent])
+            rc, out, _ = self._run(d, ["recover", "--age", "1800"])
+            self.assertEqual(rc, 0)
+            self.assertIn("stale", out)
+            data, _ = q.load_queue(q.queue_path(d))
+            self.assertEqual(data["items"][0]["status"], "pending")
+            self.assertEqual(data["items"][0]["resumedFrom"], "in-progress")
+            self.assertIsNone(data["items"][0]["startedAt"])
+            # the recent in-progress is left running
+            self.assertEqual(data["items"][1]["status"], "in-progress")
+
+    def test_next_recovers_then_picks_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            stale = dict(_item(1, "crashed", "in-progress"), startedAt=_ago(4000))
+            self._seed(d, [stale])               # no pending — only the crashed one
+            rc, out, err = self._run(d, ["next"])
+            self.assertEqual(rc, 0)              # recovered -> picked, not "nothing to do"
+            self.assertIn("slug=crashed", out)
+            self.assertIn("recovered", err)
+            data, _ = q.load_queue(q.queue_path(d))
+            self.assertEqual(data["items"][0]["status"], "in-progress")  # re-picked
+            self.assertEqual(data["items"][0]["resumedFrom"], "in-progress")
+
+    def test_fresh_in_progress_survives_next(self):
+        with tempfile.TemporaryDirectory() as d:
+            running = dict(_item(1, "running", "in-progress"), startedAt=_ago(5))
+            self._seed(d, [running, _item(2, "queued")])
+            rc, out, _ = self._run(d, ["next"])
+            self.assertEqual(rc, 0)
+            self.assertIn("slug=queued", out)    # picks the pending, not the running one
+            data, _ = q.load_queue(q.queue_path(d))
+            self.assertEqual(data["items"][0]["status"], "in-progress")  # untouched
 
 
 if __name__ == "__main__":

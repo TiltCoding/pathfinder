@@ -77,7 +77,9 @@ survives the `/clear` between features. Append/extend-only in spirit; statuses m
   position; `slug` is the `/feature` task slug; `briefPath` points at the brief `/improve` already
   wrote. The `/feature` run keys its own `.workflow/tasks/<slug>/` workspace off `slug`.
 - **`status`** per item: `pending` → `in-progress` → `done` (or `skipped` / `failed`). The drain always
-  takes the lowest-`n` item still `pending`.
+  takes the lowest-`n` item still `pending`. **Recovery & failure are defined paths** (feat-14, see
+  §"Recovery & failure" below): a crashed `in-progress` is returned to `pending`, and an item that can't
+  reach DONE is marked `failed` (not silently abandoned).
 - **`baseCommit`** — the `git HEAD` captured at `/improve` INTAKE. `/feature` stands up each item's
   worktree off this ref (`worktree.py add <slug> --base <baseCommit>`), so the features stay independent
   and reviewable, each on its own branch `<slug>` (the human merges/cherry-picks afterward). If the human
@@ -129,6 +131,31 @@ one `pending` item exists, enters **queue mode**:
 
 When the last item flips to `done`, `/feature` reports the queue is drained and points at `/hub`
 (every drained run shows up there as it completes).
+
+## Recovery & failure (feat-14)
+
+The drain has **defined** recovery and failure paths — a crashed or failed item is never silently lost.
+
+- **Stale `in-progress` → `pending` (self-heal).** An item is set `in-progress` *before* its `/feature`
+  runs; if that session dies mid-flight it would stick there forever and the drain (lowest-`n` `pending`)
+  would skip it. So `scripts/queue.py next` **first recovers** any `in-progress` whose `startedAt` is
+  older than `--max-running-age` (default 1800s) back to `pending`, tagging it `resumedFrom:"in-progress"`
+  and clearing `startedAt`. The drain is sequential (one item genuinely running at a time), so a stale
+  `in-progress` is a crashed session — safe to resume. The drainer just calls `queue.py next`; recovery is
+  automatic. (`scripts/queue.py recover [--age N]` runs it standalone.)
+- **Unreachable DONE → `failed` (escalate, don't abandon).** If a feature can't reach DONE — VERIFY won't
+  go green and isn't fix-or-justifiable, `worktree.py add` fails, or an autonomous run hits a hard-block
+  with no human — the drainer marks the item `failed` with a `failReason`
+  (`scripts/queue.py fail <slug> --reason "…"`). In an **autonomous** drain it does **not** stop the whole
+  loop: it raises the question to the human (an anchored `chat.jsonl` agent line with `needsAnswer:true`
+  **plus** a `state.json.questions[]` entry — reusing the hard-block machinery, ADR-0019), then continues
+  with the next `pending` item. A purposely-skipped item uses `skipped` (`queue.py skip <slug>`). The DONE
+  summary and the hub's `/improve`-queue section show the `failed`/`skipped` counts so a swallowed failure
+  is visible.
+- **`state.json.dispatched[]` is a snapshot, not the source of truth.** `/improve` writes it once at
+  DISPATCH (status `queued`); it is **not** updated as the drain moves statuses. The **queue file is
+  canonical** — read `dispatch-queue.json` (or `queue.py status`) for live state; treat `dispatched[]` as
+  a record of what `/improve` queued, not of how the drain is going.
 
 ## The two drive options (state them to the human)
 
