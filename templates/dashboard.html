@@ -253,6 +253,9 @@
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
   .queue { font-size: 13px; color: var(--muted); flex: 1; }
   .queue b { color: var(--ink); }
+  .unsent-hint { font-size: 12px; font-weight: 700; color: var(--err); }
+  .unsent-hint[hidden] { display: none; }
+  #btn-submit.attn { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
   /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
   .dispatch-chip { font-size: 13px; color: var(--muted); }
   .dispatch-chip b { color: var(--ink); }
@@ -687,6 +690,7 @@
   <div class="actionbar-inner">
     <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
     <div class="queue">Edit queue: <b id="queue-count">0</b></div>
+    <div class="unsent-hint" id="unsent-hint" role="status" aria-live="polite" hidden></div>
     <div class="dispatch-chip" id="dispatch-chip" hidden><b id="dispatch-done">0</b> of <b id="dispatch-total">0</b> <span class="dispatch-lbl">marked Do</span></div>
     <button class="ghost" id="btn-approve">Approve plan</button>
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
@@ -959,6 +963,7 @@ const STR = {
     "pop.send": "Send",
     "actionbar.hint": "Mark features → Submit → Approve. No answer = Skip.",
     "actionbar.queue": "Edit queue:",
+    "actionbar.unsent": "unsent — press Send",   // + count prefix
     "actionbar.dispatchOf": "of",
     "actionbar.dispatchCount": "marked Do",
     "actionbar.approve": "Approve plan",
@@ -1169,6 +1174,7 @@ const STR = {
     "pop.send": "Отправить",
     "actionbar.hint": "Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.",
     "actionbar.queue": "Очередь правок:",
+    "actionbar.unsent": "не отправлено — нажмите «Отправить»",   // + count prefix
     "actionbar.dispatchOf": "из",
     "actionbar.dispatchCount": "отмечено Делаем",
     "actionbar.approve": "Утвердить план",
@@ -1381,6 +1387,8 @@ function applyStaticStrings(){
   set("#chat-attach-hint", t("attach.hint"));
   // queue-label «Edit queue:» — переписываем сохраняя <b id="queue-count">
   const q = $(".queue"); if(q){ const c = q.querySelector("#queue-count"); q.textContent = t("actionbar.queue") + " "; if(c) q.appendChild(c); }
+  // unsent-hint follows the language too (it carries a localized suffix)
+  const uh2 = $("#unsent-hint"); if(uh2 && !uh2.hidden) uh2.textContent = draftItems.length + " " + t("actionbar.unsent");
   // dispatch-chip: «<b>N</b> из <b>M</b> отмечено Делаем» — перестраиваем сохраняя оба <b> с числами
   const dc = $("#dispatch-chip");
   if(dc){
@@ -2088,7 +2096,12 @@ async function loadDraft(){
 }
 function updateQueue(){
   $("#queue-count").textContent = draftItems.length;
-  $("#btn-submit").disabled = draftItems.length === 0;
+  const unsent = draftItems.length > 0;
+  $("#btn-submit").disabled = !unsent;
+  // persistent (not one-shot) signal that edits are queued but not yet sent
+  const uh = $("#unsent-hint");
+  if(uh){ uh.hidden = !unsent; if(unsent) uh.textContent = draftItems.length + " " + t("actionbar.unsent"); }
+  const sb = $("#btn-submit"); if(sb) sb.classList.toggle("attn", unsent);
   updateDispatchChip();
 }
 // «N из M отмечено Делаем»: M — choice-вопросы по plan-блокам (feat-N), N — из них помеченные «делаем/do».
