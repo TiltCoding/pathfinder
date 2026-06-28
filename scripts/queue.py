@@ -449,6 +449,14 @@ def build_parser():
 
 
 def main(argv=None):
+    # Item titles/slugs may carry non-ASCII (e.g. a Cyrillic "доки↔код"); the
+    # Windows console defaults to a legacy codepage and would crash on the print.
+    # UTF-8 with errors="replace" keeps the CLI robust cross-platform.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
