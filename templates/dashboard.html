@@ -285,6 +285,8 @@
     color: var(--muted2); font: 600 13px var(--font-sans); padding: 10px 0; margin-bottom: -1px; cursor: pointer; }
   .tab:hover { color: var(--ink); }
   .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab.has-threads { position: relative; }
+  .tab.has-threads::after { content: ""; position: absolute; top: 6px; right: -10px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
   [hidden] { display: none !important; }
 
   /* trace tab */
@@ -1794,11 +1796,20 @@ function render(data, replies){
       const phrase = openAnchors.length === 1 ? t("thread.awaiting.one") : t("thread.awaiting.many");
       otBtn.textContent = "🔸 " + openAnchors.length + " " + phrase;
       otBtn.onclick = () => {
-        const first = document.querySelector('#content .thread-open');
-        if(first) first.scrollIntoView({ behavior:"smooth", block:"center" });
+        // the open thread lives in #content — switch to the Workflow tab first so
+        // the jump works even when the human is on Changes/Trace/Docs
+        if(activeTab !== "work") switchTab("work");
+        setTimeout(() => {
+          const first = document.querySelector('#content .thread-open');
+          if(first) first.scrollIntoView({ behavior:"smooth", block:"center" });
+        }, 0);
       };
     } else { otBtn.hidden = true; }
   }
+  // cue the Workflow tab when a thread awaits the human's reply, so an open
+  // question is noticeable from any tab (not just where #content is showing)
+  const workTab = $("#tab-work");
+  if(workTab) workTab.classList.toggle("has-threads", openAnchors.length > 0);
 }
 function nowAge(ts){
   if(!ts) return null;
