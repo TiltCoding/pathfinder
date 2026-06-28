@@ -264,6 +264,9 @@
   button.ghost:hover { border-color: var(--accent); }
   .toast { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .25s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  .conn-lost { position: fixed; top: 0; left: 0; right: 0; z-index: 60; background: var(--err); color: #fff; font-size: 12.5px; font-weight: 600; text-align: center; padding: 6px 14px; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
+  .conn-lost[hidden] { display: none; }
+  body.conn-down main.wrap { opacity: .5; filter: grayscale(.35); transition: opacity .25s ease, filter .25s ease; }
   .empty { color: var(--muted); font-style: italic; }
   /* inline comment input that appears at a text selection */
   #sel-popover { position: absolute; display: none; z-index: 40; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 8px; }
@@ -608,6 +611,7 @@
 </style>
 </head>
 <body>
+<div class="conn-lost" id="conn-lost" role="status" aria-live="assertive" hidden></div>
 <header class="top">
   <div class="top-inner id-row">
     <div class="hd-id-l">
@@ -712,6 +716,7 @@ const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
+let connLost = false;
 let prevStatus = null;          // прошлый data.status — детект перехода working→awaiting
 let baseTitle = document.title; // статичный <title>; восстанавливается при снятии бейджа
 
@@ -938,6 +943,7 @@ const STR = {
     "header.awaitingInput": "awaiting your input",
     "header.agentWorking": "agent working",
     "header.now": "Now:",
+    "header.connLost": "Connection to the server lost — reconnecting…",
     "tab.work": "Workflow",
     "tab.changes": "Changes",
     "tab.docs": "Documentation",
@@ -1149,6 +1155,7 @@ const STR = {
     "header.awaitingInput": "ждёт ваши правки",
     "header.agentWorking": "агент работает",
     "header.now": "Сейчас:",
+    "header.connLost": "Связь с сервером потеряна — переподключаюсь…",
     "tab.work": "Рабочий процесс",
     "tab.changes": "Изменения",
     "tab.docs": "Документация",
@@ -3554,17 +3561,28 @@ $("#chat-attach-input").onchange = (e) => { addPendingFiles("chat", e.target.fil
 wireAttachCapture($("#chat-text"), $("#chat-panel"), "chat", renderChatPending);
 
 // ----- polling loop -----
+// Show/hide the "connection lost" banner + dim the content. Idempotent.
+function setConnLost(lost){
+  if(lost === connLost) return;
+  connLost = lost;
+  const el = $("#conn-lost");
+  if(el){ el.textContent = t("header.connLost"); el.hidden = !lost; }
+  document.body.classList.toggle("conn-down", lost);
+}
 async function tick(){
   try {
     const [data, replies] = await Promise.all([
       api("/data?slug=" + encodeURIComponent(SLUG)),
       api("/replies?slug=" + encodeURIComponent(SLUG)),
     ]);
+    // api() never throws; a dead/restarting/reaped server surfaces as ok===false.
+    if((data && data.ok === false) || (replies && replies.ok === false)){ setConnLost(true); return; }
+    setConnLost(false);   // first good tick clears the banner + un-dims
     const stamp = JSON.stringify([data.updatedAt, data.phase, data.status, data.now,
       (data.workstreams||[]).map(w=>w.status).join(","), (replies.replies||[]).length, chatMsgs.length]);
     if(stamp !== lastDataStamp){ lastDataStamp = stamp; render(data, replies); }
     else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
-  } catch(e){ /* server may be restarting */ }
+  } catch(e){ setConnLost(true); /* server may be restarting */ }
 }
 (async function init(){
   // возврат фокуса на вкладку снимает title-бейдж «ждёт»
