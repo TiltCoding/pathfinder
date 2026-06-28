@@ -1119,6 +1119,11 @@ class Handler(BaseHTTPRequestHandler):
             "status": status,
             "awaiting": (state.get("checkpoint") == "awaiting-batch")
             or (dash.get("status") == "awaiting-batch"),
+            # live "what's happening now" for the hub command center (feat-12);
+            # sourced from dashboard.json (already in _hub_signature, so the card
+            # memo invalidates when `now` changes).
+            "now": dash.get("now"),
+            "nowAt": dash.get("nowAt"),
             "iteration": state.get("iteration"),
             "progress": {"done": done, "total": total},
             "createdAt": created,
@@ -1817,6 +1822,11 @@ HUB_PAGE = r"""<!doctype html>
   .sec .submeta code { font-family:var(--font-mono); color:var(--muted); }
   .pill { font:600 11px var(--font-mono); padding:1px 7px; border-radius:20px; background:var(--chip); color:var(--head); }
   .pill.live { background:var(--ok-soft); color:var(--ok); }
+  .pill.awaiting { background:var(--awaiting-soft); color:var(--warn); }
+  /* live "Now: …" line on a run card (feat-12) */
+  .runcard .nowline { font:12px var(--font-mono); color:var(--ink-soft); margin:0 0 14px; overflow-wrap:anywhere; }
+  .runcard .nowline.stale { opacity:.5; }
+  .runcard .nowline b { color:var(--head); font-weight:600; }
   .sec .grow { margin-left:auto; }
 
   /* search + filter toolbar (static node #filter-bar — never rewritten by render(),
@@ -2031,6 +2041,8 @@ const STR = {
     "hub.cmd.ask": "ask a read-only question about the code",
     "hub.cmd.design": "audit and improve the UI/UX of one component",
     "hub.awaiting": "⏳ awaiting reply",
+    "hub.now": "Now:",
+    "hub.awaitingYou": "awaiting you",
     "hub.inProgress": "in progress",
     "hub.colTask": "Task",
     "hub.colPhase": "Phase",
@@ -2107,6 +2119,8 @@ const STR = {
     "hub.cmd.ask": "задать read-only вопрос о коде",
     "hub.cmd.design": "аудит и улучшение UI/UX одного компонента",
     "hub.awaiting": "⏳ ждёт ответа",
+    "hub.now": "Сейчас:",
+    "hub.awaitingYou": "ждут вас",
     "hub.inProgress": "в работе",
     "hub.colTask": "Задача",
     "hub.colPhase": "Фаза",
@@ -2309,6 +2323,24 @@ function phaseTracker(phase){
   return `<div class="track">${segs}</div><div class="tracklabels">${labels}</div>`;
 }
 
+// compact relative age (feat-12); literal s/m/h suffixes (unit-neutral)
+function fmtAge(sec){
+  if(sec < 60) return Math.round(sec) + "s";
+  if(sec < 3600) return Math.round(sec/60) + "m";
+  return Math.round(sec/3600) + "h";
+}
+// live "Now: …" line for a run card. Hidden while awaiting (the badge says it all)
+// or when empty; greyed when the timestamp is stale (>90s), mirroring the task
+// dashboard's renderNow.
+function nowLine(r){
+  if(r.awaiting || !r.now) return "";
+  const ms = r.nowAt ? Date.parse(r.nowAt) : NaN;
+  const age = isNaN(ms) ? null : Math.max(0, (Date.now() - ms)/1000);
+  const stale = age != null && age > 90;
+  const ageTxt = (age != null && !stale) ? " · " + fmtAge(age) : "";
+  return `<div class="nowline${stale ? " stale" : ""}">${esc(t("hub.now"))} <b>${esc(r.now)}</b>${esc(ageTxt)}</div>`;
+}
+
 // hero card — the first active run, with phase tracker + stats row
 function heroCard(r){
   const track = phaseTracker(r.phase);
@@ -2329,6 +2361,7 @@ function heroCard(r){
     </div>
     ${r.title ? `<div class="desc">${esc(r.title)}</div>` : ""}
     ${track}${slimbar}
+    ${nowLine(r)}
     <div class="herostats">
       <div class="herostat"><div class="n">${steps}</div><div class="l">${esc(t("hub.steps"))}</div></div>
       <div class="herostat"><div class="n">${r.subagents==null?"—":esc(r.subagents)}</div><div class="l">${esc(t("hub.stat.subagents"))}</div></div>
@@ -2463,8 +2496,11 @@ function render(data){
   // /hub.json diff without ever touching the independent #queue-root node.
   const liveBadge = active.length
     ? `<span class="pill live">${active.length} ${esc(t("hub.live"))}</span>` : "";
+  const awaitN = active.filter(r => r.awaiting).length;   // command center: who needs you (feat-12)
+  const awaitBadge = awaitN
+    ? `<span class="pill awaiting">${awaitN} ${esc(t("hub.awaitingYou"))}</span>` : "";
   document.getElementById("root").innerHTML = `
-    <div class="sec"><span class="title">${esc(t("hub.secActive"))}</span>${liveBadge}</div>
+    <div class="sec"><span class="title">${esc(t("hub.secActive"))}</span>${liveBadge}${awaitBadge}</div>
     ${activeHtml}`;
   document.getElementById("root-tail").innerHTML = `
     <div class="sec"><span class="title">${esc(t("hub.secHistory"))}</span><span class="pill">${history.length}</span></div>

@@ -4,6 +4,23 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — hub-live-now-command-center (живой «Сейчас» по всем задачам в хабе)
+- **Что:** `/hub` из пассивного списка стал командным центром. Фича feat-12/cand-8, на `main`.
+  - **Сервер:** `_hub_build_card` добавил в карточку `now`/`nowAt` из `dashboard.json` (уже в
+    `_hub_signature` → мемо инвалидируется при смене `now`). Контракт-тест ключей карточки
+    (`test_hub.CARD_KEYS`) обновлён.
+  - **Фронт (HUB_PAGE):** `heroCard` рисует строку **«Сейчас: <now> · <age>»** (`nowLine`/`fmtAge`):
+    скрыта при `awaiting`/пустом `now`, грейснута при `nowAt` старше 90с (как `renderNow` на дашборде).
+    В шапке «Активные» — счётчик **«N ждут вас»** (`pill.awaiting`) по полю `awaiting`.
+  - i18n: `hub.now`/`hub.awaitingYou` в обоих HUB_PAGE STR (`en`/`ru`).
+- **Зачем:** при параллельных прогонах человек кликал в каждую карточку, чтобы понять, кто что делает /
+  кто его ждёт. Теперь видно сразу.
+- **0 новых эндпоинтов** — `now` едет в существующем `/hub.json`. mtime-кэш карточек цел (now в
+  сигнатуре). Проверено в браузере (fresh HUB_PAGE): fresh→строка с age, stale>90с→грейс без age,
+  awaiting/пусто→скрыто, heroCard несёт строку.
+- **Файлы:** `scripts/server.py`, `tests/test_hub.py` (CARD_KEYS), `docs/knowledge/areas/parallel-runs-hub.md`.
+  Тесты: 274 зелёных, `check_stdlib` чист.
+
 ## 2026-06-28 — server-security-headers (frame-ancestors + Referrer-Policy)
 - **Что:** companion-сервер шлёт заголовки безопасности. Фича feat-11/cand-45, на `main`.
   - **`_send` (один общий путь ответа):** `Referrer-Policy: no-referrer` на **каждый** ответ (slug/путь

@@ -154,10 +154,18 @@ stdlib-only хелпер (по образцу `scripts/server.py`); делит l
   progress:{done,total},
   createdAt, updatedAt,
   worktreePath, branch,           // null для обычных (не-worktree) задач
+  now, nowAt,                     // строка «Сейчас: …» из dashboard.json (feat-12, командный центр)
   active,                         // bool — критерий active/history (см. ниже)
   subagents, sessions, events, activity,   // счётчики из одного прохода телеметрии
   firstTs, lastTs, durationMs }
 ```
+
+**Поля `now`/`nowAt`** (feat-12, командный центр) — живая строка активности из `dashboard.json`
+(`_hub_build_card` тянет `dash.get("now")`/`nowAt`). Входят в карточку, кэшируются **существующей**
+сигнатурой (`dashboard.json` уже в `_hub_signature`), так что смена `now` инвалидирует мемо. На фронте
+`heroCard` рисует строку **«Сейчас: <now> · <age>»** (`nowLine`): скрыта при `awaiting` (бейдж и так
+говорит) и при пустом `now`, грейснута при `nowAt` старше 90с — как `renderNow` на дашборде задачи.
+В шапке секции «Активные» — агрегатный счётчик **«N ждут вас»** (`pill.awaiting`) по полю `awaiting`.
 
 **Поле `awaiting`** (`_hub_build_card`, `scripts/server.py:985`) — задача ждёт ответа человека (висит на
 батч-гейте). OR-формула из двух источников: `state.checkpoint == "awaiting-batch"` **или**

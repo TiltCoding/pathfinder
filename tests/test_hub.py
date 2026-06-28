@@ -432,6 +432,7 @@ class HubCardCacheTest(unittest.TestCase):
         "progress", "createdAt", "updatedAt", "worktreePath", "branch",
         "active", "subagents", "sessions", "events", "activity",
         "firstTs", "lastTs", "durationMs",
+        "now", "nowAt",   # feat-12: live "Now: …" for the hub command center
     }
 
     def setUp(self):
