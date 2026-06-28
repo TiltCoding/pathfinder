@@ -45,8 +45,13 @@ Goal: survey the app from every prism and gather raw improvement candidates.
   (title / prism / problem with `path:line` / change / areas / size / risk / impact / rationale).
 - You write each scout's raw output to `scout/<prism>.md` (one file per prism). Don't dedup yet — that
   is CONSENSUS.
-- Update `dashboard.json` (a short "swarm in progress" summary), set `state.json.phase = "SCOUT"`,
-  advance to CONSENSUS.
+- **Make the swarm visible (feat-4).** Before the fan-out, seed `dashboard.json.workstreams[]` with one
+  entry per prism — `{ "title": "<prism>", "status": "in_progress" }` — and set `now` to e.g. "рой
+  сканирует призмы (0/7)". As each scout returns, flip its entry to `"status": "done"` and bump the
+  `now` count. The dashboard renders these as the **swarm grid** (one card per prism, running→done) plus
+  the sidebar segment track + count chip — no extra fields, the existing `workstreams[]` render does it.
+- Update `dashboard.json` (the swarm grid above is the "swarm in progress" view), set
+  `state.json.phase = "SCOUT"`, advance to CONSENSUS.
 
 ## 3. CONSENSUS (autonomous)
 
@@ -57,6 +62,11 @@ Goal: turn the raw scout output into a ranked, deduplicated, top-K shortlist.
   list, scores `impact/effort/risk/confidence` + keep/drop); then **you aggregate the scores
   deterministically** (the formula in `consensus.md` §aggregation) and sort to **top-K = 6–8**.
 - Record `candidates[]`, `votes[]` (the aggregate per candidate), and the chosen top-K in `state.json`.
+- **Make the vote panel visible (feat-4).** When you fan out the voters, rewrite
+  `dashboard.json.workstreams[]` as the 3 voters — `{ "title": "voter 1", "status": "in_progress" }`,
+  flipping each to `"done"` as its ballot lands — and set `now` to e.g. "панель из 3 голосующих
+  оценивает N кандидатов" (the candidate count makes the consolidation legible). The dashboard shows
+  the vote panel as the swarm grid + the candidate count in the «Сейчас» line.
 - Advance to PROPOSE/SELECT GATE.
 
 ## 4. PROPOSE / SELECT GATE (the one human gate)

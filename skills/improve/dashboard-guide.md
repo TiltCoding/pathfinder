@@ -25,8 +25,16 @@ Write `.workflow/tasks/<slug>/dashboard.json` after every phase/iteration. Schem
 ```
 
 (At the SELECT GATE each top-K feature is **one `planBlocks[]` card + one `questions[]` choice with the
-same `id = feat-K`** — see §SELECT GATE below. The `demo`/`codebaseMap`/`workstreams`/`progress` fields
-from the `/feature` schema are optional and unused by `/improve`'s gate.)
+same `id = feat-K`** — see §SELECT GATE below. The `demo`/`codebaseMap`/`progress` fields from the
+`/feature` schema are optional and unused by `/improve`'s gate.)
+
+**Swarm/vote visualization (feat-4).** During **SCOUT** and **CONSENSUS** `/improve` populates
+`workstreams[]` so the swarm is visible: at SCOUT one entry per prism `{ "title": "<prism>",
+"status": "in_progress"→"done" }`; at CONSENSUS the 3 voters `{ "title": "voter K", "status": … }`,
+with the candidate count in the `now` line. The dashboard renders `workstreams[]` as a **grid of cards**
+(running→done) plus the sidebar segment track (`renderWsTrack`) and the count chip (`renderWsSummary`) —
+the same render path `/feature` uses for its coding work-streams, no extra fields. See `phases.md`
+§SCOUT / §CONSENSUS for exactly when to write them.
 
 Field notes:
 

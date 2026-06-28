@@ -263,6 +263,9 @@
   .v-comment-send { padding: 6px 12px; font-size: 13px; }
 
   .ws { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+  /* swarm grid (feat-4): tile work-streams / scout prisms / voters into cards */
+  .ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 18px; }
+  .ws-grid .ws { gap: 8px; }
   .ws:last-child { border-bottom: none; }
   .ws .chip { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
   .ws .todo { background: var(--chip); color: var(--muted); }
@@ -1879,11 +1882,14 @@ function render(data, replies){
   }
 
   if((data.workstreams||[]).length){
+    // swarm grid (feat-4): one cell per work-stream / scout prism / voter, tiled.
+    // Reuses the same {title,status} data path; renderWsTrack/renderWsSummary still
+    // draw the sidebar segments + count chip.
     let w = "";
     for(const ws of data.workstreams){
       w += `<div class="ws"><span class="chip ${ws.status||'todo'}">${labelWs(ws.status)}</span><span>${esc(ws.title||"")}</span></div>`;
     }
-    h += card(t("card.workstreams"), w);
+    h += card(t("card.workstreams"), `<div class="ws-grid">${w}</div>`);
   }
 
   const __snap = captureActiveInput();
