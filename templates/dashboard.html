@@ -635,11 +635,11 @@
       <button class="ghost chat-toggle" id="btn-chat-toggle" title="Chat with agent" aria-expanded="false">💬 <span id="chat-toggle-label">Chat</span><span class="chat-unread" id="chat-unread" hidden>0</span></button>
     </div>
   </div>
-  <div class="top-inner"><nav class="tabbar">
-    <button class="tab active" id="tab-work" data-tab="work">Workflow</button>
-    <button class="tab" id="tab-changes" data-tab="changes">Changes</button>
-    <button class="tab" id="tab-docs" data-tab="docs">Documentation</button>
-    <button class="tab" id="tab-trace" data-tab="trace">Tracing</button>
+  <div class="top-inner"><nav class="tabbar" role="tablist" aria-label="Dashboard sections">
+    <button class="tab active" id="tab-work" data-tab="work" role="tab" aria-selected="true" aria-controls="content" tabindex="0">Workflow</button>
+    <button class="tab" id="tab-changes" data-tab="changes" role="tab" aria-selected="false" aria-controls="changes" tabindex="-1">Changes</button>
+    <button class="tab" id="tab-docs" data-tab="docs" role="tab" aria-selected="false" aria-controls="docs" tabindex="-1">Documentation</button>
+    <button class="tab" id="tab-trace" data-tab="trace" role="tab" aria-selected="false" aria-controls="trace" tabindex="-1">Tracing</button>
   </nav></div>
 </header>
 
@@ -659,19 +659,19 @@
     <button class="ghost" id="open-threads" hidden title="Jump to thread awaiting reply"></button>
   </aside>
   <div class="page-main">
-    <main class="wrap" id="content">
+    <main class="wrap" id="content" role="tabpanel" aria-labelledby="tab-work">
       <p class="empty">Loading…</p>
     </main>
 
-    <main class="wrap" id="changes" hidden>
+    <main class="wrap" id="changes" role="tabpanel" aria-labelledby="tab-changes" hidden>
       <p class="empty">Loading changes…</p>
     </main>
 
-    <main class="wrap wide" id="docs" hidden>
+    <main class="wrap wide" id="docs" role="tabpanel" aria-labelledby="tab-docs" hidden>
       <p class="empty">Loading documentation…</p>
     </main>
 
-    <main class="wrap" id="trace" hidden>
+    <main class="wrap" id="trace" role="tabpanel" aria-labelledby="tab-trace" hidden>
       <p class="empty">Loading tracing…</p>
     </main>
   </div>
@@ -950,6 +950,7 @@ const STR = {
     "header.agentWorking": "agent working",
     "header.now": "Now:",
     "header.connLost": "Connection to the server lost — reconnecting…",
+    "tab.sections": "Dashboard sections",
     "tab.work": "Workflow",
     "tab.changes": "Changes",
     "tab.docs": "Documentation",
@@ -1163,6 +1164,7 @@ const STR = {
     "header.agentWorking": "агент работает",
     "header.now": "Сейчас:",
     "header.connLost": "Связь с сервером потеряна — переподключаюсь…",
+    "tab.sections": "Разделы дашборда",
     "tab.work": "Рабочий процесс",
     "tab.changes": "Изменения",
     "tab.docs": "Документация",
@@ -1373,6 +1375,7 @@ function applyStaticStrings(){
   set("#theme-btn", t("header.toggleTheme"), "title"); set("#theme-btn", t("header.toggleTheme"), "aria-label");
   set("#btn-chat-toggle", t("header.chatWithAgent"), "title");
   set("#chat-panel", t("header.chatWithAgent"), "aria-label");
+  set(".tabbar", t("tab.sections"), "aria-label");
   set("#chat-toggle-label", t("header.chat"));
   set("#tab-work", t("tab.work")); set("#tab-changes", t("tab.changes"));
   set("#tab-docs", t("tab.docs")); set("#tab-trace", t("tab.trace"));
@@ -2317,7 +2320,12 @@ let activeTab = "work";
 let traceTimer = null, changesTimer = null;
 function switchTab(name){
   activeTab = name;
-  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(t => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+    t.tabIndex = on ? 0 : -1;   // roving tabindex (ARIA tabs)
+  });
   $("#content").hidden = name !== "work";
   $("#changes").hidden = name !== "changes";
   $("#docs").hidden = name !== "docs";
@@ -2336,6 +2344,26 @@ function switchTab(name){
   else stopGraph();
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+// ARIA tabs keyboard nav: Arrow/Home/End move focus + activate (selection follows
+// focus), with the roving tabindex switchTab maintains.
+(function wireTabKeys(){
+  const tabs = Array.from(document.querySelectorAll(".tab"));
+  const tablist = document.querySelector(".tabbar");
+  if(!tablist || !tabs.length) return;
+  tablist.addEventListener("keydown", e => {
+    const i = tabs.indexOf(document.activeElement);
+    if(i < 0) return;
+    let j = null;
+    if(e.key === "ArrowRight" || e.key === "ArrowDown") j = (i + 1) % tabs.length;
+    else if(e.key === "ArrowLeft" || e.key === "ArrowUp") j = (i - 1 + tabs.length) % tabs.length;
+    else if(e.key === "Home") j = 0;
+    else if(e.key === "End") j = tabs.length - 1;
+    if(j === null) return;
+    e.preventDefault();
+    switchTab(tabs[j].dataset.tab);
+    tabs[j].focus();
+  });
+})();
 
 // ----- changes tab (changed files + diff + review runs) -----
 let changedFiles = [], selectedFile = null, selectedDiff = "";
