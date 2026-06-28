@@ -1856,6 +1856,11 @@ HUB_PAGE = r"""<!doctype html>
 
   /* history table */
   .histcard { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .onboard { padding:18px 20px; }
+  .onboard p { margin:0 0 12px; color:var(--ink); font-size:14px; }
+  .onboard .cmdlist { margin:0; padding:0; list-style:none; display:grid; gap:9px; }
+  .onboard .cmdlist li { font-size:13px; color:var(--muted); }
+  .onboard .cmdlist code { background:var(--accent-soft); color:var(--accent); padding:2px 8px; border-radius:6px; font-weight:600; margin-right:7px; font-family:var(--font-mono); }
   table.hist { width:100%; border-collapse:collapse; font-size:12px; }
   table.hist th { text-align:left; color:var(--muted2); font:10px var(--font-mono); font-weight:400;
     letter-spacing:.05em; text-transform:uppercase; padding:11px 18px; border-bottom:1px solid var(--line2); }
@@ -1949,6 +1954,12 @@ const STR = {
     "hub.nothingFound": "nothing found",
     "hub.noActive": "no active runs",
     "hub.histEmpty": "history is empty",
+    "hub.getStarted": "Getting started",
+    "hub.emptyLead": "No tasks yet. Start one from your terminal:",
+    "hub.cmd.feature": "build or change a feature in this codebase",
+    "hub.cmd.improve": "audit the app and queue prioritized improvements",
+    "hub.cmd.ask": "ask a read-only question about the code",
+    "hub.cmd.design": "audit and improve the UI/UX of one component",
     "hub.awaiting": "⏳ awaiting reply",
     "hub.inProgress": "in progress",
     "hub.colTask": "Task",
@@ -2019,6 +2030,12 @@ const STR = {
     "hub.nothingFound": "ничего не найдено",
     "hub.noActive": "нет активных запусков",
     "hub.histEmpty": "история пуста",
+    "hub.getStarted": "С чего начать",
+    "hub.emptyLead": "Задач пока нет. Запустите первую из терминала:",
+    "hub.cmd.feature": "построить или изменить фичу в этом коде",
+    "hub.cmd.improve": "проаудитить приложение и собрать приоритезированный бэклог",
+    "hub.cmd.ask": "задать read-only вопрос о коде",
+    "hub.cmd.design": "аудит и улучшение UI/UX одного компонента",
     "hub.awaiting": "⏳ ждёт ответа",
     "hub.inProgress": "в работе",
     "hub.colTask": "Задача",
@@ -2305,8 +2322,34 @@ function matches(r){
   return text && byPhase && byKind;
 }
 
+// Fresh-install getting-started block: shown instead of the three empty
+// sections when there are no tasks at all (not merely filtered out).
+function gettingStarted(){
+  const cmds = [
+    ["/feature", t("hub.cmd.feature")],
+    ["/improve", t("hub.cmd.improve")],
+    ["/ask",     t("hub.cmd.ask")],
+    ["/design",  t("hub.cmd.design")],
+  ].map(([c,d])=>`<li><code>${esc(c)}</code>${esc(d)}</li>`).join("");
+  return `<div class="sec"><span class="title">${esc(t("hub.getStarted"))}</span></div>
+    <div class="histcard onboard">
+      <p>${esc(t("hub.emptyLead"))}</p>
+      <ul class="cmdlist">${cmds}</ul>
+    </div>`;
+}
 function render(data){
   const runs = data.runs || [];
+  // No tasks at all → onboarding, not three "empty" sections (a filter can never
+  // produce this since runs itself is empty).
+  if(runs.length === 0){
+    buildChips(runs);
+    updateCount(0, 0);
+    document.getElementById("root").innerHTML = gettingStarted();
+    document.getElementById("root-tail").innerHTML = "";
+    document.getElementById("updated").textContent =
+      t("hub.updated") + " " + fmtDate(new Date().toISOString());
+    return;
+  }
   const shown = runs.filter(matches);
   const active = shown.filter(r=>r.active);
   active.sort((a,b)=>(b.awaiting?1:0)-(a.awaiting?1:0));
