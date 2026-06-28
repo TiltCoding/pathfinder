@@ -4,6 +4,28 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — dashboard-polling-efficiency (гейт скрытой вкладки + settings ETag + инкрем. чат)
+- **Что:** снижен холостой ход поллинга дашборда. Фича feat-10/cand-37, на `main`. Три части:
+  - **Гейт скрытой вкладки:** `tick` и `syncLang` теперь `if(document.hidden) return` (как уже было у
+    `chatTick`/`feedTick`/trace/changes); догон на `visibilitychange` дозван `tick()`+`syncLang()`.
+  - **Фоновый awaiting-сигнал сохранён (важно!):** просто гейтить `tick` нельзя — он несёт фоновое
+    браузер-уведомление «ваш ход» (срабатывает именно когда вкладка скрыта). Логика вынесена в
+    `notifyAwaiting(data)` (владеет `prevStatus`), а новый **медленный `awaitingWatch`** (10с) опрашивает
+    `/data` пока вкладка скрыта и объявляет переход working→awaiting. Так `tick` полностью гейчен, а
+    уведомление+title-бейдж живут. render() зовёт тот же `notifyAwaiting` — переход детектится один раз.
+  - **`/settings.json` ETag:** value-based `W/"lang-<lang>"` + 304 (был «no cache», опрос каждые 3с).
+  - **Инкрементальный чат:** `/chat?since=<offset>` отдаёт только новые строки (реюз
+    `_aipf._iter_lines_from`, как `/trace/feed`) + `nextOffset`; `since=0` — полный (back-compat, ETag).
+    Клиент `chatTick` ведёт `lastChatOffset`, **дозаписывает** хвост (renderChat уже умеет append).
+    **Version-skew-гард:** если сервер не вернул `nextOffset` (старый), клиент откатывается на
+    full-replace — без дублей.
+- **Зачем:** `tick`/`syncLang` тикали даже на скрытой вкладке; `/settings.json` без кэша; `/chat` на
+  изменённом тике перепарсивал весь файл.
+- **Проверено:** браузер (новый клиент+сервер) — `lastChatOffset` дополз до 570, `chatMsgs=2` без
+  дублей; юнит-тест `ChatIncrementalTest` (since-хвост: полный→пустой→только новое).
+- **Файлы:** `scripts/server.py` (chat since, settings ETag), `templates/dashboard.html`,
+  `tests/test_conditional_get.py` (новый тест). Тесты: 270 зелёных (1 новый), `check_stdlib` чист.
+
 ## 2026-06-28 — gate-dispatch-preview (превью набора фич к диспетчу на SELECT GATE)
 - **Что:** на SELECT GATE `/improve` после Submit и до Approve в actionbar показывается панель
   `#dispatch-preview` — ранговый список «уйдут в диспетч фичи: N» с title'ами. Фича feat-9/cand-10,

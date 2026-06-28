@@ -1512,6 +1512,7 @@ function applyStaticStrings(){
 // синхронизация языка с глобальной настройкой (b1): при старте и периодически,
 // чтобы смена языка в хабе подхватывалась уже открытым дашбордом (кросс-страница).
 function syncLang(){
+  if(document.hidden) return;   // feat-10: no language poll while the tab is hidden (caught up on focus)
   fetch("/settings.json").then(r => r.ok ? r.json() : null).then(s => {
     if(!s) return;
     const sl = (s.lang === "en" || s.lang === "ru") ? s.lang : "en";
@@ -1812,6 +1813,22 @@ function renderPhaseRail(data){
   }
 }
 
+// Background "your turn" alert (feat-10): detect the working->awaiting transition
+// and fire the browser Notification + tab-title badge. Owns prevStatus, so the
+// slow awaitingWatch and render() detect a transition exactly once between them.
+function notifyAwaiting(data){
+  const enter = prevStatus !== null && prevStatus !== "awaiting-batch" && data.status === "awaiting-batch";
+  prevStatus = data.status;
+  if((data.status||"working") === "awaiting-batch"){
+    if(enter && document.hidden && "Notification" in window && Notification.permission === "granted"){
+      try { new Notification(t("notif.title"), {body: data.title || t("notif.body")}); } catch(e){}
+    }
+    setTitleBadge(true);
+  } else {
+    setTitleBadge(false);
+  }
+}
+
 function render(data, replies){
   lastData = data; lastReplies = replies;
   const slugEl = $("#slug"); if(slugEl) slugEl.textContent = data.slug || SLUG || "";
@@ -1820,20 +1837,14 @@ function render(data, replies){
   renderPhaseRail(data);
   $("#iter").textContent = data.iteration ? (t("header.iteration") + " " + data.iteration) : "";
   const st = $("#status"), stt = $("#status-text");
-  // детект перехода в awaiting — только по фронту (анти-спам: первый render задаёт базовый статус
-  // без сигнала, поэтому уже-awaiting задача при открытии вкладки не уведомляет даже свёрнутой)
-  const enter = prevStatus !== null && prevStatus !== "awaiting-batch" && data.status === "awaiting-batch";
-  prevStatus = data.status;
+  // detect the awaiting transition + fire the background alert (notification +
+  // title badge). Extracted to notifyAwaiting (feat-10) so awaitingWatch can
+  // announce it while the tab is hidden and tick() is gated.
+  notifyAwaiting(data);
   if((data.status||"working") === "awaiting-batch"){
     st.className="status awaiting"; stt.textContent=t("header.awaitingInput");
-    // фоновой сигнал: браузер-уведомление при переходе + бейдж в заголовке вкладки (грейсфул)
-    if(enter && document.hidden && "Notification" in window && Notification.permission === "granted"){
-      try { new Notification(t("notif.title"), {body: data.title || t("notif.body")}); } catch(e){}
-    }
-    setTitleBadge(true);
   } else {
     st.className="status working"; stt.textContent=t("header.agentWorking");
-    setTitleBadge(false);
   }
   $("#actionbar").classList.toggle("awaiting", data.status === "awaiting-batch");
   renderNow(data);
@@ -3782,14 +3793,24 @@ $("#chat-close").onclick = () => toggleChat(false);
 // Escape anywhere in the panel closes it (focus returns to the trigger via toggleChat)
 $("#chat-panel").addEventListener("keydown", e => { if(e.key === "Escape"){ e.preventDefault(); toggleChat(false); } });
 
+let lastChatOffset = 0;   // feat-10: byte cursor for the incremental /chat tail
 async function chatTick(){
   if(document.hidden) return;
   try {
-    const r = await api("/chat?slug=" + encodeURIComponent(SLUG));
-    const next = (r && r.messages) || [];
-    const changed = next.length !== chatMsgs.length;
-    chatMsgs = next;
-    if(changed){ renderChat(); rerender(); }
+    // incremental: fetch only the lines past lastChatOffset (no full reparse)
+    const r = await api("/chat?slug=" + encodeURIComponent(SLUG) + "&since=" + lastChatOffset);
+    if(r && r.ok === false) return;   // server hiccup — retry same offset next tick
+    const incoming = (r && r.messages) || [];
+    if(typeof r.nextOffset === "number"){
+      // incremental tail (new server): append only the new lines
+      lastChatOffset = r.nextOffset;
+      if(incoming.length){ chatMsgs = chatMsgs.concat(incoming); renderChat(); rerender(); }
+    } else {
+      // old server w/o incremental support: full-replace fallback (version-skew safe)
+      const changed = incoming.length !== chatMsgs.length;
+      chatMsgs = incoming;
+      if(changed){ renderChat(); rerender(); }
+    }
     updateChatUnread();
   } catch(e){ /* server may be restarting */ }
 }
@@ -3872,6 +3893,7 @@ function setConnLost(lost){
   document.body.classList.toggle("conn-down", lost);
 }
 async function tick(){
+  if(document.hidden) return;   // feat-10: gated while hidden — awaitingWatch keeps the bg alert alive
   try {
     const [data, replies] = await Promise.all([
       api("/data?slug=" + encodeURIComponent(SLUG)),
@@ -3886,12 +3908,24 @@ async function tick(){
     else if(lastData){ renderNow(lastData); }   // tick the "N с назад" / staleness without a full re-render
   } catch(e){ setConnLost(true); /* server may be restarting */ }
 }
+// While hidden, tick() is gated (saves /data+/replies+render every 3s). This cheap
+// watcher still polls /data slowly so the "awaiting" notification + title badge
+// fire when the agent parks in the background. Visible → tick()/render() own it.
+async function awaitingWatch(){
+  if(!document.hidden) return;
+  try {
+    const data = await api("/data?slug=" + encodeURIComponent(SLUG));
+    if(data && data.ok !== false) notifyAwaiting(data);
+  } catch(e){ /* server may be restarting */ }
+}
 (async function init(){
   // возврат фокуса на вкладку снимает title-бейдж «ждёт»
   document.addEventListener("visibilitychange", () => {
     if(document.hidden) return;
     setTitleBadge(false);
     // догоняющие тики при возврате на вкладку (гейченные тики молчали в фоне)
+    tick();        // feat-10: refresh /data+/replies immediately on focus (tick is gated while hidden)
+    syncLang();    // feat-10: catch a language change made while hidden
     chatTick();
     feedTick();   // live pulse catches up after a hidden stretch
     if(activeTab === "trace") traceTick();
@@ -3904,7 +3938,8 @@ async function tick(){
   setInterval(feedTick, 4000);
   chatTick();
   setInterval(chatTick, 5000);
-  setInterval(syncLang, 3000);   // подхватываем смену языка из хаба на лету
+  setInterval(syncLang, 3000);   // подхватываем смену языка из хаба на лету (гейчен document.hidden)
+  setInterval(awaitingWatch, 10000);   // feat-10: slow bg poll for the awaiting alert while hidden
 })();
 </script>
 </body>

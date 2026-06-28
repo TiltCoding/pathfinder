@@ -396,8 +396,21 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/chat":
             if not slug:
                 return self._json(400, {"error": "missing slug"})
-            # Conditional GET keyed on chat.jsonl (mtime,size): an unchanged log
-            # returns a bodiless 304 instead of re-parsing the whole file each poll.
+            # Incremental tail (feat-10): with ?since=<offset> return only the
+            # lines past it (O(new bytes)) — no full reparse on a changed tick,
+            # and an empty-but-cheap response when nothing new. No ETag needed
+            # (the tail read is already cheap even when empty).
+            try:
+                since = int((qs.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0
+            if since > 0:
+                body = json.dumps(self._chat_get(slug, since),
+                                  ensure_ascii=False).encode("utf-8")
+                return self._send(200, body,
+                                  extra_headers={"Cache-Control": "no-cache"})
+            # Full read (since=0, back-compat): conditional GET keyed on
+            # chat.jsonl (mtime,size) — an unchanged log returns a bodiless 304.
             cpath = self.workspace.task_file(slug, "chat.jsonl")
             etag = self._file_etag(cpath)
             headers = {"Cache-Control": "no-cache"}
@@ -434,8 +447,17 @@ class Handler(BaseHTTPRequestHandler):
                               "text/html; charset=utf-8")
         if path == "/queue.json":         # /improve dispatch queue (no slug)
             return self._json(200, self._queue())
-        if path == "/settings.json":      # global UI language (no slug, no cache)
-            return self._json(200, {"lang": read_lang()})
+        if path == "/settings.json":      # global UI language (no slug)
+            # Value-based conditional GET (feat-10): the body is fully determined
+            # by `lang`, so a weak ETag lets the 3s poll take a bodiless 304
+            # instead of re-shipping {"lang":...} every time.
+            lang = read_lang()
+            etag = 'W/"lang-%s"' % lang
+            headers = {"Cache-Control": "no-cache", "ETag": etag}
+            if self.headers.get("If-None-Match") == etag:
+                return self._send(304, b"", extra_headers=headers)
+            return self._send(200, json.dumps({"lang": lang}).encode("utf-8"),
+                              extra_headers=headers)
         return self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -1403,23 +1425,26 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"ok": True, "signal": signal})
 
     # ---- chat (checkpoint steering channel) ----------------------------
-    def _chat_get(self, slug):
-        """Return the task's chat transcript (human + agent turns)."""
+    def _chat_get(self, slug, since=0):
+        """Return the task's chat transcript (human + agent turns).
+
+        Incremental by byte offset (feat-10), mirroring `/trace/feed`: reads only
+        the lines past `since` via `_aipf._iter_lines_from` (O(new bytes)) and
+        reports `nextOffset` for the client's next poll. `since=0` reads the whole
+        log (back-compat). Only complete lines are returned; a half-written
+        trailing line is left for the next tick (so a message is never split)."""
         path = self.workspace.task_file(slug, "chat.jsonl")
+        lines, next_offset = _aipf._iter_lines_from(path, max(0, since or 0))
         msgs = []
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        msgs.append(json.loads(line))
-                    except ValueError:
-                        pass
-        except FileNotFoundError:
-            pass
-        return {"messages": msgs}
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msgs.append(json.loads(line))
+            except ValueError:
+                pass
+        return {"messages": msgs, "nextOffset": next_offset}
 
     def _chat_post(self, slug, body):
         """Append a human chat message and wake the agent (a `chat` signal).

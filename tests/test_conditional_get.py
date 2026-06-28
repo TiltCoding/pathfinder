@@ -163,6 +163,44 @@ class ChatEtagTest(ConditionalGetBase):
         self.assertEqual(len(json.loads(again.body.decode("utf-8"))["messages"]), 2)
 
 
+class ChatIncrementalTest(ConditionalGetBase):
+    """`/chat?since=<offset>` returns only the new lines (feat-10), so a changed
+    tick never reparses the whole log."""
+
+    def _append_chat(self, obj):
+        path = self.ws.task_file("t", "chat.jsonl")
+        with open(path, "a", encoding="utf-8", newline="") as f:
+            f.write(json.dumps(obj) + "\n")
+
+    def test_since_returns_only_new_lines(self):
+        self._append_chat({"role": "human", "text": "one", "ts": "t0"})
+        self._append_chat({"role": "agent", "text": "two", "ts": "t1"})
+        full = _GetHandler(self.ws, path="/chat?slug=t&since=0")
+        full.do_GET()
+        self.assertEqual(full.status, 200)
+        data = json.loads(full.body.decode("utf-8"))
+        self.assertEqual(len(data["messages"]), 2)
+        off = data["nextOffset"]
+        self.assertGreater(off, 0)
+
+        # no new bytes -> empty tail at the same offset (the cheap idle case)
+        empty = _GetHandler(self.ws, path="/chat?slug=t&since=%d" % off)
+        empty.do_GET()
+        self.assertEqual(empty.status, 200)
+        ed = json.loads(empty.body.decode("utf-8"))
+        self.assertEqual(ed["messages"], [])
+        self.assertEqual(ed["nextOffset"], off)
+
+        # append one -> only the new message comes back in the tail
+        self._append_chat({"role": "human", "text": "three", "ts": "t2"})
+        tail = _GetHandler(self.ws, path="/chat?slug=t&since=%d" % off)
+        tail.do_GET()
+        td = json.loads(tail.body.decode("utf-8"))
+        self.assertEqual(len(td["messages"]), 1)
+        self.assertEqual(td["messages"][0]["text"], "three")
+        self.assertGreater(td["nextOffset"], off)
+
+
 class FileEtagHelperTest(ConditionalGetBase):
     def test_none_for_missing(self):
         h = _GetHandler(self.ws)
