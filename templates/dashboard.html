@@ -890,7 +890,7 @@ function bubbleImgs(imgs){
   if(!imgs || !imgs.length) return "";
   return `<div class="bubble-imgs">` + imgs.map(im => {
     const url = "/image?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(im.file || "");
-    return `<a href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(im.name || "")}"></a>`;
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="${esc(im.name || "")}"></a>`;
   }).join("") + `</div>`;
 }
 // Wire paste (clipboard images) + drag-drop (drop overlay) onto a channel.
@@ -1559,7 +1559,7 @@ function md(src){
       const sch = /^([a-z][a-z0-9+.\-]*):/i.exec(u);
       // разрешаем только http(s)/mailto среди схем; без схемы — кроме protocol-relative //host
       const safe = sch ? /^(https?|mailto)$/i.test(sch[1]) : !u.startsWith("//");
-      return '<a href="' + (safe ? u : "#") + '" target="_blank" rel="noopener">' + txt + '</a>';
+      return '<a href="' + (safe ? u : "#") + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
     });
 
   const splitRow = ln => ln.replace(/^\||\|$/g, "").split("|").map(c => c.trim());
@@ -2102,9 +2102,9 @@ function renderDemo(demo, repliesByBlock, threadsByAnchor){
       <label class="variant-head">
         <input type="radio" name="demo-${esc(sid)}" value="${esc(vr.id)}" data-demo-select="${esc(sid)}" ${sel?"checked":""}>
         <span class="v-title">${esc(vr.title||vr.id)}</span>
-        <a class="open" href="${url}" target="_blank" rel="noopener">${esc(t("demo.open"))}</a>
+        <a class="open" href="${url}" target="_blank" rel="noopener noreferrer">${esc(t("demo.open"))}</a>
       </label>
-      <iframe class="mock" src="${url}" sandbox="allow-scripts" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
+      <iframe class="mock" src="${url}" sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${esc(vr.title||vr.id)}"></iframe>
       <div class="v-body">${cap}${comment}${regionFooter(vr.id, repliesByBlock, threadsByAnchor, true)}</div>
     </div>`;
   }

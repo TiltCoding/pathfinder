@@ -77,7 +77,8 @@ MOCKUP_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\.(html|svg)$")
 # keep working, but blocks the *network/external* (default-src 'none' ⇒ no
 # connect/fetch/ws/external src), base and form-action.
 MOCKUP_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-              "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
+              "img-src data:; font-src data:; base-uri 'none'; form-action 'none'; "
+              "frame-ancestors 'self'")
 MOCKUP_SEC_HEADERS = {"X-Content-Type-Options": "nosniff",
                       "Content-Security-Policy": MOCKUP_CSP}
 
@@ -276,6 +277,18 @@ class Handler(BaseHTTPRequestHandler):
         eh = extra_headers or {}
         if "Cache-Control" not in eh:   # callers may opt into no-cache for ETag revalidation
             self.send_header("Cache-Control", "no-store")
+        # security headers (feat-11). Referrer-Policy on every response so a local
+        # slug/path never leaks to an external host; anti-clickjacking on HTML only
+        # (frame-ancestors 'self' + legacy X-Frame-Options) so no external site can
+        # frame the dashboard/hub and click submit/approve. A caller that set its own
+        # CSP (the mockup's sandbox CSP) keeps it — it carries its own frame-ancestors.
+        if "Referrer-Policy" not in eh:
+            self.send_header("Referrer-Policy", "no-referrer")
+        if content_type.startswith("text/html"):
+            if "X-Frame-Options" not in eh:
+                self.send_header("X-Frame-Options", "SAMEORIGIN")
+            if "Content-Security-Policy" not in eh:
+                self.send_header("Content-Security-Policy", "frame-ancestors 'self'")
         for k, v in eh.items():
             self.send_header(k, v)
         self.end_headers()

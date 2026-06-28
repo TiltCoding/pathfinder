@@ -4,6 +4,25 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — server-security-headers (frame-ancestors + Referrer-Policy)
+- **Что:** companion-сервер шлёт заголовки безопасности. Фича feat-11/cand-45, на `main`.
+  - **`_send` (один общий путь ответа):** `Referrer-Policy: no-referrer` на **каждый** ответ (slug/путь
+    не утекают во внешний Referer); для `text/html` — `X-Frame-Options: SAMEORIGIN` +
+    `Content-Security-Policy: frame-ancestors 'self'` (анти-кликджекинг дашборда/хаба). Если вызыватель
+    уже задал CSP (sandbox-демо), он сохраняется — `_send` не перетирает.
+  - **`MOCKUP_CSP`** дополнен `frame-ancestors 'self'` — мокап встраивается только same-origin.
+  - **Дашборд:** внешние `target=_blank` ссылки → `rel="noopener noreferrer"`; demo-iframe →
+    `referrerpolicy="no-referrer"` (defence-in-depth поверх глобального заголовка; хаб покрыт самим
+    заголовком).
+- **Зачем:** дашборд/хаб отдавались без frame-ancestors (кликджекинг по submit/approve) и без
+  Referrer-Policy (утечка локального slug/пути).
+- **Тонкость:** добавляется ТОЛЬКО `frame-ancestors` (не `default-src`/`script-src`) — инлайновые
+  скрипты дашборда не ломаются (CSP ограничивает лишь фрейминг). sandbox-демо работает как прежде.
+- **Тест:** `tests/test_security_headers.py` (4 кейса) — HTML несёт frame+referrer; JSON только
+  referrer (без frame); CSP вызывателя сохранён; `MOCKUP_CSP` ограничивает frame-ancestors.
+- **Файлы:** `scripts/server.py`, `templates/dashboard.html`, `tests/test_security_headers.py` (новый).
+  Тесты: 274 зелёных (4 новых), `check_stdlib` чист.
+
 ## 2026-06-28 — dashboard-polling-efficiency (гейт скрытой вкладки + settings ETag + инкрем. чат)
 - **Что:** снижен холостой ход поллинга дашборда. Фича feat-10/cand-37, на `main`. Три части:
   - **Гейт скрытой вкладки:** `tick` и `syncLang` теперь `if(document.hidden) return` (как уже было у
