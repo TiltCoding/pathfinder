@@ -160,6 +160,19 @@
   .phase-rail li.done::before { background: var(--ok); }
   .phase-rail li.active { opacity: 1; color: var(--accent); font-weight: 650; }
   .phase-rail li.active::before { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  /* live "now pulse" (feat-3): compact recent/running actions in the sidebar */
+  .now-pulse { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 0; font: 11px var(--font-mono); }
+  .pulse-head { display: flex; align-items: center; gap: 5px; color: var(--muted);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+  .pulse-row { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--ink-soft); }
+  .pulse-row.running { color: var(--ink); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); flex: none; }
+  .pulse-dot.run { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pulse-lane { color: var(--muted); flex: none; max-width: 78px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pulse-tool { font-weight: 600; flex: none; }
+  .pulse-arg { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .pulse-row.err .pulse-tool { color: var(--err); }
   .ws-summary { display: inline-flex; align-items: center; gap: 8px; font: 12px var(--font-mono);
     color: var(--muted); }
   .ws-summary .bar { display: inline-flex; height: 8px; width: 84px; border-radius: 999px; overflow: hidden; background: var(--line); flex: none; }
@@ -668,6 +681,7 @@
     <div class="sr-only" id="phase-announce" aria-live="polite" aria-atomic="true"></div>
     <div class="now-line" id="now-line" hidden></div>
     <div class="phase-track" id="ws-track"></div>
+    <div class="now-pulse" id="now-pulse" hidden></div>
     <div class="progress"><div id="progress-bar"></div></div>
     <span class="ws-summary" id="ws-summary" hidden></span>
     <button class="ghost" id="open-threads" hidden title="Jump to thread awaiting reply"></button>
@@ -991,6 +1005,9 @@ const STR = {
     "phase.AUDIT": "Audit",
     "phase.COMPOSE": "Compose",
     "phase.CONSENT GATE": "Consent gate",
+    // live now pulse (feat-3)
+    "pulse.title": "Live activity",
+    "pulse.running": "running",
     // popover / actionbar / chat panel
     "pop.placeholder": "Comment on the selection…",
     "pop.hint": "Enter — send · Esc — cancel",
@@ -1220,6 +1237,9 @@ const STR = {
     "phase.AUDIT": "Аудит",
     "phase.COMPOSE": "Компоновка",
     "phase.CONSENT GATE": "Гейт согласия",
+    // live now pulse (feat-3)
+    "pulse.title": "Активность сейчас",
+    "pulse.running": "в работе",
     "pop.placeholder": "Комментарий к выделенному…",
     "pop.hint": "Enter — отправить · Esc — отмена",
     "pop.send": "Отправить",
@@ -2423,6 +2443,7 @@ function switchTab(name){
   hidePopover();
   if(name === "trace"){
     traceTick();
+    feedTick();   // render the full feed immediately from the shared model
     if(!traceTimer) traceTimer = setInterval(traceTick, 4000);
   } else if(traceTimer){ clearInterval(traceTimer); traceTimer = null; }
   if(name === "changes"){
@@ -2692,24 +2713,14 @@ function applyFeedEvents(events){
   });
 }
 
+// Heavy trace poll — only while the Trace tab is open. The lightweight /trace/feed
+// poll lives in feedTick() (always-on, single consumer of lastFeedOffset) so the
+// sidebar pulse and the full feed share ONE incremental cursor without racing.
 async function traceTick(){
   if(document.hidden) return;
   try {
-    const [tr, feed] = await Promise.all([
-      api("/trace?slug=" + encodeURIComponent(SLUG)),
-      api("/trace/feed?slug=" + encodeURIComponent(SLUG) + "&since=" + lastFeedOffset),
-    ]);
-    if(feed && Array.isArray(feed.events)){
-      applyFeedEvents(feed.events);
-      if(typeof feed.nextOffset === "number") lastFeedOffset = feed.nextOffset;
-    }
+    const tr = await api("/trace?slug=" + encodeURIComponent(SLUG));
     renderTrace(tr || {});
-    renderFeed();
-    // retry message blocks that were open but the transcript was not ready yet
-    expandedSpans.forEach(key => {
-      const st = feedMsgs.get(key);
-      if(st && !st.loading && st.pending){ feedMsgs.delete(key); loadFeedMessages(key); }
-    });
     // retry open post-mortem card sub-sections whose transcript was not ready yet
     expandedCardActions.forEach(span => {
       const st = cardActions.get(span);
@@ -2720,6 +2731,65 @@ async function traceTick(){
       if(st && !st.loading && st.pending){ cardMsgs.delete(span); loadCardMessages(span, cardSession(span)); }
     });
   } catch(e){ /* server may be restarting */ }
+}
+
+// Always-on lightweight feed poll (feat-3): drives the sidebar "now pulse" on every
+// tab so a human waiting at a gate sees live activity, and the full feed when the
+// Trace tab is open. Sole consumer of lastFeedOffset. Respects document.hidden.
+async function feedTick(){
+  if(document.hidden) return;
+  try {
+    const feed = await api("/trace/feed?slug=" + encodeURIComponent(SLUG) + "&since=" + lastFeedOffset);
+    if(feed && Array.isArray(feed.events)){
+      applyFeedEvents(feed.events);
+      if(typeof feed.nextOffset === "number") lastFeedOffset = feed.nextOffset;
+    }
+  } catch(e){ /* server may be restarting */ }
+  renderPulse();
+  if(activeTab === "trace"){
+    renderFeed();
+    // retry message blocks that were open but the transcript was not ready yet
+    expandedSpans.forEach(key => {
+      const st = feedMsgs.get(key);
+      if(st && !st.loading && st.pending){ feedMsgs.delete(key); loadFeedMessages(key); }
+    });
+  }
+}
+
+// Compact "what's happening now" pulse for the sidebar — reuses feedLanes()/actType/
+// actName (no duplicated lane logic). Shows running spans first, then most-recent
+// actions, max 4 rows. Signature-guarded so unchanged ticks are DOM no-ops.
+let lastPulseSig = "";
+function renderPulse(){
+  const el = $("#now-pulse"); if(!el) return;
+  const acts = [];
+  feedLanes().forEach(g => g.actions.forEach(m => acts.push({ m, lane: g.label })));
+  if(!acts.length){
+    if(el.dataset.empty !== "1"){ el.hidden = true; el.innerHTML = ""; el.dataset.empty = "1"; }
+    lastPulseSig = ""; return;
+  }
+  acts.sort((a,b) => (ep(a.m.startTs)||0) - (ep(b.m.startTs)||0) || a.m.order - b.m.order);
+  const running = acts.filter(x => x.m.running);
+  const pick = [], seen = new Set();
+  const take = x => { if(pick.length < 4 && !seen.has(x.m.spanId)){ seen.add(x.m.spanId); pick.push(x); } };
+  running.slice().reverse().forEach(take);   // running first, newest-first
+  acts.slice().reverse().forEach(take);       // then fill with most-recent
+  const sig = running.length + "|" + pick.map(x => x.m.spanId + (x.m.running?"r":"e") + (x.m.ok===false?"x":"")).join(",");
+  if(sig === lastPulseSig && el.dataset.empty === "0") return;
+  lastPulseSig = sig; el.dataset.empty = "0";
+  const rows = pick.map(x => {
+    const m = x.m, type = actType(m.kind, m.tool), name = actName(m, type);
+    return `<div class="pulse-row ${m.running?'running':(m.ok===false?'err':'')}">`
+      + `<span class="pulse-dot ${m.running?'run':''}"></span>`
+      + `<span class="pulse-lane">${esc(x.lane)}</span>`
+      + `<span class="pulse-tool">${esc(name)}</span>`
+      + (m.arg ? `<span class="pulse-arg">${esc(m.arg)}</span>` : "")
+      + `</div>`;
+  }).join("");
+  const head = `<div class="pulse-head"><span class="feed-dot"></span>${esc(t("pulse.title"))}`
+    + (running.length ? ` · ${running.length} ${esc(t("pulse.running"))}` : "") + `</div>`;
+  el.innerHTML = head + rows;
+  el.hidden = false;
 }
 
 // Build lane groups from the incremental feed model. A lane key is the subagent
@@ -3763,12 +3833,15 @@ async function tick(){
     setTitleBadge(false);
     // догоняющие тики при возврате на вкладку (гейченные тики молчали в фоне)
     chatTick();
+    feedTick();   // live pulse catches up after a hidden stretch
     if(activeTab === "trace") traceTick();
     else if(activeTab === "changes") changesTick();
   });
   await loadDraft();
   await tick();
   setInterval(tick, 3000);
+  feedTick();                     // always-on live pulse (feat-3), respects document.hidden
+  setInterval(feedTick, 4000);
   chatTick();
   setInterval(chatTick, 5000);
   setInterval(syncLang, 3000);   // подхватываем смену языка из хаба на лету
