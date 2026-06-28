@@ -4,6 +4,13 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — release: бамп плагина 0.23.1 → 0.24.0 (батч improve-platform-vision)
+- **Что:** `.claude-plugin/plugin.json` version 0.23.1 → **0.24.0**; описания в `plugin.json` и
+  `marketplace.json` обновлены под новую поверхность (вкладка «Артефакты» + команды `/design`, `/test`,
+  `/docs`, `/start`). `marketplace.json.metadata.version` (1.0.0) — версия маркетплейса, не трогаем.
+- **Зачем:** минорный бамп под 17-фичевый батч improve-platform-vision (3 новые команды + вкладка
+  Artifacts + визуализация процесса + надёжность/перф/безопасность).
+
 ## 2026-06-28 — CI fix: Windows tempfile cleanup flake (test_queue / test_dispatch_queue)
 - **Что:** 16 голых `tempfile.TemporaryDirectory()` в `tests/test_queue.py` и
   `tests/test_dispatch_queue.py` → `tempfile.TemporaryDirectory(ignore_cleanup_errors=True)`.
