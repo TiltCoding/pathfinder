@@ -3582,17 +3582,34 @@ function updateChatUnread(){
   if(unread > 0){ b.hidden = false; b.textContent = unread > 9 ? "9+" : unread; }
   else b.hidden = true;
 }
-function renderChat(){
-  const log = $("#chat-log");
-  const global = chatMsgs.filter(m => !m.anchor);   // anchored messages live in their thread, not here
-  if(!global.length){ log.innerHTML = `<p class="empty">${esc(t("chat.empty"))}</p>`; return; }
-  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
-  log.innerHTML = global.map(m => `<div class="msg ${m.role==='agent'?'agent':'human'}">
+let lastChatSigs = null;   // signatures of the messages currently in #chat-log
+function chatSig(m){ return (m.role||"") + "|" + (m.ts||"") + "|" + ((m.text||"").length) + "|" + ((m.images&&m.images.length)||0); }
+function chatMsgHtml(m){
+  return `<div class="msg ${m.role==='agent'?'agent':'human'}">
     <div class="who">${m.role==='agent'?esc(t("thread.who.agent")):esc(t("thread.who.you"))}</div>
     ${bubbleImgs(m.images)}
     <div>${m.role==='agent'?md(m.text):esc(m.text)}</div>
     ${m.ts?`<div class="ts">${esc(String(m.ts).replace('T',' ').slice(0,16))}</div>`:""}
-  </div>`).join("");
+  </div>`;
+}
+function renderChat(){
+  const log = $("#chat-log");
+  const global = chatMsgs.filter(m => !m.anchor);   // anchored messages live in their thread, not here
+  if(!global.length){ log.innerHTML = `<p class="empty">${esc(t("chat.empty"))}</p>`; lastChatSigs = []; return; }
+  const sigs = global.map(chatSig);
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+  // Append-only fast path: when the current render is a prefix of the new list,
+  // insert only the new .msg nodes. This keeps #chat-log's aria-live="additions"
+  // actually announceable (a full innerHTML replace is not) and avoids re-running
+  // md() over the entire history on every appended message (O(N)→O(new)).
+  const canAppend = lastChatSigs && lastChatSigs.length > 0 && sigs.length > lastChatSigs.length
+    && lastChatSigs.every((s, i) => s === sigs[i]);
+  if(canAppend){
+    log.insertAdjacentHTML("beforeend", global.slice(lastChatSigs.length).map(chatMsgHtml).join(""));
+  } else {
+    log.innerHTML = global.map(chatMsgHtml).join("");   // fallback: prefix diverged / shrank
+  }
+  lastChatSigs = sigs;
   if(atBottom || chatOpen) log.scrollTop = log.scrollHeight;
 }
 function renderChatPending(){ renderPendingStrip($("#chat-pending"), "chat"); }
