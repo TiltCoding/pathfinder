@@ -630,7 +630,7 @@
       <button class="ghost theme-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme">
         <span id="theme-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg></span>
       </button>
-      <button class="ghost chat-toggle" id="btn-chat-toggle" title="Chat with agent">💬 <span id="chat-toggle-label">Chat</span><span class="chat-unread" id="chat-unread" hidden>0</span></button>
+      <button class="ghost chat-toggle" id="btn-chat-toggle" title="Chat with agent" aria-expanded="false">💬 <span id="chat-toggle-label">Chat</span><span class="chat-unread" id="chat-unread" hidden>0</span></button>
     </div>
   </div>
   <div class="top-inner"><nav class="tabbar">
@@ -675,7 +675,7 @@
   </div>
 </div>
 
-<div id="sel-popover">
+<div id="sel-popover" role="dialog" aria-label="Comment on the selection">
   <textarea id="sel-input" rows="1" placeholder="Comment on the selection…"></textarea>
   <div class="pending-strip" id="sel-pending"></div>
   <div class="sel-row">
@@ -696,7 +696,7 @@
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
   </div>
 </div>
-<aside class="chat-panel" id="chat-panel" hidden>
+<aside class="chat-panel" id="chat-panel" role="dialog" aria-label="Chat with agent" hidden>
   <div class="chat-head">
     <span>Chat with agent</span>
     <span class="chat-hint">steering at checkpoints</span>
@@ -1370,10 +1370,12 @@ function applyStaticStrings(){
   set("#hub-link", t("header.allRuns"));
   set("#theme-btn", t("header.toggleTheme"), "title"); set("#theme-btn", t("header.toggleTheme"), "aria-label");
   set("#btn-chat-toggle", t("header.chatWithAgent"), "title");
+  set("#chat-panel", t("header.chatWithAgent"), "aria-label");
   set("#chat-toggle-label", t("header.chat"));
   set("#tab-work", t("tab.work")); set("#tab-changes", t("tab.changes"));
   set("#tab-docs", t("tab.docs")); set("#tab-trace", t("tab.trace"));
   set("#sel-input", t("pop.placeholder"), "placeholder");
+  set("#sel-popover", t("pop.placeholder"), "aria-label");
   set("#sel-popover .hint", t("pop.hint"));
   set("#sel-send", t("pop.send"));
   set("#sel-attach-btn", t("attach.button"), "title"); set("#sel-attach-btn", t("attach.button"), "aria-label");
@@ -2178,9 +2180,17 @@ function wrapRange(container, start, end, cid){
 // ----- inline comment input that appears at a text selection -----
 const pop = $("#sel-popover"), popInput = $("#sel-input");
 let selTarget = null;
+let popReturnFocus = null;   // element focus came from, restored when the popover closes
 function anchorOf(node){ const el = node && (node.nodeType === 1 ? node : node.parentElement); return el ? el.closest("[data-anchor]") : null; }
 function renderSelPending(){ renderPendingStrip($("#sel-pending"), selTarget ? selTarget.anchor : null); }
-function hidePopover(){ pop.classList.remove("open"); selTarget = null; popInput.value = ""; renderPendingStrip($("#sel-pending"), null); }
+function hidePopover(){
+  // restore focus only when closing FROM the popover (Escape / Send) — not when
+  // focus already moved away (click-away / tab switch), to avoid yanking it back
+  const ret = pop.contains(document.activeElement) ? popReturnFocus : null;
+  pop.classList.remove("open"); selTarget = null; popInput.value = ""; renderPendingStrip($("#sel-pending"), null);
+  popReturnFocus = null;
+  if(ret && ret.isConnected && typeof ret.focus === "function"){ try { ret.focus(); } catch(e){} }
+}
 function onSelect(e){
   if(pop.contains(e.target)) return;            // interacting with the input itself
   const content = $("#content");
@@ -2195,6 +2205,7 @@ function onSelect(e){
     pop.classList.add("open");
     selTarget = { anchor: a1.getAttribute("data-anchor"), text };
     renderSelPending();
+    popReturnFocus = (document.activeElement && document.activeElement !== popInput) ? document.activeElement : null;
     popInput.focus();
   } else if(!pop.contains(document.activeElement)){ hidePopover(); }
 }
@@ -3500,15 +3511,18 @@ let chatOpen = false, chatMsgs = [], chatSeen = 0;
 function toggleChat(open){
   chatOpen = open != null ? open : !chatOpen;
   $("#chat-panel").hidden = !chatOpen;
+  const trig = $("#btn-chat-toggle"); if(trig) trig.setAttribute("aria-expanded", chatOpen ? "true" : "false");
   if(chatOpen){
     chatSeen = chatMsgs.filter(m => !m.anchor).length;
     $("#chat-unread").hidden = true;
     renderChat();
     setTimeout(() => { const l = $("#chat-log"); l.scrollTop = l.scrollHeight; $("#chat-text").focus(); }, 0);
-  }
+  } else if(trig){ trig.focus(); }   // return focus to the trigger when the panel closes
 }
 $("#btn-chat-toggle").onclick = () => toggleChat();
 $("#chat-close").onclick = () => toggleChat(false);
+// Escape anywhere in the panel closes it (focus returns to the trigger via toggleChat)
+$("#chat-panel").addEventListener("keydown", e => { if(e.key === "Escape"){ e.preventDefault(); toggleChat(false); } });
 
 async function chatTick(){
   if(document.hidden) return;
