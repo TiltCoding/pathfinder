@@ -4,6 +4,19 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — read-body-size-cap (надёжность/безопасность: глобальный кап тела POST)
+- **Что:** диспетченная из `improve-overall-3` фича feat-6 (`cand-15`). `Handler._read_body`
+  (`scripts/server.py`) получил **глобальный кап** `MAX_BODY_BYTES` (8 МБ, выше base64-раздутого
+  attach-макс): `Content-Length > cap` → `413` **до** чтения тела (закрываем соединение, не аллоцируем);
+  тело теперь дочитывается циклом до `Content-Length`, недополученное → `400 incomplete body` (а не
+  молчаливый `{}`); битый JSON остаётся graceful `{}`. `do_POST` останавливается на `None`.
+  Тест `tests/test_read_body.py` (6 кейсов).
+- **Зачем:** `rfile.read(length)` без верхнего лимита на ВСЕХ POST → forged `Content-Length` = unbounded
+  аллокация (DoS/OOM companion-процесса); кап 5 МБ из ADR-0020 жил только в `/attach` и срабатывал уже
+  ПОСЛЕ чтения в RAM. Теперь один гард защищает все маршруты.
+- **Прод:** `scripts/server.py`. **Тест:** `tests/test_read_body.py`. `/attach` свой decoded-кап
+  сохранил. Проверено: 233 теста зелёные, lint OK.
+
 ## 2026-06-27 — atomic-write-lang-attachment (надёжность: закрыть долг ADR-0021)
 - **Что:** диспетченная из `improve-overall-3` фича feat-5 (`cand-13`). `write_lang`
   (`scripts/server.py`) и `_attach` (запись байтов вложения) переведены с фиксированного/pid-only

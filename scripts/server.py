@@ -86,6 +86,11 @@ MOCKUP_SEC_HEADERS = {"X-Content-Type-Options": "nosniff",
 # SVG is excluded on purpose (active content — would need the /mockup CSP path).
 ATTACH_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}\.(png|jpe?g|gif|webp)$")
 ATTACH_MAX_BYTES = 5 * 1024 * 1024     # 5 MB per image
+# Global upper bound on ANY POST body, enforced in _read_body before the body is
+# read into memory (a forged/huge Content-Length must not OOM the process). Set
+# above the base64-inflated attach max (~6.7 MB for a 5 MB image) so legitimate
+# uploads still pass; /attach keeps its own tighter decoded-size cap.
+MAX_BODY_BYTES = 8 * 1024 * 1024
 ATTACH_MAX_PER_MSG = 6                  # max images carried on one chat message
 # Allow-listed MIME -> saved extension. jpg/jpeg both map to image/jpeg; the
 # saved extension for jpeg is "jpg" (matches ATTACH_RE's jpe?g alternative).
@@ -262,14 +267,41 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
     def _read_body(self):
+        """Read+parse a POST body, or send an error and return None.
+
+        Returns a dict on success ({} for an empty or genuinely malformed body, so
+        callers stay graceful). Returns None when it has already sent an error
+        response — an oversized body (413) or one that arrived truncated (400) —
+        so the caller must stop. This is the single body cap for every POST route.
+        """
         length = int(self.headers.get("Content-Length", 0) or 0)
         if not length:
             return {}
-        raw = self.rfile.read(length)
+        if length > MAX_BODY_BYTES:
+            # Reject before allocating: don't let a forged/huge Content-Length read
+            # gigabytes into RAM. Close the connection so the unread body can't
+            # corrupt a reused socket (defensive — default is HTTP/1.0 close anyway).
+            self.close_connection = True
+            self._json(413, {"ok": False, "error": "too large"})
+            return None
+        # rfile.read(length) can return short on a slow/aborted client; loop until
+        # the full body is in (bounded by MAX_BODY_BYTES above) so a partial read is
+        # not silently passed off as a valid {} body.
+        chunks, remaining = [], length
+        while remaining > 0:
+            chunk = self.rfile.read(remaining)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        if len(raw) < length:
+            self._json(400, {"ok": False, "error": "incomplete body"})
+            return None
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
-            return {}
+            return {}   # genuinely malformed JSON stays graceful (callers see {})
         # All POST routes treat the body as an object (body.get(...)); a non-object
         # JSON body (list/str/number) would raise AttributeError → 500. Normalize.
         return parsed if isinstance(parsed, dict) else {}
@@ -380,6 +412,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_body()
+        if body is None:
+            return   # oversized/incomplete body — _read_body already sent 413/400
         if path == "/settings":           # global UI language (no slug)
             lang = body.get("lang")
             if lang not in LANGS:
