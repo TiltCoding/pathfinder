@@ -59,7 +59,13 @@
   `_SCRIPTS = .../scripts; sys.path.insert(0, _SCRIPTS)` → `import _aipf` и т. п. Файлы работают и как
   `python3 tests/test_x.py`, и как `python3 -m unittest tests.test_x`.
 - **Изоляция через tempfile + cleanup.** Где нужен диск — `tempfile.mkdtemp()` + `addCleanup`
-  (или `shutil.rmtree` в `tearDown`); фикстуры `telemetry.jsonl` строятся под `_aipf.task_file(...)`
+  (или `shutil.rmtree(..., ignore_errors=True)`). **Windows-флейк (важно):** голый
+  `with tempfile.TemporaryDirectory() as d:` на Windows **КИДАЕТ** на очистке, если файл ещё держит
+  хэндл/антивирус/индексатор — интермиттентно роняет тест на `windows-latest` (так начала падать CI
+  в дренаже improve-platform-vision: только Windows-ячейки, случайно 1–2 из 3). Используй
+  `tempfile.TemporaryDirectory(ignore_cleanup_errors=True)` (Python 3.10+, CI-матрица 3.11+) **или**
+  `mkdtemp` + `addCleanup(shutil.rmtree, d, ignore_errors=True)` — очистка не должна валить тест.
+  Фикстуры `telemetry.jsonl` строятся под `_aipf.task_file(...)`
   по форме `telemetry_hook.build_event`. Git/`_git` — через monkeypatch (фейковый `_git` отдаёт
   porcelain-вывод), git не вызывается.
 - **Запуск всего набора:** `python3 -m unittest discover -s tests`.

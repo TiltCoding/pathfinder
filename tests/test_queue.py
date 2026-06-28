@@ -62,13 +62,13 @@ def _run(root, argv):
 
 class LoadQueueTest(unittest.TestCase):
     def test_missing_is_not_corrupt(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             data, st = q.load_queue(os.path.join(d, "nope.json"))
             self.assertEqual(st, "missing")
             self.assertIsNone(data)
 
     def test_corrupt_not_treated_as_empty(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             p = os.path.join(d, "q.json")
             with io.open(p, "w", encoding="utf-8") as f:
                 f.write('{"items": [ {bad json')
@@ -77,7 +77,7 @@ class LoadQueueTest(unittest.TestCase):
             self.assertIsNone(data)
 
     def test_malformed_missing_items(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             p = os.path.join(d, "q.json")
             with io.open(p, "w", encoding="utf-8") as f:
                 f.write('{"version": 1}')
@@ -85,7 +85,7 @@ class LoadQueueTest(unittest.TestCase):
             self.assertEqual(st, "malformed")
 
     def test_ok(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             p = _seed(d, [_item(1, "a")])
             data, st = q.load_queue(p)
             self.assertEqual(st, "ok")
@@ -117,7 +117,7 @@ class ValidateTest(unittest.TestCase):
 
 class MutationTest(unittest.TestCase):
     def test_next_marks_lowest_pending_in_progress(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _seed(d, [_item(1, "a", "done"), _item(2, "b"), _item(3, "c")],
                   autonomous=True)
             rc, out, _ = _run(d, ["next"])
@@ -130,13 +130,13 @@ class MutationTest(unittest.TestCase):
             self.assertTrue(data["items"][1]["startedAt"])
 
     def test_next_empty_returns_3(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _seed(d, [_item(1, "a", "done")])
             rc, _, _ = _run(d, ["next"])
             self.assertEqual(rc, 3)
 
     def test_done_skip_fail(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _seed(d, [_item(1, "a"), _item(2, "b"), _item(3, "c")])
             self.assertEqual(_run(d, ["done", "a"])[0], 0)
             self.assertEqual(_run(d, ["skip", "b"])[0], 0)
@@ -148,12 +148,12 @@ class MutationTest(unittest.TestCase):
             self.assertTrue(all(it["doneAt"] for it in data["items"]))
 
     def test_unknown_slug_returns_3(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _seed(d, [_item(1, "a")])
             self.assertEqual(_run(d, ["done", "nope"])[0], 3)
 
     def test_corrupt_mutation_errors_not_empty(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             base = os.path.join(d, ".workflow")
             os.makedirs(base)
             with io.open(os.path.join(base, "dispatch-queue.json"), "w",
@@ -164,7 +164,7 @@ class MutationTest(unittest.TestCase):
             self.assertIn("corrupt", err)
 
     def test_append_creates_and_grows(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             rc, _, _ = _run(d, ["append", "--slug", "a", "--feat-id", "feat-1",
                                 "--brief", ".workflow/tasks/a/brief.md"])
             self.assertEqual(rc, 0)
@@ -176,7 +176,7 @@ class MutationTest(unittest.TestCase):
             self.assertEqual(q.validate(data), [])
 
     def test_status_smoke(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             _seed(d, [_item(1, "a", "done"), _item(2, "b")])
             rc, out, _ = _run(d, ["status"])
             self.assertEqual(rc, 0)

@@ -100,7 +100,7 @@ class QuarantineTest(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def test_corrupt_queue_is_quarantined_not_empty(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             base = os.path.join(d, ".workflow")
             os.makedirs(base)
             qp = os.path.join(base, "dispatch-queue.json")
@@ -115,7 +115,7 @@ class QuarantineTest(unittest.TestCase):
             self.assertEqual(len(corrupt), 1, "expected exactly one quarantine file")
 
     def test_missing_queue_is_not_quarantined(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             os.makedirs(os.path.join(d, ".workflow"))
             rc, _, err = self._run(d, ["next"])
             self.assertEqual(rc, 3)               # "nothing queued", distinct from corrupt
@@ -150,7 +150,7 @@ class StaleRecoveryTest(unittest.TestCase):
             f.write(__import__("json").dumps(data))
 
     def test_recover_stale_but_not_recent(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             stale = dict(_item(1, "stale", "in-progress"), startedAt=_ago(4000))
             recent = dict(_item(2, "recent", "in-progress"), startedAt=_ago(10))
             self._seed(d, [stale, recent])
@@ -165,7 +165,7 @@ class StaleRecoveryTest(unittest.TestCase):
             self.assertEqual(data["items"][1]["status"], "in-progress")
 
     def test_next_recovers_then_picks_it(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             stale = dict(_item(1, "crashed", "in-progress"), startedAt=_ago(4000))
             self._seed(d, [stale])               # no pending — only the crashed one
             rc, out, err = self._run(d, ["next"])
@@ -177,7 +177,7 @@ class StaleRecoveryTest(unittest.TestCase):
             self.assertEqual(data["items"][0]["resumedFrom"], "in-progress")
 
     def test_fresh_in_progress_survives_next(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             running = dict(_item(1, "running", "in-progress"), startedAt=_ago(5))
             self._seed(d, [running, _item(2, "queued")])
             rc, out, _ = self._run(d, ["next"])

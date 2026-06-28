@@ -4,6 +4,21 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — CI fix: Windows tempfile cleanup flake (test_queue / test_dispatch_queue)
+- **Что:** 16 голых `tempfile.TemporaryDirectory()` в `tests/test_queue.py` и
+  `tests/test_dispatch_queue.py` → `tempfile.TemporaryDirectory(ignore_cleanup_errors=True)`.
+- **Зачем:** CI начала падать в дренаже improve-platform-vision — но **только Windows-ячейки**
+  (`windows-latest`, любой Python 3.11/3.12/3.13, случайно 1–2 из 3), при зелёном ubuntu/macos и
+  локальном Windows (8/8). Диагноз через GitHub Actions API (логи admin-only): классический
+  Windows-флейк — голый `TemporaryDirectory()` **кидает** на очистке, если файл ещё держит хэндл/
+  антивирус/индексатор. Нарушало `conventions.md` (mkdtemp + ignore_errors). `ignore_cleanup_errors`
+  доступен с Python 3.10 (вся CI-матрица 3.11+).
+- **Триггер:** флейк начался на feat-14 (накопление тестов с `TemporaryDirectory()` повысило шанс
+  поймать очистку под хэндлом); feat-1's `test_queue` проскакивал «удачно».
+- **Доки:** `conventions.md` дополнен предупреждением про этот Windows-флейк.
+- **Файлы:** `tests/test_queue.py`, `tests/test_dispatch_queue.py`, `docs/knowledge/conventions.md`.
+  Тесты: 298 зелёных локально; `check_stdlib` чист.
+
 ## 2026-06-28 — artifacts-versioning-diff (версии артефактов + дифф между версиями) — ПОСЛЕДНЯЯ ФИЧА ОЧЕРЕДИ
 - **Что:** вкладка «Артефакты» (feat-17) получила **селектор версий + inline-дифф**. Фича feat-20/
   cand-5, на `main`. Завершает очередь improve-platform-vision (17/17).
