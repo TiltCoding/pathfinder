@@ -668,6 +668,18 @@
   .art-frame { width: 100%; height: 460px; border: 0; border-top: 1px solid var(--line); background: #fff; display: block; }
   .art-imgwrap { border-top: 1px solid var(--line); padding: 12px; text-align: center; background: var(--bg-soft, var(--chip)); }
   .art-img { max-width: 100%; max-height: 460px; }
+  /* artifact version selector + inline diff (feat-20) */
+  .art-vers { display: inline-flex; gap: 3px; flex: none; }
+  .art-vchip { font: 11px var(--font-mono); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+  .art-vchip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .art-diff { border-top: 1px solid var(--line); font: 12px var(--font-mono); max-height: 460px; overflow: auto; }
+  .art-diff.loading { padding: 12px; color: var(--muted); }
+  .art-diff-head { padding: 6px 12px; color: var(--muted); border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); }
+  .art-diff .dl { display: flex; gap: 6px; padding: 0 12px; white-space: pre-wrap; word-break: break-word; }
+  .art-diff .dl .sg { flex: none; width: 12px; color: var(--muted); user-select: none; }
+  .art-diff .dl .code { flex: 1 1 auto; min-width: 0; }
+  .art-diff .dl.add { background: rgba(22,163,74,.10); } .art-diff .dl.add .sg { color: var(--ok); }
+  .art-diff .dl.del { background: rgba(239,68,68,.10); } .art-diff .dl.del .sg { color: var(--err); }
 </style>
 </head>
 <body>
@@ -1027,6 +1039,9 @@ const STR = {
     "artifacts.preview": "Preview",
     "artifacts.hide": "Hide",
     "artifacts.download": "Download",
+    "artifacts.diff": "Diff vs prev",
+    "artifacts.diffLoading": "Computing diff…",
+    "artifacts.diffTooBig": "Too large to diff inline.",
     // loading placeholders
     "loading.work": "Loading…",
     "loading.changes": "Loading changes…",
@@ -1267,6 +1282,9 @@ const STR = {
     "artifacts.preview": "Превью",
     "artifacts.hide": "Скрыть",
     "artifacts.download": "Скачать",
+    "artifacts.diff": "Дифф с пред.",
+    "artifacts.diffLoading": "Считаю дифф…",
+    "artifacts.diffTooBig": "Слишком большой для inline-диффа.",
     "loading.work": "Загрузка…",
     "loading.changes": "Загрузка изменений…",
     "loading.docs": "Загрузка документации…",
@@ -2793,6 +2811,9 @@ $("#changes").addEventListener("click", e => {
 let lastArtifactsSig = "";
 let openArtifact = null;          // {name} currently previewed inline
 let lastArtifactsItems = [];
+let artSel = {};                  // base -> selected version name (feat-20)
+let artDiffFor = null;            // name whose diff-vs-prev is open
+let artDiffHtml = "";             // rendered diff (cached for the open one)
 function artUrl(a, download){
   return "/artifact?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(a.name)
     + (download ? "&download=1" : "");
@@ -2802,6 +2823,43 @@ function fmtBytes(n){
   if(n < 1024) return n + " B";
   if(n < 1024*1024) return (n/1024).toFixed(1) + " KB";
   return (n/1024/1024).toFixed(1) + " MB";
+}
+// Fetch an artifact's text (for the version diff). Active html/svg are served with
+// the sandbox CSP but the bytes are still readable via fetch for an inline diff.
+function artText(a){ return fetch(artUrl(a, false)).then(r => r.ok ? r.text() : "").catch(() => ""); }
+// Minimal LCS line diff (feat-20) — artifacts (plans/svg/md) are small; bounded so
+// a huge html can't hang the O(n·m) table. Returns [[cls, line], …] or null.
+function lineDiff(oldT, newT){
+  const A = oldT.split("\n"), B = newT.split("\n"), n = A.length, m = B.length;
+  if(n * m > 4000000) return null;
+  const dp = Array.from({length: n + 1}, () => new Int32Array(m + 1));
+  for(let i = n - 1; i >= 0; i--) for(let j = m - 1; j >= 0; j--)
+    dp[i][j] = (A[i] === B[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while(i < n && j < m){
+    if(A[i] === B[j]){ out.push(["", A[i]]); i++; j++; }
+    else if(dp[i + 1][j] >= dp[i][j + 1]){ out.push(["del", A[i]]); i++; }
+    else { out.push(["add", B[j]]); j++; }
+  }
+  while(i < n) out.push(["del", A[i++]]);
+  while(j < m) out.push(["add", B[j++]]);
+  return out;
+}
+async function openArtDiff(sel, prev){
+  artDiffFor = sel.name;
+  artDiffHtml = `<div class="art-diff loading">${esc(t("artifacts.diffLoading"))}</div>`;
+  lastArtifactsSig = ""; renderArtifacts(lastArtifactsItems);
+  const [oldT, newT] = await Promise.all([artText(prev), artText(sel)]);
+  if(artDiffFor !== sel.name) return;        // user closed/switched meanwhile
+  const d = lineDiff(oldT, newT);
+  if(!d){ artDiffHtml = `<div class="art-diff">${esc(t("artifacts.diffTooBig"))}</div>`; }
+  else {
+    const rows = d.map(([cls, line]) =>
+      `<span class="dl ${cls}"><span class="sg">${cls==="add"?"+":cls==="del"?"−":"&nbsp;"}</span>`
+      + `<span class="code">${esc(line)||"&nbsp;"}</span></span>`).join("");
+    artDiffHtml = `<div class="art-diff"><div class="art-diff-head">${esc(prev.name)} → ${esc(sel.name)}</div>${rows}</div>`;
+  }
+  lastArtifactsSig = ""; renderArtifacts(lastArtifactsItems);
 }
 async function artifactsTick(){
   if(document.hidden) return;
@@ -2815,7 +2873,8 @@ function renderArtifacts(items){
   const el = $("#artifacts"); if(!el) return;
   lastArtifactsItems = items;
   const sig = items.map(a => a.name + ":" + a.mtime + ":" + a.size).join("|")
-    + "#" + (openArtifact ? openArtifact.name : "");
+    + "#" + (openArtifact ? openArtifact.name : "") + "#" + JSON.stringify(artSel)
+    + "#" + (artDiffFor || "") + (artDiffFor ? ":" + artDiffHtml.length : "");
   if(sig === lastArtifactsSig) return;        // no change -> DOM no-op
   lastArtifactsSig = sig;
   if(!items.length){ el.innerHTML = `<p class="empty">${esc(t("artifacts.empty"))}</p>`; return; }
@@ -2826,13 +2885,21 @@ function renderArtifacts(items){
     byBase[a.base].versions.push(a);
   }
   const cards = groups.map(g => {
-    const a = g.versions[0];
+    // the displayed version is the human-selected one (feat-20), else the newest
+    const a = (artSel[g.base] && g.versions.find(v => v.name === artSel[g.base])) || g.versions[0];
+    const prev = g.versions[g.versions.indexOf(a) + 1] || null;   // newest-first → next is older
     const sel = openArtifact && openArtifact.name === a.name;
-    const ver = (a.version != null) ? `<span class="art-ver">v${a.version|0}</span>` : "";
-    const more = g.versions.length > 1 ? `<span class="art-more">+${g.versions.length-1}</span>` : "";
+    const isText = a.kind === "doc" || a.kind === "diff" || a.kind === "svg" || a.kind === "html";
+    const vers = g.versions.length > 1
+      ? `<span class="art-vers">` + g.versions.map(v =>
+          `<button class="art-vchip${v.name===a.name?' on':''}" data-vset="${esc(v.name)}" data-vbase="${esc(g.base)}">v${v.version|0}</button>`).join("") + `</span>`
+      : ((a.version != null) ? `<span class="art-ver">v${a.version|0}</span>` : "");
     const canPreview = a.active || a.kind === "image";
     const previewBtn = canPreview
       ? `<button class="ghost art-preview" data-art="${esc(a.name)}">${esc(sel ? t("artifacts.hide") : t("artifacts.preview"))}</button>` : "";
+    const diffOpen = artDiffFor === a.name;
+    const diffBtn = (isText && prev)
+      ? `<button class="ghost art-diff-btn" data-diff="${esc(a.name)}">${esc(diffOpen ? t("artifacts.hide") : t("artifacts.diff"))}</button>` : "";
     let frame = "";
     if(sel){
       frame = a.active
@@ -2840,24 +2907,38 @@ function renderArtifacts(items){
         : (a.kind === "image"
            ? `<div class="art-imgwrap"><img class="art-img" src="${esc(artUrl(a,false))}" alt="${esc(a.name)}"></div>` : "");
     }
-    return `<div class="art-card${sel?' open':''}">
+    const diffBlock = diffOpen ? artDiffHtml : "";
+    return `<div class="art-card${(sel||diffOpen)?' open':''}">
       <div class="art-head">
         <span class="art-kind ${esc(a.kind)}">${esc(a.kind)}</span>
-        <span class="art-name">${esc(a.name)}</span>${ver}${more}
+        <span class="art-name">${esc(a.name)}</span>${vers}
         <span class="art-meta">${esc(fmtBytes(a.size))}</span>
         <span class="art-spacer"></span>
-        ${previewBtn}
+        ${diffBtn}${previewBtn}
         <a class="ghost art-dl" href="${esc(artUrl(a,true))}" download>${esc(t("artifacts.download"))}</a>
       </div>
-      ${frame}
+      ${frame}${diffBlock}
     </div>`;
   }).join("");
   el.innerHTML = `<section class="card"><h2>${esc(t("artifacts.title"))}</h2><div class="art-list">${cards}</div></section>`;
   el.querySelectorAll(".art-preview").forEach(b => b.onclick = () => {
     const n = b.getAttribute("data-art");
     openArtifact = (openArtifact && openArtifact.name === n) ? null : { name:n };
-    lastArtifactsSig = "";
-    renderArtifacts(lastArtifactsItems);
+    lastArtifactsSig = ""; renderArtifacts(lastArtifactsItems);
+  });
+  el.querySelectorAll(".art-vchip").forEach(b => b.onclick = () => {
+    artSel[b.getAttribute("data-vbase")] = b.getAttribute("data-vset");
+    openArtifact = null; artDiffFor = null;     // switching version resets preview/diff
+    lastArtifactsSig = ""; renderArtifacts(lastArtifactsItems);
+  });
+  el.querySelectorAll(".art-diff-btn").forEach(b => b.onclick = () => {
+    const n = b.getAttribute("data-diff");
+    if(artDiffFor === n){ artDiffFor = null; artDiffHtml = ""; lastArtifactsSig = ""; renderArtifacts(lastArtifactsItems); return; }
+    // resolve the selected artifact + its previous version, then load the diff
+    for(const g of groups){
+      const a = g.versions.find(v => v.name === n);
+      if(a){ const prev = g.versions[g.versions.indexOf(a) + 1]; if(prev) openArtDiff(a, prev); break; }
+    }
   });
 }
 

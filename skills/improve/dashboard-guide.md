@@ -36,6 +36,15 @@ with the candidate count in the `now` line. The dashboard renders `workstreams[]
 the same render path `/feature` uses for its coding work-streams, no extra fields. See `phases.md`
 §SCOUT / §CONSENSUS for exactly when to write them.
 
+**Artifact versioning (feat-20).** When an orchestrator **re-generates** a deliverable it already
+emitted — `/ask` re-drawing `infographic.html`/`process.svg`, `/design` re-drawing `redesign.html`,
+`/improve` any reusable output — write the new version as **`<name>.v<N>.<ext>`** (increment `N`,
+**don't overwrite** the prior file). `MOCKUP_RE`/`ARTIFACT_RE` already allow the dotted-digit name. The
+**Artifacts** tab groups versions by base name (newest first), offers a version selector, and an inline
+**Diff vs prev** for text artifacts (md/svg/html/diff) — so "было/стало" between iterations isn't lost.
+This convention is shared with `/ask` and `/design` (same `<name>.v<N>.<ext>`); contract + the
+confined-serve security model are in ADR-0025.
+
 Field notes:
 
 - **`status`**: `working` (you are acting) or `awaiting-batch` (parked, waiting for the human). The
