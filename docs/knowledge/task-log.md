@@ -4,6 +4,32 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-28 — artifacts-panel-tab (вкладка «Артефакты» — аналог Claude Artifacts) ⭐
+- **Что:** добавлена **5-я вкладка «Артефакты»** — браузируемые осязаемые выходы агента. Флагман
+  запроса (аналог Claude Artifacts). Фича feat-17/cand-4, вбирает cand-6 (security-армор), на `main`.
+  Новый ADR-0025.
+  - **Сервер:** `GET /artifacts?slug=` — листинг-метаданные файлов из `<task>/mockups/` + `<task>/
+    artifacts/` (allowlist `ARTIFACT_RE`, `{name,dir,kind,active,size,mtime,base,version}`,
+    `_artifact_base_version` парсит `<name>.v<N>.<ext>`). `GET /artifact?file=[&download=1]` — confined-
+    serve как `_serve_mockup` (realpath+commonpath по обоим dir).
+  - **Инвариант безопасности (cand-6):** ACTIVE-контент (html/svg) отдаётся с `MOCKUP_SEC_HEADERS`
+    (sandbox-CSP + nosniff) и рендерится ТОЛЬКО в `sandbox="allow-scripts"`-iframe без `allow-same-
+    origin` + `referrerpolicy=no-referrer`, **никогда innerHTML**; inert (md/json/img) — nosniff;
+    `download=1` → `Content-Disposition: attachment`. Реюз `MOCKUP_CSP` — одна модель безопасности.
+  - **Фронт:** вкладка + галерея (`renderArtifacts`/`artifactsTick`, sig-гард, гейт `document.hidden`),
+    группировка по `base` (новые версии первыми), per-card Preview (iframe/`<img>`) + Download. i18n
+    `tab.artifacts`/`artifacts.*` в обоих STR.
+- **`<task>/artifacts/`** — новый контракт для не-мокап-выходов; версии feat-20 углубит.
+- **Тест:** `tests/test_artifacts.py` (7 кейсов): листинг по обоим dir + фильтр allowlist; active→CSP+
+  nosniff; inert→nosniff без CSP; download→attachment; traversal/bad-name→404; base/version-хелпер.
+  Проверено в браузере (preview): вкладка листает 2 артефакта, sandbox-iframe рендерит agent-HTML
+  (inline-скрипт исполнился В sandbox), security-заголовки live (CSP+nosniff / attachment / 404).
+- **Ловушка (зафиксировать):** `esc()` падает на не-строке — `esc(a.version)` (число) кидал
+  `(s||"").replace is not a function`; версия — int, esc не нужен (`v${a.version|0}`).
+- **Файлы:** `scripts/server.py`, `templates/dashboard.html`, `tests/test_artifacts.py` (новый),
+  `docs/knowledge/decisions/ADR-0025-...md` (новый), `INDEX.md`. Тесты: 292 зелёных (7 новых),
+  `check_stdlib` чист.
+
 ## 2026-06-28 — review-gate-atomic-writes (атомарная запись reviews.json + stale-running)
 - **Что:** зафиксирован контракт записи `reviews.json` (журнал VERIFY-гейтов). Фича feat-16/cand-25,
   на `main`. Контракт-фича (кода нет — `_aipf.write_json` уже атомарен; предписываем его использовать).

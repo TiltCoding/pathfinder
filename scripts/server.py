@@ -82,6 +82,41 @@ MOCKUP_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe
 MOCKUP_SEC_HEADERS = {"X-Content-Type-Options": "nosniff",
                       "Content-Security-Policy": MOCKUP_CSP}
 
+# Artifacts panel (feat-17): browsable, read-only agent deliverables served from
+# <task>/mockups/ (demos) and <task>/artifacts/ (other outputs). Same name
+# allowlist + realpath/commonpath confinement as _serve_mockup. ACTIVE content
+# (html/svg) is served with the mockup sandbox CSP and rendered ONLY inside a
+# sandbox="allow-scripts" iframe (never innerHTML) — the cand-6 security invariant.
+ARTIFACT_DIRS = ("mockups", "artifacts")
+ARTIFACT_RE = re.compile(
+    r"^[A-Za-z0-9._-]{1,96}\.(html|svg|md|json|txt|csv|patch|diff|png|jpe?g|gif|webp)$")
+# extension -> (kind, mime, active?). `active` files run script in the sandbox iframe.
+ARTIFACT_KIND = {
+    "html": ("html", "text/html; charset=utf-8", True),
+    "svg":  ("svg",  "image/svg+xml; charset=utf-8", True),
+    "md":   ("doc",  "text/markdown; charset=utf-8", False),
+    "txt":  ("doc",  "text/plain; charset=utf-8", False),
+    "json": ("doc",  "application/json; charset=utf-8", False),
+    "csv":  ("doc",  "text/csv; charset=utf-8", False),
+    "patch": ("diff", "text/plain; charset=utf-8", False),
+    "diff": ("diff", "text/plain; charset=utf-8", False),
+    "png":  ("image", "image/png", False),
+    "jpg":  ("image", "image/jpeg", False),
+    "jpeg": ("image", "image/jpeg", False),
+    "gif":  ("image", "image/gif", False),
+    "webp": ("image", "image/webp", False),
+}
+_ARTIFACT_VER_RE = re.compile(r"^(.*)\.v(\d+)\.[A-Za-z0-9]+$")
+
+
+def _artifact_base_version(name):
+    """Split `<base>.v<N>.<ext>` into (base, N) for version grouping; otherwise
+    (name-without-extension, None). Pairs with the versioning convention (feat-20)."""
+    m = _ARTIFACT_VER_RE.match(name)
+    if m:
+        return m.group(1), int(m.group(2))
+    return (name.rsplit(".", 1)[0] if "." in name else name), None
+
 # Image attachments served from <task>/attachments/. Server-generated safe name
 # (att-<8 hex>.<ext>); the original client filename is carried as metadata only.
 # SVG is excluded on purpose (active content — would need the /mockup CSP path).
@@ -373,6 +408,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_mockup(slug, (qs.get("file") or [""])[0])
         if path == "/image":
             return self._serve_image(slug, (qs.get("file") or [""])[0])
+        if path == "/artifacts":                       # browsable artifact listing (feat-17)
+            return self._json(200, self._artifacts_list(slug))
+        if path == "/artifact":                        # one artifact (confined serve / download)
+            return self._serve_artifact(
+                slug, (qs.get("file") or [""])[0],
+                download=((qs.get("download") or [""])[0] == "1"))
         if path == "/trace":
             if not slug:
                 return self._json(400, {"error": "missing slug"})
@@ -592,6 +633,69 @@ class Handler(BaseHTTPRequestHandler):
             data = f.read()
         return self._send(200, data, ctype,
                           extra_headers={"X-Content-Type-Options": "nosniff"})
+
+    def _artifacts_list(self, slug):
+        """List browsable artifacts (read-only) from <task>/mockups/ + /artifacts/.
+        Metadata only — bytes come from /artifact. No traversal: only files matching
+        ARTIFACT_RE are listed; grouped client-side by `base` (feat-17)."""
+        out = []
+        if not slug:
+            return {"artifacts": []}
+        for d in ARTIFACT_DIRS:
+            adir = os.path.join(self.workspace.task_dir(slug), d)
+            try:
+                names = sorted(os.listdir(adir))
+            except OSError:
+                continue
+            for name in names:
+                if not ARTIFACT_RE.match(name):
+                    continue
+                fp = os.path.join(adir, name)
+                if not os.path.isfile(fp):
+                    continue
+                ext = name.rsplit(".", 1)[1].lower()
+                kind, _mime, active = ARTIFACT_KIND.get(
+                    ext, ("file", "application/octet-stream", False))
+                try:
+                    st = os.stat(fp)
+                except OSError:
+                    continue
+                base, ver = _artifact_base_version(name)
+                out.append({"name": name, "dir": d, "kind": kind, "active": active,
+                            "size": st.st_size, "mtime": int(st.st_mtime),
+                            "base": base, "version": ver})
+        # group by base, newest version first inside a group
+        out.sort(key=lambda a: (a["base"], -(a["version"] or 0), a["name"]))
+        return {"artifacts": out}
+
+    def _serve_artifact(self, slug, name, download=False):
+        """Serve one artifact confined to <task>/mockups/ or /artifacts/, mirroring
+        _serve_mockup's realpath/commonpath traversal guard. Active content (html/svg)
+        carries the mockup sandbox CSP (rendered only inside a sandbox iframe).
+        download=True forces a Content-Disposition attachment (browser saves it)."""
+        if not slug or not name or not ARTIFACT_RE.match(name):
+            return self._json(404, {"error": "not found"})
+        ext = name.rsplit(".", 1)[1].lower()
+        _kind, mime, active = ARTIFACT_KIND.get(
+            ext, ("file", "application/octet-stream", False))
+        for d in ARTIFACT_DIRS:
+            adir = os.path.realpath(os.path.join(self.workspace.task_dir(slug), d))
+            path = os.path.realpath(os.path.join(adir, name))
+            if os.path.commonpath([path, adir]) != adir:
+                continue
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as f:
+                data = f.read()
+            if download:
+                return self._send(200, data, "application/octet-stream", extra_headers={
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Disposition": 'attachment; filename="%s"' % name})
+            if active:   # html/svg — confined sandbox CSP, iframe-only on the client
+                return self._send(200, data, mime, extra_headers=MOCKUP_SEC_HEADERS)
+            return self._send(200, data, mime,
+                              extra_headers={"X-Content-Type-Options": "nosniff"})
+        return self._json(404, {"error": "not found"})
 
     # ---- trace (computed, not a file) ----------------------------------
     def _trace(self, slug):
