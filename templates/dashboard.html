@@ -2824,11 +2824,21 @@ async function selectFile(path){
   renderChanges(lastChanges, lastReviews);
 }
 
-let lastChanges = {}, lastReviews = {};
+let lastChanges = {}, lastReviews = {}, lastChangesSig = "";
 function renderChanges(ch, rv){
   lastChanges = ch; lastReviews = rv;
   const files = ch.files || [];
   changedFiles = files;
+  // Signature gate (like renderFeed/renderPulse): the 4s poll re-renders even when
+  // /changes is byte-identical, doing a full innerHTML rebuild + filetree/diff
+  // re-render every tick. Skip it when nothing that affects the view changed —
+  // the polled data (base/files/reviews) plus the local view state (selected file,
+  // its diff, the tracked/all toggle), so selectFile() and the seg toggle still
+  // re-render (their inputs change the signature).
+  const sig = JSON.stringify([ch.notGit, ch.base, files, rv,
+                              selectedFile, selectedDiff, changesShowAll]);
+  if(sig === lastChangesSig) return;
+  lastChangesSig = sig;
   let reviewHtml = renderReviews(rv);
 
   if(ch.notGit){
