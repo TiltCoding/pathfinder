@@ -1,10 +1,24 @@
-# ai-pathfinder dev shortcuts (python3 only, no extra deps).
-# Run tests or the companion server without remembering the full commands.
+# ai-pathfinder dev shortcuts. Thin wrappers over dev.py (the single source of
+# truth for the local dev loop) so the two entry points never drift. Override the
+# interpreter with `make PY=python test` if `python3` isn't your launcher.
+PY ?= python3
 
-.PHONY: test serve
+.PHONY: test serve lint preview queue check
 
 test:
-	python3 -m unittest discover -s tests
+	$(PY) dev.py test
 
 serve:
-	python3 scripts/server.py --root "$$(pwd)"
+	$(PY) dev.py serve
+
+lint:
+	$(PY) dev.py lint
+
+preview:
+	$(PY) dev.py preview
+
+queue:
+	$(PY) dev.py queue
+
+check:
+	$(PY) dev.py check

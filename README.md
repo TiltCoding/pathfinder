@@ -287,7 +287,8 @@ python3 -m unittest discover -s tests
 ```
 
 A single file runs the same way as a module, e.g. `python3 -m unittest tests.test_hub`. There is also a
-thin `Makefile`: `make test` runs the full suite.
+thin `Makefile` whose targets (`test`/`serve`/`lint`/`preview`/`queue`/`check`) just delegate to `dev.py`,
+so the two entry points never drift — e.g. `make check` before a push.
 
 **Cross-platform shortcut.** `make` and `python3` aren't always available (notably on Windows). A
 stdlib `dev.py` runner works everywhere by using the current interpreter (`sys.executable`):
@@ -297,6 +298,8 @@ python dev.py test                 # whole suite (discover -s tests)
 python dev.py test tests.test_hub  # specific target(s)
 python dev.py serve [--port N] [--open SLUG] [--no-browser] [--no-forward]
 python dev.py lint                 # stdlib/no-CDN invariant gate (scripts/check_stdlib.py); also a CI `lint` job
+python dev.py check                # both CI gates locally (tests + lint) — the recommended pre-push step
+python dev.py queue [status|...]   # inspect/drive the /improve drain queue (scripts/queue.py)
 ```
 
 **Run the companion server locally.** The server is stdlib-only Python — no build step, no dependencies:

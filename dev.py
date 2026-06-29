@@ -75,6 +75,16 @@ def cmd_lint(args):
     return 0
 
 
+def cmd_check(args):
+    """Run both CI gates locally: the test suite, then the stdlib lint. Returns
+    non-zero on the first failure — a one-command pre-push mirror of CI's two
+    jobs, so a red lint isn't discovered only after pushing green tests."""
+    rc = cmd_test(argparse.Namespace(targets=[]))
+    if rc != 0:
+        return rc
+    return cmd_lint(argparse.Namespace())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="dev.py",
@@ -115,6 +125,9 @@ def main(argv=None):
 
     p_lint = sub.add_parser("lint", help="линт-гейт stdlib-инвариантов (стаб до feat-8)")
     p_lint.set_defaults(func=cmd_lint)
+
+    p_check = sub.add_parser("check", help="оба CI-гейта локально: тесты + линт")
+    p_check.set_defaults(func=cmd_check)
 
     args = ap.parse_args(argv)
     return args.func(args)
