@@ -38,6 +38,21 @@ def safe_slug(slug):
 
 # ---- filesystem layout ------------------------------------------------------
 
+def confined_path(base_dir, name):
+    """Resolve ``base_dir/name`` and confine it to ``base_dir`` (defence in
+    depth against path traversal). Returns the real, absolute path when it
+    stays inside ``realpath(base_dir)``, or ``None`` when it escapes (``..``,
+    symlink, absolute override). This is the single source of truth for the
+    confined-serve guard reused across the server's file-serving endpoints;
+    cross-device inputs raise ``ValueError`` from ``commonpath`` exactly as the
+    inline guards did before."""
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base, name))
+    if os.path.commonpath([target, base]) != base:
+        return None
+    return target
+
+
 def workflow_base(root):
     return os.path.join(os.path.abspath(root), ".workflow")
 

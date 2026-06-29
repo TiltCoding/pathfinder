@@ -602,9 +602,9 @@ class Handler(BaseHTTPRequestHandler):
         if not slug or not name or not MOCKUP_RE.match(name):
             return self._json(404, {"error": "not found"})
         mockups = os.path.join(self.workspace.task_dir(slug), "mockups")
-        path = os.path.realpath(os.path.join(mockups, name))
         # confine to the mockups dir (defence in depth against traversal)
-        if os.path.commonpath([path, os.path.realpath(mockups)]) != os.path.realpath(mockups):
+        path = _aipf.confined_path(mockups, name)
+        if path is None:
             return self._json(404, {"error": "not found"})
         if not os.path.isfile(path):
             return self._json(404, {"error": "not found"})
@@ -621,9 +621,9 @@ class Handler(BaseHTTPRequestHandler):
         if not slug or not name or not ATTACH_RE.match(name):
             return self._json(404, {"error": "not found"})
         attach_dir = os.path.join(self.workspace.task_dir(slug), "attachments")
-        path = os.path.realpath(os.path.join(attach_dir, name))
         # confine to the attachments dir (defence in depth against traversal)
-        if os.path.commonpath([path, os.path.realpath(attach_dir)]) != os.path.realpath(attach_dir):
+        path = _aipf.confined_path(attach_dir, name)
+        if path is None:
             return self._json(404, {"error": "not found"})
         if not os.path.isfile(path):
             return self._json(404, {"error": "not found"})
@@ -679,9 +679,8 @@ class Handler(BaseHTTPRequestHandler):
         _kind, mime, active = ARTIFACT_KIND.get(
             ext, ("file", "application/octet-stream", False))
         for d in ARTIFACT_DIRS:
-            adir = os.path.realpath(os.path.join(self.workspace.task_dir(slug), d))
-            path = os.path.realpath(os.path.join(adir, name))
-            if os.path.commonpath([path, adir]) != adir:
+            path = _aipf.confined_path(os.path.join(self.workspace.task_dir(slug), d), name)
+            if path is None:
                 continue
             if not os.path.isfile(path):
                 continue
@@ -1074,8 +1073,7 @@ class Handler(BaseHTTPRequestHandler):
         if not relpath:
             return {"error": "missing file"}
         root = os.path.realpath(self._task_root(slug))
-        target = os.path.realpath(os.path.join(root, relpath))
-        if os.path.commonpath([target, root]) != root:
+        if _aipf.confined_path(root, relpath) is None:
             return {"error": "not found"}
         base = self._base_commit(slug, cwd=root)
         rc, out, _ = self._git("diff", base, "--", relpath, cwd=root)
@@ -1476,9 +1474,8 @@ class Handler(BaseHTTPRequestHandler):
         """Return one knowledge doc's content. Read-only, traversal-guarded."""
         if not rel:
             return {"error": "missing file"}
-        root = os.path.realpath(self.workspace.root)
-        target = os.path.realpath(os.path.join(root, rel))
-        if os.path.commonpath([target, root]) != root or not target.endswith(".md"):
+        target = _aipf.confined_path(self.workspace.root, rel)
+        if target is None or not target.endswith(".md"):
             return {"error": "not found"}
         if not os.path.isfile(target):
             return {"error": "not found"}
@@ -1660,9 +1657,9 @@ class Handler(BaseHTTPRequestHandler):
         ws.ensure_task(slug)
         attach_dir = os.path.join(ws.task_dir(slug), "attachments")
         os.makedirs(attach_dir, exist_ok=True)
-        path = os.path.realpath(os.path.join(attach_dir, servername))
         # confine to the attachments dir (defence in depth against traversal)
-        if os.path.commonpath([path, os.path.realpath(attach_dir)]) != os.path.realpath(attach_dir):
+        path = _aipf.confined_path(attach_dir, servername)
+        if path is None:
             return self._json(400, {"ok": False, "error": "name"})
         # Atomic write under the per-slug lock: per-process temp (no fixed
         # ".tmp" that two concurrent uploads to one task would collide on) +
