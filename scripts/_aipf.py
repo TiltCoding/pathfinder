@@ -113,6 +113,13 @@ def atomic_write(path, text):
     try:
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(text)
+            # Force the bytes to disk *before* the rename: os.replace is atomic
+            # w.r.t. the directory entry, but without an fsync a power loss can
+            # land a zero-length / partially-flushed temp as the target — which
+            # then parses as a valid empty `{}` and slips past the corrupt-state
+            # recovery, silently losing phase/iteration. Flush+fsync closes that.
+            f.flush()
+            os.fsync(f.fileno())
         atomic_replace(tmp, path)
     except OSError:
         # Don't leave an orphaned temp behind; re-raise the real error (no fallback).
@@ -127,11 +134,63 @@ def write_json(path, data):
     atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2))
 
 
+try:
+    import fcntl as _fcntl
+
+    def _lock_fd(fd):
+        _fcntl.flock(fd, _fcntl.LOCK_EX)
+
+    def _unlock_fd(fd):
+        _fcntl.flock(fd, _fcntl.LOCK_UN)
+except ImportError:                       # Windows
+    import msvcrt as _msvcrt
+
+    def _lock_fd(fd):
+        # Lock a fixed 1-byte sentinel region (offset 0). Blocks until granted;
+        # LK_LOCK retries internally but can still raise under contention, so spin.
+        os.lseek(fd, 0, os.SEEK_SET)
+        while True:
+            try:
+                _msvcrt.locking(fd, _msvcrt.LK_LOCK, 1)
+                return
+            except OSError:
+                time.sleep(0.005)
+
+    def _unlock_fd(fd):
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+
+
 def append_jsonl(path, obj):
-    """Append one JSON object as a line. Append is atomic enough for our size."""
+    """Append one JSON object as a single, intact line under an OS file lock.
+
+    Several hook processes (and threads) append to one shared telemetry.jsonl
+    concurrently — the worktree symlinks .workflow into a single store. A plain
+    O_APPEND write is atomic only up to PIPE_BUF on POSIX and is NOT atomic
+    across handles on Windows (separate fds seek-to-end then write, racing), so
+    concurrent appenders interleave and tear lines; the lenient parser then
+    silently drops the corrupted line, losing the event.
+
+    Take an exclusive advisory lock on the file (fcntl.flock on POSIX,
+    msvcrt.locking on Windows) for the duration of one write. The lock excludes
+    across fds, threads and processes, and the OS releases it automatically if a
+    holder dies — so there is no stale-lock deadlock. The write itself stays an
+    O_APPEND so it lands at end-of-file regardless of the sentinel seek used for
+    locking. Open O_RDWR (locking needs write access on Windows)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    data = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        _lock_fd(fd)
+        try:
+            os.write(fd, data)
+        finally:
+            _unlock_fd(fd)
+    finally:
+        os.close(fd)
 
 
 # ---- session -> slug resolution --------------------------------------------

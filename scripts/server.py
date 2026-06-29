@@ -207,6 +207,8 @@ class Workspace:
         try:
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())   # durable before replace (see _aipf.atomic_write)
             _aipf.atomic_replace(tmp, path)
         except OSError:
             try:
@@ -272,6 +274,8 @@ def write_lang(lang, base=None):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"lang": lang, "ts": now_iso()}, f,
                       ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())   # durable before replace (see _aipf.atomic_write)
         _aipf.atomic_replace(tmp, path)
         return lang
     except OSError:
@@ -1702,6 +1706,8 @@ class Handler(BaseHTTPRequestHandler):
             with ws.lock(slug):
                 with open(tmp, "wb") as f:
                     f.write(data)
+                    f.flush()
+                    os.fsync(f.fileno())   # durable before replace (see _aipf.atomic_write)
                 _aipf.atomic_replace(tmp, path)
         except OSError:
             try:

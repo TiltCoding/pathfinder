@@ -78,6 +78,11 @@ def _ws_worker(root, path, i):
         pass
 
 
+def _append_worker(path, who, n):
+    for i in range(n):
+        _aipf.append_jsonl(path, {"who": who, "i": i})
+
+
 class _TmpDir(unittest.TestCase):
     def setUp(self):
         # realpath: на macOS tempfile отдаёт путь под симлинком /var -> /private/var.
@@ -246,6 +251,65 @@ class ConcurrentWriteTest(_TmpDir):
         # любая другая ошибка (рваная запись, утечка temp) — баг writer'а.
         real = [e for e in errors if not _is_replace_race(e)]
         self.assertEqual(real, [], "writer raised non-race error: %r" % real)
+
+
+class FsyncDurabilityTest(_TmpDir):
+    """atomic_write must fsync the temp's bytes to disk BEFORE os.replace, so a
+    power loss can't land a zero-length/partial temp as the target (which would
+    parse as a valid empty `{}` and slip past corrupt-state recovery)."""
+
+    def test_atomic_write_fsyncs_before_replace(self):
+        order = []
+        real_replace = os.replace
+
+        def rec_fsync(fd):
+            order.append("fsync")
+
+        def rec_replace(a, b):
+            order.append("replace")
+            return real_replace(a, b)
+
+        path = os.path.join(self.dir, "d.json")
+        with mock.patch("os.fsync", side_effect=rec_fsync), \
+             mock.patch("os.replace", side_effect=rec_replace):
+            _aipf.atomic_write(path, '{"x": 1}')
+        self.assertIn("fsync", order, "atomic_write did not fsync")
+        self.assertIn("replace", order)
+        self.assertLess(order.index("fsync"), order.index("replace"),
+                        "fsync must run before os.replace")
+        with open(path, encoding="utf-8") as f:   # still round-trips
+            self.assertEqual(json.load(f), {"x": 1})
+
+
+class AppendJsonlTest(_TmpDir):
+    """append_jsonl emits one complete, valid line per call and never tears a
+    line under concurrent appenders (the shared telemetry.jsonl race)."""
+
+    def test_round_trip_lines(self):
+        path = os.path.join(self.dir, "log.jsonl")
+        _aipf.append_jsonl(path, {"a": 1})
+        _aipf.append_jsonl(path, {"b": "две"})
+        with open(path, encoding="utf-8") as f:
+            lines = [json.loads(ln) for ln in f if ln.strip()]
+        self.assertEqual(lines, [{"a": 1}, {"b": "две"}])
+
+    def test_concurrent_appends_no_torn_or_lost_lines(self):
+        path = os.path.join(self.dir, "concurrent.jsonl")
+        k, lines_each = 6, 20
+        threads = [threading.Thread(target=_append_worker, args=(path, w, lines_each))
+                   for w in range(k)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        with open(path, encoding="utf-8") as f:
+            raw = [ln for ln in f if ln.strip()]
+        # Every line parses (no torn/interleaved JSON) ...
+        parsed = [json.loads(ln) for ln in raw]
+        # ... and exactly k*lines_each distinct events landed (none lost/dup'd).
+        self.assertEqual(len(parsed), k * lines_each)
+        seen = {(d["who"], d["i"]) for d in parsed}
+        self.assertEqual(len(seen), k * lines_each)
 
 
 if __name__ == "__main__":
