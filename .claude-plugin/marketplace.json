@@ -11,7 +11,7 @@
     {
       "name": "ai-pathfinder",
       "source": "./",
-      "description": "Long-running, multi-agent coding workflow with a live per-task HTML dashboard (including an Artifacts tab of browsable agent deliverables) and a self-growing project knowledge base. /feature drives work on an existing codebase; /new-product creates a greenfield product from scratch via a PRD and an evolutionary build-loop; /improve surveys an app with a swarm of analysts, reaches consensus on the best improvements, lets the human pick, and fans them out as parallel /feature runs; /ask answers questions read-only with a visual answer; /design audits and redesigns one UI component; /test generates tests and closes coverage gaps; /docs generates docs and audits doc↔code drift; /start routes a free-form request to the right command."
+      "description": "Long-running, multi-agent coding workflow with a live per-task HTML dashboard (including an Artifacts tab of browsable agent deliverables) and a self-growing project knowledge base. /feature drives work on an existing codebase; /new-product creates a greenfield product from scratch via a PRD and an evolutionary build-loop; /improve surveys an app with a swarm of analysts, reaches consensus on the best improvements, lets the human pick, and fans them out as parallel /feature runs; /ask answers questions read-only with a visual answer; /design audits and redesigns one UI component; /test generates tests and closes coverage gaps; /debug reproduces a bug, finds its root cause, and lands a minimal fix with a regression test; /docs generates docs and audits doc↔code drift; /start routes a free-form request to the right command."
     }
   ]
 }

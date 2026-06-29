@@ -39,7 +39,7 @@ yourself — no exploration, no dashboard, no code edits. This is a terminal-onl
    | "**what should we improve**", an app-wide **audit / prioritized backlog** of improvements | **`/improve`** |
    | **UI/UX of ONE named component/screen** ("improve the look of this form", "audit this widget") | **`/design`** |
    | **write/augment tests** for existing code, coverage gaps ("test this module", "add tests for…") | **`/test`** |
-   | a **bug / failing test / "why does X break"** — wants it diagnosed/fixed | **`/feature`** (a `/debug` command may exist later; until then `/feature` fixes the bug, or `/ask` if they only want it *explained*) |
+   | a **bug / failing test / "why does X break"** — wants it diagnosed and fixed | **`/debug`** (reproduce → root-cause → minimal fix + regression test; use `/ask` if they only want it *explained*, `/feature` if the "fix" is really new behaviour) |
    | **review a diff / PR / branch** for issues | **`/code-review`** (a dedicated `/review` command may exist later) |
 
    When two fit, prefer the **narrower** command (e.g. "improve the look of the gate screen" → `/design`,
