@@ -66,7 +66,9 @@ class _CapturingHandler:
     def __init__(self, path, body=None):
         self.path = path
         self.status = None
-        self.headers = {}
+        # A same-origin loopback Host so do_POST's CSRF/rebinding guard
+        # (_origin_allowed) passes, as a real browser request would.
+        self.headers = {"Host": "127.0.0.1"}
         self._chunks = []
         if body is not None:
             raw = json.dumps(body).encode("utf-8")
@@ -100,6 +102,7 @@ class _CapturingHandler:
     # --- bound real handler methods ---
     do_GET = server.Handler.do_GET
     do_POST = server.Handler.do_POST
+    _origin_allowed = server.Handler._origin_allowed
     _send = server.Handler._send
     _json = server.Handler._json
     _read_body = server.Handler._read_body

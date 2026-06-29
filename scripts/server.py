@@ -514,9 +514,41 @@ class Handler(BaseHTTPRequestHandler):
                               extra_headers=headers)
         return self._json(404, {"error": "not found"})
 
+    def _origin_allowed(self):
+        """CSRF / DNS-rebinding defence for state-changing POSTs. The server
+        listens only on 127.0.0.1, so a request whose Host names anything other
+        than our loopback address reached us via a DNS-rebinding trick (a
+        foreign domain re-pointed at 127.0.0.1) and is refused; likewise a
+        cross-site request carries a foreign Origin. We require the Host to be
+        loopback (and our port, when the header carries one) and any Origin to
+        resolve to the same loopback origin. Without this, a page the user is
+        merely browsing could POST to http://127.0.0.1:<port>/submit (approve a
+        plan), /chat (inject a message) or /attach (write a file) — the port is
+        derived from sha1(root), so it is guessable."""
+        try:
+            port = self.server.server_address[1]
+        except AttributeError:
+            port = None
+        host = self.headers.get("Host") or ""
+        hname, _sep, hport = host.partition(":")
+        if hname not in ("127.0.0.1", "localhost"):
+            return False
+        if hport and port is not None and hport != str(port):
+            return False
+        origin = self.headers.get("Origin")
+        if origin:
+            o = urlparse(origin)
+            if o.hostname not in ("127.0.0.1", "localhost"):
+                return False
+            if o.port is not None and port is not None and o.port != port:
+                return False
+        return True
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if not self._origin_allowed():
+            return self._json(403, {"error": "forbidden"})
         body = self._read_body()
         if body is None:
             return   # oversized/incomplete body — _read_body already sent 413/400
