@@ -40,7 +40,6 @@ import os
 import re
 import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -52,7 +51,13 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _aipf  # noqa: E402  (shared helpers: layout, Langfuse forwarding)
 
-SLUG_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# Single source of truth in _aipf — these were byte-identical copies here, and a
+# drift in the slug validator (a security boundary) or the timestamp format would
+# be silent. Alias so existing bare call sites (now_iso(), safe_slug(), SLUG_RE)
+# keep working unchanged.
+SLUG_RE = _aipf.SLUG_RE
+now_iso = _aipf.now_iso
+safe_slug = _aipf.safe_slug
 DEFAULT_PORT = 8473
 PORT_SCAN = 25
 HEARTBEAT_SECS = 5        # how often a live server refreshes server.json's ts
@@ -155,14 +160,6 @@ def image_magic_ok(ext, data):
     return False
 
 
-def safe_slug(slug):
-    if not slug or not SLUG_RE.match(slug):
-        return None
-    if slug in (".", ".."):
-        return None
-    return slug
-
-
 class Workspace:
     """Filesystem helper rooted at <root>/.workflow."""
 
@@ -218,8 +215,6 @@ class Workspace:
             raise
 
 
-def now_iso():
-    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
 
 
 # ---- global language setting (~/.claude/ai-pathfinder/settings.json) -----
@@ -967,13 +962,7 @@ class Handler(BaseHTTPRequestHandler):
         (rc, stdout, stderr). A task running in a git worktree records its own
         working tree in state.worktreePath; passing it as `cwd` lets the
         Changes tab diff that tree instead of main (see _task_root)."""
-        try:
-            p = subprocess.run(["git", "-C", cwd or self.workspace.root, *args],
-                               capture_output=True, text=True, timeout=timeout,
-                               encoding="utf-8", errors="replace")
-            return p.returncode, p.stdout, p.stderr
-        except (OSError, subprocess.SubprocessError) as e:
-            return 1, "", str(e)
+        return _aipf.git(*args, cwd=(cwd or self.workspace.root), timeout=timeout)
 
     def _task_root(self, slug):
         """The working tree to diff for a task: state.worktreePath if it is set,

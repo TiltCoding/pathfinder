@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import time
 import urllib.request
 import urllib.error
@@ -34,6 +35,21 @@ def safe_slug(slug):
     if slug in (".", ".."):
         return None
     return slug
+
+
+def git(*args, cwd=None, timeout=30):
+    """Run a git command in `cwd` (process working dir). Returns
+    (returncode, stdout, stderr) and NEVER raises — OSError / SubprocessError
+    (git missing, timeout) collapse to (1, "", str(e)). Single source of the
+    utf-8 / errors='replace' decoding and the timeout, shared by the server's
+    Changes-tab diffs and the worktree manager so the two never drift."""
+    try:
+        p = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                           text=True, timeout=timeout,
+                           encoding="utf-8", errors="replace")
+        return p.returncode, p.stdout, p.stderr
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, "", str(e)
 
 
 # ---- filesystem layout ------------------------------------------------------

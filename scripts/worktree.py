@@ -27,7 +27,6 @@ and hook via `_aipf` (same sys.path trick used by server.py / tests/).
 
 import argparse
 import os
-import subprocess
 import sys
 import time
 
@@ -40,14 +39,9 @@ WORKTREES_DIRNAME = "pathfinder-worktrees"
 # ---- git plumbing -----------------------------------------------------------
 
 def _git(*args, cwd=None, timeout=30):
-    """Run a git command. Returns (rc, stdout, stderr); never raises."""
-    try:
-        p = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                           text=True, timeout=timeout, encoding="utf-8",
-                           errors="replace")
-        return p.returncode, p.stdout, p.stderr
-    except (OSError, subprocess.SubprocessError) as e:
-        return 1, "", str(e)
+    """Run a git command. Returns (rc, stdout, stderr); never raises.
+    Thin wrapper over the shared _aipf.git (single source of decoding/timeout)."""
+    return _aipf.git(*args, cwd=cwd, timeout=timeout)
 
 
 def main_root(start=None):
