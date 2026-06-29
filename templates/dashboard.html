@@ -286,6 +286,10 @@
   #btn-submit.attn { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
   /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
   .bulk-pick:not([hidden]) { display: flex; gap: 8px; }
+  /* Submit→Approve stepper: number the two-step flow and flag the armed confirm */
+  #btn-submit::before { content: "① "; opacity: .75; }
+  #btn-approve::before { content: "② "; opacity: .75; }
+  #btn-approve.armed { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); font-weight: 600; }
   .dispatch-chip { font-size: 13px; color: var(--muted); }
   .dispatch-chip b { color: var(--ink); }
   /* dispatch preview (feat-9): ranked list of what Approve will queue */
@@ -802,6 +806,8 @@ const SLUG = new URLSearchParams(location.search).get("slug") || "";
 const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
 let dispatchPreview = null;   // snapshot of «Делаем» picks taken at Submit (feat-9), shown until Approve
+let submittedOnce = false;    // Submit→Approve stepper: a batch was sent this session (improve gate)
+let approveArmed = false, approveTimer = null;   // two-click confirm before the irreversible dispatch
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
 let lastPhaseAnnounced = null;   // sr-only диктор объявляет ТОЛЬКО при фактической смене фазы
@@ -1084,8 +1090,10 @@ const STR = {
     "actionbar.submit": "Send to agent for revision",
     "actionbar.markAll": "Mark all Do",
     "actionbar.clearAll": "Clear all",
+    "actionbar.approveConfirm": "Confirm: dispatch {n} →",
     "toast.bulkMarked": "All features marked Do",
     "toast.bulkCleared": "Selection cleared",
+    "toast.approveCancelled": "Dispatch cancelled",
     "dispatch.preview.title": "Approve will dispatch — features:",
     "chat.title": "Chat with agent",
     "chat.subtitle": "steering at checkpoints",
@@ -1329,8 +1337,10 @@ const STR = {
     "actionbar.submit": "Отправить агенту на доработку",
     "actionbar.markAll": "Делаем все",
     "actionbar.clearAll": "Снять все",
+    "actionbar.approveConfirm": "Подтвердить: в очередь {n} →",
     "toast.bulkMarked": "Все фичи отмечены «Делаем»",
     "toast.bulkCleared": "Выбор снят",
+    "toast.approveCancelled": "Запуск отменён",
     "dispatch.preview.title": "Утвердить — уйдут в диспетч фичи:",
     "chat.title": "Чат с агентом",
     "chat.subtitle": "стиринг на чекпоинтах",
@@ -2333,6 +2343,7 @@ function updateQueue(){
   updateDispatchChip();
   renderDispatchPreview();
   updateBulkButtons();
+  updateApproveGate();
 }
 // «N из M отмечено Делаем»: M — choice-вопросы по plan-блокам (feat-N), N — из них помеченные «делаем/do».
 function updateDispatchChip(){
@@ -2407,6 +2418,23 @@ function updateBulkButtons(){
   const wrap = $("#bulk-pick"); if(!wrap) return;
   const gate = lastData && lastData.status === "awaiting-batch";
   wrap.hidden = !(gate && featChoiceQuestions().length > 0);
+}
+// Reset the armed two-click confirm on «Утвердить» back to its normal label.
+function disarmApprove(){
+  approveArmed = false;
+  if(approveTimer){ clearTimeout(approveTimer); approveTimer = null; }
+  const btn = $("#btn-approve");
+  if(btn){ btn.classList.remove("armed"); btn.textContent = t("actionbar.approve"); }
+}
+// Submit→Approve stepper: «Утвердить» is step 2 — disabled until step 1 (Submit)
+// has frozen a batch. Unsent edits always block it; on the improve gate it also
+// requires a submission this session (the picks aren't readable until submitted).
+function updateApproveGate(){
+  const btn = $("#btn-approve"); if(!btn) return;
+  const improveGate = featChoiceQuestions().length > 0;
+  const blocked = draftItems.length > 0 || (improveGate && !submittedOnce);
+  btn.disabled = blocked;
+  if(blocked && approveArmed) disarmApprove();   // never stay armed while blocked
 }
 // Preview (feat-9): after Submit froze the picks (draftItems cleared) and before
 // Approve, list exactly what will be dispatched, in ranked order — so the human
@@ -2584,16 +2612,32 @@ $("#btn-submit").onclick = async () => {
   const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
   if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // keep draft on failure — nothing was sent
   dispatchPreview = picks.length ? picks : null;
+  submittedOnce = true;             // step 1 done → «Утвердить» (step 2) unlocks
   draftItems = []; rerender(); toast(t("toast.sentBatch") + r.submission);
 };
 $("#btn-approve").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
-  if(draftItems.length){
+  if(draftItems.length){    // unsent edits — Submit first (step 1 before step 2)
     toast(t("toast.submitFirst"));
     const sb = $("#btn-submit");
     if(sb){ sb.classList.remove("flash"); void sb.offsetWidth; sb.classList.add("flash"); setTimeout(() => sb.classList.remove("flash"), 1200); }
     return;
   }
+  // Inline two-click confirm before the irreversible dispatch (improve gate only):
+  // first click arms with the count, a second within 5s confirms; otherwise it
+  // disarms itself (cancel). The /feature/new-product plan gate dispatches at once.
+  const improveGate = featChoiceQuestions().length > 0;
+  if(improveGate && !approveArmed){
+    const n = (dispatchPreview || markedFeatures()).length;
+    approveArmed = true;
+    const btn = $("#btn-approve");
+    btn.classList.add("armed");
+    btn.textContent = t("actionbar.approveConfirm").replace("{n}", n);
+    if(approveTimer) clearTimeout(approveTimer);
+    approveTimer = setTimeout(() => { if(approveArmed){ disarmApprove(); toast(t("toast.approveCancelled")); } }, 5000);
+    return;   // wait for the confirming click
+  }
+  disarmApprove();
   const r = await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
   if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // signal didn't land — don't falsely confirm
   dispatchPreview = null; renderDispatchPreview();   // dispatched → drop the preview (feat-9)
