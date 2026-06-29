@@ -465,6 +465,10 @@ class Handler(BaseHTTPRequestHandler):
             if f:
                 return self._json(200, self._changes_file(slug, f))
             return self._json(200, self._changes(slug))
+        if path == "/improve/candidates":
+            if not slug:
+                return self._json(400, {"error": "missing slug"})
+            return self._json(200, self._improve_candidates(slug))
         if path == "/reviews":
             return self._serve_task_file(slug, "reviews.json")
         if path == "/chat":
@@ -1169,6 +1173,37 @@ class Handler(BaseHTTPRequestHandler):
         not to weigh /hub.json down. done/total are computed client-side."""
         path = os.path.join(self.workspace.base, "dispatch-queue.json")
         return self.workspace.read_json(path, {"items": []})
+
+    def _improve_candidates(self, slug):
+        """Read-only transparency view for an /improve run: the full consolidated
+        candidate list joined with the deterministic vote aggregate, each tagged
+        with its top-K rank slot (featId) and whether it was selected — so the
+        human can see WHY a candidate did or didn't make the gate (the swarm's
+        scout/vote scratch otherwise never surfaces). Confined to the task's own
+        state.json; non-/improve tasks return isImprove:false."""
+        st = self.workspace.read_json(
+            self.workspace.task_file(slug, "state.json"), {})
+        cands = st.get("candidates") or []
+        if not cands:
+            return {"isImprove": False, "candidates": []}
+        votes = {v.get("candId"): v for v in (st.get("votes") or [])}
+        rank = {x.get("candId"): x.get("featId")
+                for x in (st.get("topKOrder") or [])}
+        selected = set(st.get("selected") or [])
+        out = []
+        for c in cands:
+            cid = c.get("id")
+            feat = rank.get(cid)
+            out.append({
+                "id": cid, "title": c.get("title"), "prism": c.get("prism"),
+                "size": c.get("size"), "risk": c.get("risk"),
+                "vote": votes.get(cid),
+                "featId": feat,                       # top-K rank slot, or None
+                "selected": bool(feat) and feat in selected,
+            })
+        return {"isImprove": True, "topK": st.get("topK"),
+                "aggWeights": st.get("aggWeights"),
+                "prisms": st.get("prisms") or [], "candidates": out}
 
     def _queue_op(self, slug, body):
         """POST /queue/op — apply a hub queue-control op (skip|cancel|retry|

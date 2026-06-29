@@ -331,6 +331,19 @@
   .tab.has-threads { position: relative; }
   .tab.has-threads::after { content: ""; position: absolute; top: 6px; right: -10px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
   [hidden] { display: none !important; }
+  /* Candidates tab (improve transparency) */
+  .cands-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .cands-head .title { font-weight: 600; }
+  .cands-head .grow { flex: 1; }
+  .cands-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cands-tbl th, .cands-tbl td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .cands-tbl th { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .cands-tbl td.num, .cands-tbl th.num { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+  .cand-prism { display: block; font-size: 11px; color: var(--muted); }
+  .cand-badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+  .cand-badge.sel { background: var(--ok-soft, #e6f6ec); color: var(--ok); }
+  .cand-badge.top { background: var(--accent-soft); color: var(--accent); }
+  .cand-badge.drop { background: var(--line); color: var(--muted); }
 
   /* trace tab */
   .stats { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -713,6 +726,7 @@
     <button class="tab" id="tab-docs" data-tab="docs" role="tab" aria-selected="false" aria-controls="docs" tabindex="-1">Documentation</button>
     <button class="tab" id="tab-trace" data-tab="trace" role="tab" aria-selected="false" aria-controls="trace" tabindex="-1">Tracing</button>
     <button class="tab" id="tab-artifacts" data-tab="artifacts" role="tab" aria-selected="false" aria-controls="artifacts" tabindex="-1">Artifacts</button>
+    <button class="tab" id="tab-cands" data-tab="cands" role="tab" aria-selected="false" aria-controls="cands" tabindex="-1">Candidates</button>
   </nav></div>
 </header>
 
@@ -753,6 +767,10 @@
 
     <main class="wrap wide" id="artifacts" role="tabpanel" aria-labelledby="tab-artifacts" hidden>
       <p class="empty">Loading artifacts…</p>
+    </main>
+
+    <main class="wrap wide" id="cands" role="tabpanel" aria-labelledby="tab-cands" hidden>
+      <p class="empty">Loading candidates…</p>
     </main>
   </div>
 </div>
@@ -1045,6 +1063,18 @@ const STR = {
     "tab.docs": "Documentation",
     "tab.trace": "Tracing",
     "tab.artifacts": "Artifacts",
+    "tab.cands": "Candidates",
+    "cands.notImprove": "This is not an /improve run — no swarm candidates.",
+    "cands.heading": "All swarm candidates",
+    "cands.filterPrism": "prism",
+    "cands.all": "all",
+    "cands.colCand": "candidate",
+    "cands.colScore": "score",
+    "cands.colKeep": "agreement",
+    "cands.colIER": "imp·eff·risk",
+    "cands.colStatus": "status",
+    "cands.selected": "✓ selected",
+    "cands.dropped": "dropped",
     "artifacts.title": "Artifacts",
     "artifacts.empty": "No artifacts yet — they appear as the agent produces mockups, diagrams, plans and documents.",
     "artifacts.preview": "Preview",
@@ -1294,6 +1324,18 @@ const STR = {
     "tab.docs": "Документация",
     "tab.trace": "Трейсинг",
     "tab.artifacts": "Артефакты",
+    "tab.cands": "Кандидаты",
+    "cands.notImprove": "Это не прогон /improve — кандидатов роя нет.",
+    "cands.heading": "Все кандидаты роя",
+    "cands.filterPrism": "призма",
+    "cands.all": "все",
+    "cands.colCand": "кандидат",
+    "cands.colScore": "ранг",
+    "cands.colKeep": "согласие",
+    "cands.colIER": "imp·eff·risk",
+    "cands.colStatus": "статус",
+    "cands.selected": "✓ выбран",
+    "cands.dropped": "отсеян",
     "artifacts.title": "Артефакты",
     "artifacts.empty": "Пока артефактов нет — они появляются по мере того, как агент создаёт мокапы, диаграммы, планы и документы.",
     "artifacts.preview": "Превью",
@@ -1539,6 +1581,7 @@ function applyStaticStrings(){
   set("#tab-work", t("tab.work")); set("#tab-changes", t("tab.changes"));
   set("#tab-docs", t("tab.docs")); set("#tab-trace", t("tab.trace"));
   set("#tab-artifacts", t("tab.artifacts"));
+  set("#tab-cands", t("tab.cands"));
   set("#sel-input", t("pop.placeholder"), "placeholder");
   set("#sel-popover", t("pop.placeholder"), "aria-label");
   set("#sel-popover .hint", t("pop.hint"));
@@ -2660,8 +2703,10 @@ function switchTab(name){
   $("#docs").hidden = name !== "docs";
   $("#trace").hidden = name !== "trace";
   $("#artifacts").hidden = name !== "artifacts";
+  $("#cands").hidden = name !== "cands";
   $("#actionbar").hidden = name !== "work";
   hidePopover();
+  if(name === "cands") candsTick();
   if(name === "trace"){
     traceTick();
     feedTick();   // render the full feed immediately from the shared model
@@ -2677,6 +2722,62 @@ function switchTab(name){
   } else if(artifactsTimer){ clearInterval(artifactsTimer); artifactsTimer = null; }
   if(name === "docs") docsTick();
   else stopGraph();
+}
+// Candidates tab (improve transparency): the full swarm candidate list joined
+// with the vote aggregate, sortable-by-score with a prism filter, so the human
+// can see why each candidate did/didn't make the gate.
+let candsData = null, candsPrism = "all";
+async function candsTick(){
+  try {
+    const res = await fetch("/improve/candidates?slug=" + encodeURIComponent(SLUG));
+    candsData = await res.json();
+  } catch(e){ candsData = { isImprove: false, candidates: [] }; }
+  renderCandidates();
+}
+function renderCandidates(){
+  const root = $("#cands"); if(!root) return;
+  const d = candsData;
+  if(!d || !d.isImprove){
+    root.innerHTML = `<p class="empty">${esc(t("cands.notImprove"))}</p>`;
+    return;
+  }
+  const fmt = n => (n == null ? "—" : Number(n).toFixed(2));
+  let rows = d.candidates.slice();
+  if(candsPrism !== "all") rows = rows.filter(c => c.prism === candsPrism);
+  const sc = c => (c.vote && c.vote.score != null) ? c.vote.score : -1e9;
+  rows.sort((a, b) => sc(b) - sc(a));   // highest score first; no-vote sinks
+  const opts = ["all"].concat(d.prisms || []).map(p =>
+    `<option value="${esc(p)}"${p === candsPrism ? " selected" : ""}>`
+    + esc(p === "all" ? t("cands.all") : p) + `</option>`).join("");
+  const body = rows.map(c => {
+    const v = c.vote;
+    const ier = v ? `${fmt(v.impact)}·${fmt(v.effort)}·${fmt(v.risk)}` : "—";
+    const keep = v && v.keep != null ? Math.round(v.keep * 100) + "%" : "—";
+    const status = c.selected
+      ? `<span class="cand-badge sel">${esc(t("cands.selected"))}</span>`
+      : (c.featId ? `<span class="cand-badge top">top-K</span>`
+                  : `<span class="cand-badge drop">${esc(t("cands.dropped"))}</span>`);
+    return `<tr>
+      <td><code>${esc(c.id)}</code> ${esc(c.title || "")}<span class="cand-prism">${esc(c.prism || "")}</span></td>
+      <td class="num">${fmt(v && v.score)}</td>
+      <td class="num">${keep}</td>
+      <td class="num">${ier}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join("");
+  root.innerHTML = `
+    <div class="cands-head">
+      <span class="title">${esc(t("cands.heading"))} <b>${d.candidates.length}</b></span>
+      <span class="grow"></span>
+      <label>${esc(t("cands.filterPrism"))}: <select id="cands-prism">${opts}</select></label>
+    </div>
+    <table class="cands-tbl"><thead><tr>
+      <th>${esc(t("cands.colCand"))}</th><th class="num">${esc(t("cands.colScore"))}</th>
+      <th class="num">${esc(t("cands.colKeep"))}</th><th class="num">${esc(t("cands.colIER"))}</th>
+      <th>${esc(t("cands.colStatus"))}</th>
+    </tr></thead><tbody>${body}</tbody></table>`;
+  const sel = $("#cands-prism");
+  if(sel) sel.onchange = () => { candsPrism = sel.value; renderCandidates(); };
 }
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => switchTab(t.dataset.tab));
 // ARIA tabs keyboard nav: Arrow/Home/End move focus + activate (selection follows
