@@ -1608,9 +1608,13 @@ function md(src){
     .replace(/\*([^*\s][^*]*)\*/g, "<em>$1</em>")
     .replace(/(^|[^_\w])_([^_\s][^_]*)_([^_\w]|$)/g, "$1<em>$2</em>$3")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, url) => {
-      const u = url.trim();
+      // Нормализуем URL так же, как браузер при резолве схемы: выкидываем ВСЕ
+      // control/whitespace-символы (\x00-\x20). Иначе `java\tscript:` минует regex
+      // схемы (sch=null -> safe=true), а браузер вырежет \t и исполнит javascript:.
+      const u = url.replace(/[\u0000-\u0020]/g, "");
       const sch = /^([a-z][a-z0-9+.\-]*):/i.exec(u);
-      // разрешаем только http(s)/mailto среди схем; без схемы — кроме protocol-relative //host
+      // allowlist: разрешаем только http(s)/mailto среди схем; без схемы — кроме
+      // protocol-relative //host; всё прочее (javascript:/data:/vbscript:/…) -> "#".
       const safe = sch ? /^(https?|mailto)$/i.test(sch[1]) : !u.startsWith("//");
       return '<a href="' + (safe ? u : "#") + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
     });
