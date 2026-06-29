@@ -285,6 +285,7 @@
   .unsent-hint[hidden] { display: none; }
   #btn-submit.attn { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
   /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
+  .bulk-pick:not([hidden]) { display: flex; gap: 8px; }
   .dispatch-chip { font-size: 13px; color: var(--muted); }
   .dispatch-chip b { color: var(--ink); }
   /* dispatch preview (feat-9): ranked list of what Approve will queue */
@@ -769,6 +770,10 @@
     <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
     <div class="queue">Edit queue: <b id="queue-count">0</b></div>
     <div class="unsent-hint" id="unsent-hint" role="status" aria-live="polite" hidden></div>
+    <div class="bulk-pick" id="bulk-pick" hidden>
+      <button class="ghost" id="btn-mark-all" type="button">Mark all Do</button>
+      <button class="ghost" id="btn-clear-all" type="button">Clear all</button>
+    </div>
     <div class="dispatch-chip" id="dispatch-chip" hidden><b id="dispatch-done">0</b> of <b id="dispatch-total">0</b> <span class="dispatch-lbl">marked Do</span></div>
     <button class="ghost" id="btn-approve">Approve plan</button>
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
@@ -1077,6 +1082,10 @@ const STR = {
     "actionbar.dispatchCount": "marked Do",
     "actionbar.approve": "Approve plan",
     "actionbar.submit": "Send to agent for revision",
+    "actionbar.markAll": "Mark all Do",
+    "actionbar.clearAll": "Clear all",
+    "toast.bulkMarked": "All features marked Do",
+    "toast.bulkCleared": "Selection cleared",
     "dispatch.preview.title": "Approve will dispatch — features:",
     "chat.title": "Chat with agent",
     "chat.subtitle": "steering at checkpoints",
@@ -1318,6 +1327,10 @@ const STR = {
     "actionbar.dispatchCount": "отмечено Делаем",
     "actionbar.approve": "Утвердить план",
     "actionbar.submit": "Отправить агенту на доработку",
+    "actionbar.markAll": "Делаем все",
+    "actionbar.clearAll": "Снять все",
+    "toast.bulkMarked": "Все фичи отмечены «Делаем»",
+    "toast.bulkCleared": "Выбор снят",
     "dispatch.preview.title": "Утвердить — уйдут в диспетч фичи:",
     "chat.title": "Чат с агентом",
     "chat.subtitle": "стиринг на чекпоинтах",
@@ -1524,6 +1537,8 @@ function applyStaticStrings(){
   set(".actionbar-hint", t("actionbar.hint"));
   set("#btn-approve", t("actionbar.approve"));
   set("#btn-submit", t("actionbar.submit"));
+  set("#btn-mark-all", t("actionbar.markAll"));
+  set("#btn-clear-all", t("actionbar.clearAll"));
   set("#chat-text", t("chat.inputPlaceholder"), "placeholder");
   set("#chat-send", t("chat.send"));
   set("#chat-close", t("chat.close"), "title");
@@ -2317,6 +2332,7 @@ function updateQueue(){
   const sb = $("#btn-submit"); if(sb) sb.classList.toggle("attn", unsent);
   updateDispatchChip();
   renderDispatchPreview();
+  updateBulkButtons();
 }
 // «N из M отмечено Делаем»: M — choice-вопросы по plan-блокам (feat-N), N — из них помеченные «делаем/do».
 function updateDispatchChip(){
@@ -2361,6 +2377,36 @@ function markedFeatures(){
     if(isDo) picked.push({ id: b.id, title: b.title || q.text || b.id });
   }
   return picked;   // planBlocks order = ranked feat-1…feat-K
+}
+// Bulk pick (improve SELECT gate): the feat-K choice questions bound to plan blocks.
+function featChoiceQuestions(){
+  const blocks = (lastData && lastData.planBlocks) || [];
+  return ((lastData && lastData.questions) || []).filter(q =>
+    q.kind === "choice" && /^feat-\d+$/.test(q.id) && blocks.some(b => b.id === q.id));
+}
+// Mark every feature «Делаем» (options[0]) or clear all feature picks, in one draft round-trip.
+async function bulkPick(doMark){
+  const qs = featChoiceQuestions();
+  if(!qs.length) return;
+  if(doMark){
+    for(const q of qs){
+      const opt = (q.options && q.options[0]) || "";
+      if(opt) await api("/draft", { method:"POST", body: JSON.stringify({ slug:SLUG, kind:"answer", questionId:q.id, text: opt }) });
+    }
+  } else {
+    const ids = new Set(qs.map(q => q.id));
+    for(const it of draftItems.filter(i => i.kind === "answer" && ids.has(i.questionId))){
+      await api("/draft/remove", { method:"POST", body: JSON.stringify({ slug:SLUG, id: it.id }) });
+    }
+  }
+  await loadDraft();
+  toast(t(doMark ? "toast.bulkMarked" : "toast.bulkCleared"));
+}
+// Show the bulk-pick buttons only at the improve SELECT gate (feat-K choices present, parked).
+function updateBulkButtons(){
+  const wrap = $("#bulk-pick"); if(!wrap) return;
+  const gate = lastData && lastData.status === "awaiting-batch";
+  wrap.hidden = !(gate && featChoiceQuestions().length > 0);
 }
 // Preview (feat-9): after Submit froze the picks (draftItems cleared) and before
 // Approve, list exactly what will be dispatched, in ranked order — so the human
@@ -2529,6 +2575,8 @@ async function sendAnchoredReply(anchor, text){
 }
 
 // action bar
+$("#btn-mark-all").onclick = () => bulkPick(true);
+$("#btn-clear-all").onclick = () => bulkPick(false);
 $("#btn-submit").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(!draftItems.length) return;
