@@ -4,6 +4,46 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-29 — improve-plugin (аудит-прогон: рой→консенсус→выбор→диспетч; 19 фич в очередь)
+- **Что:** запущен `/improve` со слугом `improve-plugin` под запрос «просканировать **весь плагин** и
+  найти ~20 крутых улучшений». Эта запись фиксирует **сам аудит-прогон** — прод-код здесь **не**
+  меняется; правки диспетчатся как очередь `/feature` и приземляются в своих прогонах.
+  - **SCOUT:** 7 read-only `wf-improver`-скаутов (по призме: UX/продукт, производительность,
+    надёжность, тех-долг, DX, функциональные пробелы, доступность+безопасность) дали **47 сырых
+    находок**.
+  - **CONSENSUS:** оркестратор консолидировал+дедупнул до **40 кандидатов** (`candidates.md`); 3 voter'а
+    `wf-improver` независимо оценили весь список; оркестратор агрегировал **детерминированно** по
+    формуле ADR-0012 с **дефолтными весами `w_e=w_r=0.5`** и confidence-множителем `conf/3`
+    (`votes/aggregate.md`) — поток «панель + арифметика».
+  - **SELECT GATE:** показан топ-**20**. Человек выбрал **19 = «Делаем»** (пропустил `feat-10`
+    «drain summary/notification»); режим дренажа = **Автономно**.
+  - **DISPATCH:** дописан `.workflow/dispatch-queue.json` айтемами **n=18…36** (предыдущие 17 айтемов
+    `improve-platform-vision` уже `done`; очередь `autonomous: true`, `mode: sequential-feature`,
+    `baseCommit 270dacc`, `improveSlug improve-plugin`) — **19 pending** + 19 брифов под
+    `.workflow/tasks/<slug>/brief.md` (ADR-0014 последовательная очередь; ADR-0019 автономный дренаж).
+    `/improve` **сам** `/feature` не запускает (чистота контекста).
+- **19 фич в очереди (по рангу, по темам):**
+  - **Security/безопасность:** `markdown-sanitizer-controlchar-xss` (1), `confined-path-guard-dedup` (3),
+    `csrf-origin-host-guard` (4).
+  - **A11y/доступность:** `dialog-focus-trap-aria-modal` (19).
+  - **Производительность:** `hub-queue-etag` (7), `changes-tab-sig-gate` (14),
+    `memo-transcript-messages` (15).
+  - **Надёжность:** `store-writer-durability-fsync` (6).
+  - **Тех-долг:** `dedup-server-aipf-helpers` (8), `shared-skill-dashboard-contract` (11),
+    `tests-conftest-syspath-dedup` (13).
+  - **DX:** `debug-command` (9), `makefile-devpy-check` (16).
+  - **UX:** `gate-bulk-select-features` (2), `gate-submit-approve-stepper` (5),
+    `improve-candidates-transparency` (12), `gate-rank-chip` (17).
+  - **Функциональные пробелы:** `hub-queue-control-ops` (10), `hub-cross-run-cost` (18).
+- **Почему здесь нет нового ADR:** механика рой/консенсус/выбор/очередь/автономный-дренаж уже покрыта
+  ADR-0012/0013/0014/0019 — прогон переиспользует их без изменений (на сей раз **дефолтные веса**
+  `w_e=w_r=0.5`, без brief-knob прошлого прогона). Технические ADR для queued-но-непостроенных фич
+  (markdown-санитайзер, CSRF-гард, `/debug`, fsync-durability, …) пишут **те** диспетченные прогоны
+  `/feature`, когда реализуют их — не эта запись. Существующий untracked `ADR-0021`-файл не тронут.
+- **Объём этого прогона:** read-only аудит + запись очереди + эта запись в БЗ. **Прод-код здесь не
+  менялся.** Артефакты: `.workflow/tasks/improve-plugin/` (`brief.md`, `candidates.md`,
+  `votes/aggregate.md`).
+
 ## 2026-06-28 — release: бамп плагина 0.23.1 → 0.24.0 (батч improve-platform-vision)
 - **Что:** `.claude-plugin/plugin.json` version 0.23.1 → **0.24.0**; описания в `plugin.json` и
   `marketplace.json` обновлены под новую поверхность (вкладка «Артефакты» + команды `/design`, `/test`,
