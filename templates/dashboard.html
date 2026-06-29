@@ -207,6 +207,11 @@
   .block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .block-title { font-weight: 600; flex: 1; }
   .block-id { font: 11px var(--font-mono); color: var(--muted2); }
+  /* structured rank chip (improve gate): score · agreement · imp·eff·risk */
+  .rank-chip { font: 11px var(--font-mono); display: inline-flex; gap: 6px; align-items: center;
+    padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--muted); white-space: nowrap; }
+  .rank-chip b { color: var(--ink); font-weight: 700; }
+  .rank-chip .rc-ier { color: var(--muted2); }
   ::selection { background: var(--sel); }
   textarea { width: 100%; min-height: 56px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; font: 13px var(--font-sans); background: var(--bg); color: var(--ink); }
   textarea::placeholder { color: var(--muted2); }
@@ -1125,6 +1130,7 @@ const STR = {
     "toast.bulkCleared": "Selection cleared",
     "toast.approveCancelled": "Dispatch cancelled",
     "dispatch.preview.title": "Approve will dispatch — features:",
+    "rank.title": "panel rank: score · agreement · impact·effort·risk",
     "chat.title": "Chat with agent",
     "chat.subtitle": "steering at checkpoints",
     "chat.close": "Close",
@@ -1384,6 +1390,7 @@ const STR = {
     "toast.bulkCleared": "Выбор снят",
     "toast.approveCancelled": "Запуск отменён",
     "dispatch.preview.title": "Утвердить — уйдут в диспетч фичи:",
+    "rank.title": "ранг панели: score · согласие · impact·effort·risk",
     "chat.title": "Чат с агентом",
     "chat.subtitle": "стиринг на чекпоинтах",
     "chat.close": "Закрыть",
@@ -1954,6 +1961,22 @@ function notifyAwaiting(data){
   }
 }
 
+// Structured rank chip for a plan block (improve gate): renders the optional
+// planBlocks[].rank {score, agreement, impact, effort, risk} as a compact pill.
+// Returns "" when absent, so old dashboard.json (rank in the markdown body) and
+// non-improve gates render unchanged.
+function rankChip(r){
+  if(!r || typeof r !== "object") return "";
+  const f2 = n => (n == null ? "—" : Number(n).toFixed(2));
+  const f1 = n => (n == null ? "—" : Number(n).toFixed(1));
+  let ag = "—";
+  if(r.agreement != null){ const a = Number(r.agreement); ag = Math.round(a <= 1 ? a * 100 : a) + "%"; }
+  const ier = [r.impact, r.effort, r.risk].map(f1).join("·");
+  return `<span class="rank-chip" title="${esc(t("rank.title"))}">`
+    + `<b>${esc(f2(r.score))}</b> <span class="rc-ag">${esc(ag)}</span>`
+    + ` <span class="rc-ier">${esc(ier)}</span></span>`;
+}
+
 function render(data, replies){
   lastData = data; lastReplies = replies;
   const slugEl = $("#slug"); if(slugEl) slugEl.textContent = data.slug || SLUG || "";
@@ -2009,7 +2032,7 @@ function render(data, replies){
         : "";
       b += `<div class="block ${has?'has-draft':''}" data-block="${esc(blk.id)}" data-anchor="${esc(blk.id)}">
         <div class="block-head"><span class="block-title">${esc(blk.title||"")}</span>
-          <span class="block-id">${esc(blk.id)}</span></div>
+          ${rankChip(blk.rank)}<span class="block-id">${esc(blk.id)}</span></div>
         <div class="md block-body">${md(blk.body||"")}</div>
         ${inline}
         ${regionFooter(blk.id, repliesByBlock, threadsByAnchor)}
