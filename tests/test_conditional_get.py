@@ -69,9 +69,11 @@ class _GetHandler:
     do_GET = server.Handler.do_GET
     _send = server.Handler._send
     _json = server.Handler._json
+    _json_conditional = server.Handler._json_conditional
     _file_etag = server.Handler._file_etag
     _serve_task_file = server.Handler._serve_task_file
     _chat_get = server.Handler._chat_get
+    _queue = server.Handler._queue
 
 
 class ConditionalGetBase(unittest.TestCase):
@@ -199,6 +201,71 @@ class ChatIncrementalTest(ConditionalGetBase):
         self.assertEqual(len(td["messages"]), 1)
         self.assertEqual(td["messages"][0]["text"], "three")
         self.assertGreater(td["nextOffset"], off)
+
+
+class JsonConditionalHelperTest(unittest.TestCase):
+    """`_json_conditional` (feat-7): content-hash weak ETag + 304 on a matching
+    If-None-Match, fresh body + new ETag when the value changes."""
+
+    def test_first_call_has_etag_and_body(self):
+        h = _GetHandler(None)
+        h._json_conditional({"a": 1, "b": "две"})
+        self.assertEqual(h.status, 200)
+        self.assertTrue(h.resp_headers.get("ETag"))
+        self.assertEqual(h.resp_headers.get("Cache-Control"), "no-cache")
+        self.assertEqual(json.loads(h.body.decode("utf-8")), {"a": 1, "b": "две"})
+
+    def test_matching_if_none_match_is_304_no_body(self):
+        first = _GetHandler(None)
+        first._json_conditional({"a": 1})
+        etag = first.resp_headers["ETag"]
+        second = _GetHandler(None, if_none_match=etag)
+        second._json_conditional({"a": 1})
+        self.assertEqual(second.status, 304)
+        self.assertEqual(second.body, b"")
+        self.assertEqual(second.resp_headers.get("ETag"), etag)
+
+    def test_changed_value_yields_new_etag_and_body(self):
+        first = _GetHandler(None)
+        first._json_conditional({"a": 1})
+        etag = first.resp_headers["ETag"]
+        again = _GetHandler(None, if_none_match=etag)
+        again._json_conditional({"a": 2})
+        self.assertEqual(again.status, 200)
+        self.assertNotEqual(again.resp_headers.get("ETag"), etag)
+        self.assertTrue(again.body)
+
+
+class QueueJsonConditionalGetTest(ConditionalGetBase):
+    """/queue.json now revalidates (feat-7): same value -> 304, changed -> new body.
+    (/hub.json shares the exact same `_json_conditional` path.)"""
+
+    def _write_queue(self, obj):
+        self.ws.write_json(os.path.join(self.ws.base, "dispatch-queue.json"), obj)
+
+    def test_queue_304_on_unchanged(self):
+        self._write_queue({"version": 1, "items": [{"n": 1, "slug": "a"}]})
+        first = _GetHandler(self.ws, path="/queue.json")
+        first.do_GET()
+        self.assertEqual(first.status, 200)
+        etag = first.resp_headers.get("ETag")
+        self.assertTrue(etag)
+        second = _GetHandler(self.ws, path="/queue.json", if_none_match=etag)
+        second.do_GET()
+        self.assertEqual(second.status, 304)
+        self.assertEqual(second.body, b"")
+
+    def test_queue_change_yields_new_etag(self):
+        self._write_queue({"version": 1, "items": [{"n": 1, "slug": "a"}]})
+        first = _GetHandler(self.ws, path="/queue.json")
+        first.do_GET()
+        etag = first.resp_headers["ETag"]
+        self._write_queue({"version": 1, "items": [{"n": 1, "slug": "a"},
+                                                    {"n": 2, "slug": "b"}]})
+        again = _GetHandler(self.ws, path="/queue.json", if_none_match=etag)
+        again.do_GET()
+        self.assertEqual(again.status, 200)
+        self.assertNotEqual(again.resp_headers.get("ETag"), etag)
 
 
 class FileEtagHelperTest(ConditionalGetBase):

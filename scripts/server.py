@@ -337,6 +337,18 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
+    def _json_conditional(self, obj):
+        """200 JSON with a content-hash weak ETag + no-cache, or a bodiless 304
+        when the client's If-None-Match still matches. Lets the 3s hub/queue
+        polls revalidate and skip re-shipping an unchanged (and growing)
+        aggregate — same conditional-GET pattern as /data and /settings.json."""
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        etag = 'W/"%s"' % hashlib.sha1(body).hexdigest()[:16]
+        headers = {"Cache-Control": "no-cache", "ETag": etag}
+        if self.headers.get("If-None-Match") == etag:
+            return self._send(304, b"", extra_headers=headers)
+        return self._send(200, body, extra_headers=headers)
+
     def _read_body(self):
         """Read+parse a POST body, or send an error and return None.
 
@@ -499,12 +511,12 @@ class Handler(BaseHTTPRequestHandler):
             data = ws.read_json(ws.task_file(slug, "draft.json"), {"items": []})
             return self._json(200, data)
         if path == "/hub.json":           # cross-task aggregate (no slug)
-            return self._json(200, self._hub())
+            return self._json_conditional(self._hub())
         if path == "/hub":                # the hub page (no slug)
             return self._send(200, HUB_PAGE.encode("utf-8"),
                               "text/html; charset=utf-8")
         if path == "/queue.json":         # /improve dispatch queue (no slug)
-            return self._json(200, self._queue())
+            return self._json_conditional(self._queue())
         if path == "/settings.json":      # global UI language (no slug)
             # Value-based conditional GET (feat-10): the body is fully determined
             # by `lang`, so a weak ETag lets the 3s poll take a bodiless 304
