@@ -40,6 +40,7 @@ explicit approval gate (the plan) and an always-available comment channel.
   project knowledge base in `docs/knowledge/` (the flywheel — each task makes the next faster).
 
 Read these reference files when you reach the relevant part — don't load them all upfront:
+- `../_shared/dashboard-contract.md` — the **canonical invariant contract** (companion server, dashboard.json schema + endpoints, the Submit→Approve gate, shared `state.json` fields) that the per-skill `feedback-loop.md` / `dashboard-guide.md` / `state-schema.md` build on — change the shared core there.
 - `phases.md` — exactly what to do in each phase and which sub-agent to spawn.
 - `feedback-loop.md` — starting the companion server and consuming batched feedback at checkpoints.
 - `dashboard-guide.md` — the `dashboard.json` render model and how to keep the page current.

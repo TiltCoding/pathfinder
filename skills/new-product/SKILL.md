@@ -45,6 +45,7 @@ product one vertical slice (phase) at a time, gated by frozen tests and an LLM j
   durable, committed knowledge base in `docs/knowledge/` (grown by the documenter at SHIP).
 
 Read these reference files when you reach the relevant part — don't load them all upfront:
+- `../_shared/dashboard-contract.md` — the **canonical invariant contract** (companion server, dashboard.json schema + endpoints, the Submit→Approve gate, shared `state.json` fields) that the per-skill `feedback-loop.md` / `dashboard-guide.md` / `state-schema.md` build on — change the shared core there.
 - `phases.md` — exactly what to do in each stage and which sub-agent (on which model) to spawn.
 - `loop.md` — the evolutionary build loop: tests-first, judge rubric, the `decision()` rule, refine.
 - `feedback-loop.md` — the companion server, the two gate texts, and consuming batched feedback.

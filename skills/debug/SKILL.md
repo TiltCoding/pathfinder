@@ -58,6 +58,7 @@ read-only; `/debug` **finds and fixes one broken thing**, root-cause-first.
   the fix → verify. There are no direct agent-to-agent channels.
 
 Read these reference files when you reach the relevant part — don't load them all upfront:
+- `../_shared/dashboard-contract.md` — the **canonical invariant contract** (companion server, dashboard.json schema + endpoints, the Submit→Approve gate, shared `state.json` fields) that the per-skill `feedback-loop.md` / `dashboard-guide.md` / `state-schema.md` build on — change the shared core there.
 - `phases.md` — exactly what to do in each stage and which sub-agent to spawn.
 - `feedback-loop.md` — starting the companion server and consuming batched feedback at the gate.
 - `dashboard-guide.md` — the `dashboard.json` render model and the gate contract.

@@ -49,6 +49,7 @@ winners for a sequential `/feature` drain — it never edits code itself.
   `/feature`. There are no direct agent-to-agent channels.
 
 Read these reference files when you reach the relevant part — don't load them all upfront:
+- `../_shared/dashboard-contract.md` — the **canonical invariant contract** (companion server, dashboard.json schema + endpoints, the Submit→Approve gate, shared `state.json` fields) that the per-skill `feedback-loop.md` / `dashboard-guide.md` / `state-schema.md` build on — change the shared core there.
 - `phases.md` — exactly what to do in each stage and which sub-agent to spawn.
 - `consensus.md` — the swarm → consolidation/dedup → voting panel → deterministic aggregation → dispatch
   mechanics (the core of CONSENSUS and DISPATCH).
