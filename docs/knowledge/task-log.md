@@ -4,6 +4,45 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-06-29 — improve-plugin DRAIN ЗАВЕРШЁН (все 19 фич приземлены на `main`; очередь 36/36)
+- **Что:** **автономный** (fast-lane, без per-feature дашборда) дренаж очереди `improve-plugin` через
+  `/feature` **завершён** — все **19** queued-фич реализованы, протестированы и запушены на `main`,
+  **по одной за коммит** в свежем контексте (ADR-0014 последовательная очередь; ADR-0019 автономный
+  дренаж). `.workflow/dispatch-queue.json` теперь **36/36 done** (17 `improve-platform-vision` + 19
+  `improve-plugin`). Эта запись — **durable-журнал** прогона: в fast-lane дашборда не было, поэтому
+  запись здесь и есть запись о приземлении.
+- **19 фич (коммит → слуг, по темам):**
+  - **Security/безопасность:** `markdown-sanitizer-controlchar-xss` (`cd9a651` — блок `javascript:`-XSS
+    через control-char в URL markdown), `confined-path-guard-dedup` (`9bda480` — общий
+    `_aipf.confined_path` traversal-гард, дедуп 6 копий), `csrf-origin-host-guard` (`0251bbb` —
+    CSRF/DNS-rebinding-гард на state-changing POST-роутах).
+  - **A11y/доступность:** `dialog-focus-trap-aria-modal` (`38385ed` — focus-trap + `aria-modal` для
+    чат-панели и selection-popover).
+  - **Производительность:** `hub-queue-etag` (`828221c` — conditional GET/ETag для `/hub.json` и
+    `/queue.json`), `changes-tab-sig-gate` (`125ed27` — sig-гард ре-рендера вкладки «Изменения»),
+    `memo-transcript-messages` (`4543d98` — мемоизация `parse_transcript_messages` по `path,mtime,size`).
+  - **Надёжность:** `store-writer-durability-fsync` (`0485e2c` — fsync перед replace + lock-сериализованный
+    `append_jsonl`).
+  - **Тех-долг:** `dedup-server-aipf-helpers` (`81f653b` — единый источник `now_iso`/`safe_slug`/`SLUG_RE`
+    + `_aipf.git`), `shared-skill-dashboard-contract` (`5ef0c73` — канонический
+    `skills/_shared/dashboard-contract.md` + указатели), `tests-conftest-syspath-dedup` (`24fbdf0` —
+    центральный `tests/__init__.py`-bootstrap; `discover -t .`; `dev.py`/`ci.yml` обновлены).
+  - **DX:** `debug-command` (`0de7853` — новый скилл `/debug`: reproduce→root-cause→минимальный
+    fix+регрессия), `makefile-devpy-check` (`a0170b9` — `Makefile` делегирует в `dev.py` + `dev.py check`).
+  - **UX:** `gate-bulk-select-features` (`1e65285` — «Mark all Do»/«Clear all» на improve SELECT GATE),
+    `gate-submit-approve-stepper` (`38acdff` — степпер Submit→Approve + подтверждение до диспетча),
+    `improve-candidates-transparency` (`6e0e89e` — `GET /improve/candidates` + вкладка «Candidates»),
+    `gate-rank-chip` (`ed602ae` — структурный `planBlocks[].rank`-чип на карточках improve-гейта).
+  - **Функциональные пробелы:** `hub-queue-control-ops` (`284329a` — `queue.apply_op` + `POST /queue/op`
+    + кнопки skip/retry/cancel/reorder в хабе), `hub-cross-run-cost` (`130c111` — opt-in `GET /hub/cost`
+    кросс-ран roll-up стоимости).
+- **Почему нет новых ADR в этой записи:** каждая фича уже несёт свой коммит и (где надо) свой ADR в
+  собственном диспетченном прогоне; механика дренажа покрыта ADR-0012/0013/0014/0019. Кросс-сквозного
+  решения, требующего отдельного ADR на уровне drain-записи, нет. (Существующий untracked
+  `ADR-0021`-файл — из прошлого прогона, не тронут.)
+- **Связь с планом:** `.workflow/tasks/improve-plugin/` (`brief.md`, `candidates.md`, `votes/aggregate.md`)
+  + per-feature брифы `.workflow/tasks/<slug>/brief.md`; аудит-прогон — запись ниже.
+
 ## 2026-06-29 — improve-plugin (аудит-прогон: рой→консенсус→выбор→диспетч; 19 фич в очередь)
 - **Что:** запущен `/improve` со слугом `improve-plugin` под запрос «просканировать **весь плагин** и
   найти ~20 крутых улучшений». Эта запись фиксирует **сам аудит-прогон** — прод-код здесь **не**
