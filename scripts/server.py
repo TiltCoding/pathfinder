@@ -50,6 +50,15 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _aipf  # noqa: E402  (shared helpers: layout, Langfuse forwarding)
+# Load the project's dispatch-queue manager under a unique name so it never
+# shadows the stdlib `queue` module (scripts/ is on sys.path[0]). The server's
+# POST /queue/op delegates queue mutation to its atomic, schema-validated apply_op.
+import importlib.util as _ilu  # noqa: E402
+_qspec = _ilu.spec_from_file_location(
+    "aipf_dispatch_queue",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "queue.py"))
+aipf_queue = _ilu.module_from_spec(_qspec)
+_qspec.loader.exec_module(aipf_queue)
 
 # Single source of truth in _aipf — these were byte-identical copies here, and a
 # drift in the slug validator (a security boundary) or the timestamp format would
@@ -586,6 +595,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._attach(slug, body)
         if path == "/telemetry":
             return self._telemetry(slug, body)
+        if path == "/queue/op":
+            return self._queue_op(slug, body)
         return self._json(404, {"error": "not found"})
 
     def _redirect(self, location):
@@ -1158,6 +1169,21 @@ class Handler(BaseHTTPRequestHandler):
         not to weigh /hub.json down. done/total are computed client-side."""
         path = os.path.join(self.workspace.base, "dispatch-queue.json")
         return self.workspace.read_json(path, {"items": []})
+
+    def _queue_op(self, slug, body):
+        """POST /queue/op — apply a hub queue-control op (skip|cancel|retry|
+        reorder) to one item, delegating to the atomic, schema-validated
+        aipf_queue.apply_op. The op enum and the legal-transition / corrupt-queue
+        guards live there; here we just validate the surface and map the result
+        to 200/400. (slug is the already-validated item slug from do_POST.)"""
+        op = body.get("op")
+        if op not in ("skip", "cancel", "retry", "reorder"):
+            return self._json(400, {"ok": False, "error": "bad op"})
+        path = os.path.join(self.workspace.base, "dispatch-queue.json")
+        ok, err = aipf_queue.apply_op(path, slug, op, body.get("dir"))
+        if not ok:
+            return self._json(400, {"ok": False, "error": err})
+        return self._json(200, {"ok": True})
 
     def _build_hub(self, now=None):
         """Walk _list_tasks(), build a run card per task from state.json /
@@ -2051,6 +2077,12 @@ HUB_PAGE = r"""<!doctype html>
   .qrow .prism { font:11px var(--font-mono); color:var(--muted2); width:116px; flex:none;
     text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .qrow .run-status { width:50px; flex:none; text-align:right; }
+  .qrow .q-act { flex:none; display:flex; gap:4px; align-items:center; }
+  .qrow .qop { font:600 11px var(--font-sans); padding:3px 7px; border-radius:6px; cursor:pointer;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line); }
+  .qrow .qop:hover { background:var(--bg); }
+  .qrow .qop:disabled { opacity:.5; cursor:default; }
+  .qrow .qop.qop-err { border-color:var(--err); color:var(--err); }
   .qrow.failed { background:var(--err-soft); }
   .qrow.skipped { background:var(--awaiting-soft); }
   button.copy { font:600 11px var(--font-sans); padding:7px 11px; border-radius:7px; cursor:pointer;
@@ -2210,6 +2242,12 @@ const STR = {
     // /improve dispatch queue
     "hubq.title": "/improve queue",
     "hubq.copied": "Command copied",
+    "hubq.retry": "Retry",
+    "hubq.skip": "Skip",
+    "hubq.cancel": "Cancel",
+    "hubq.up": "Move up",
+    "hubq.down": "Move down",
+    "hubq.opFailed": "Queue op failed",
     "hubq.copyDrain": "📋 Copy drain command",
     "hubq.source": "source",
     "hubq.remaining": "remaining",        // «remaining N»
@@ -2287,6 +2325,12 @@ const STR = {
     "hub.months": "янв,фев,мар,апр,мая,июн,июл,авг,сен,окт,ноя,дек",
     "hubq.title": "Очередь /improve",
     "hubq.copied": "Команда скопирована",
+    "hubq.retry": "Повторить",
+    "hubq.skip": "Пропустить",
+    "hubq.cancel": "Отменить",
+    "hubq.up": "Выше",
+    "hubq.down": "Ниже",
+    "hubq.opFailed": "Не удалось изменить очередь",
     "hubq.copyDrain": "📋 Копировать команду дренажа",
     "hubq.source": "источник",
     "hubq.remaining": "осталось",
@@ -2846,7 +2890,53 @@ function queueRow(it){
     <span class="ttl">${esc(it.title)}</span>
     <span class="prism">${prism}</span>
     ${status}
+    <span class="q-act">${queueActions(it)}</span>
   </div>`;
+}
+// Control buttons per row: retry a failed/skipped item, skip/cancel or reorder a
+// pending one. Each posts to /queue/op via the delegated handler (wireQueueActions).
+function queueActions(it){
+  const slug = it.slug ? esc(it.slug) : "";
+  if(!slug) return "";
+  const b = (op, dir, label, title) =>
+    `<button class="qop" data-qop="${op}" data-qslug="${slug}"`
+    + (dir ? ` data-qdir="${dir}"` : "")
+    + ` title="${esc(title)}">${esc(label)}</button>`;
+  if(it.status === "failed")
+    return b("retry", "", t("hubq.retry"), t("hubq.retry")) + b("skip", "", t("hubq.skip"), t("hubq.skip"));
+  if(it.status === "skipped")
+    return b("retry", "", t("hubq.retry"), t("hubq.retry"));
+  if(it.status === "pending")
+    return b("reorder", "up", "↑", t("hubq.up")) + b("reorder", "down", "↓", t("hubq.down"))
+         + b("cancel", "", t("hubq.cancel"), t("hubq.cancel"));
+  return "";   // in-progress / done: no actions
+}
+// Bound once on the persistent #queue-root (renderQueue refills it, never replaces it).
+function wireQueueActions(){
+  const root = document.getElementById("queue-root");
+  if(!root || root._qopWired) return;
+  root._qopWired = true;
+  root.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button.qop");
+    if(!btn) return;
+    const body = { slug: btn.getAttribute("data-qslug"), op: btn.getAttribute("data-qop") };
+    const dir = btn.getAttribute("data-qdir");
+    if(dir) body.dir = dir;
+    btn.disabled = true;
+    try {
+      const res = await fetch("/queue/op", { method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+      const r = await res.json().catch(() => ({}));
+      if(!res.ok || (r && r.ok === false)){
+        btn.disabled = false;
+        btn.title = (r && r.error) ? r.error : t("hubq.opFailed");
+        btn.classList.add("qop-err");
+        setTimeout(() => btn.classList.remove("qop-err"), 1500);
+        return;
+      }
+      tickQueue();   // refresh the queue immediately on success
+    } catch (err) { btn.disabled = false; }
+  });
 }
 function renderQueue(data){
   const root = document.getElementById("queue-root");
@@ -2875,6 +2965,7 @@ function renderQueue(data){
     <div class="listcard"><div class="topbar"></div>${items.map(queueRow).join("")}</div>`;
   const btn = document.getElementById("queue-copy");
   if(btn) btn.addEventListener("click", copyDrainCmd);
+  wireQueueActions();
 }
 
 let lastQueue = "";

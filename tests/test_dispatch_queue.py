@@ -87,6 +87,96 @@ class ContractTest(unittest.TestCase):
                                     "baseCommit": "z", "items": {}}))
 
 
+class ApplyOpTest(unittest.TestCase):
+    """apply_op (the hub /queue/op delegate): legal transitions, reorder, and
+    refusal of illegal ops / missing queue — always leaving a schema-valid queue."""
+
+    def _write(self, d, items, **over):
+        base = os.path.join(d, ".workflow")
+        os.makedirs(base, exist_ok=True)
+        qp = q.queue_path(d)
+        q._save(qp, _queue(items, **over))
+        return qp
+
+    def test_skip_pending(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a"), _item(2, "b")])
+            ok, err = q.apply_op(qp, "a", "skip")
+            self.assertTrue(ok, err)
+            data, _ = q.load_queue(qp)
+            self.assertEqual(q._find_item(data, "a")["status"], "skipped")
+            self.assertEqual(q.validate(data), [])
+
+    def test_cancel_pending_is_skipped(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a")])
+            ok, err = q.apply_op(qp, "a", "cancel")
+            self.assertTrue(ok, err)
+            data, _ = q.load_queue(qp)
+            self.assertEqual(q._find_item(data, "a")["status"], "skipped")
+
+    def test_skip_done_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a", "done")])
+            ok, err = q.apply_op(qp, "a", "skip")
+            self.assertFalse(ok)
+            self.assertIn("done", err)
+
+    def test_retry_failed_to_pending(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            it = dict(_item(1, "a", "failed"), startedAt="x", doneAt="y", failReason="boom")
+            qp = self._write(d, [it])
+            ok, err = q.apply_op(qp, "a", "retry")
+            self.assertTrue(ok, err)
+            data, _ = q.load_queue(qp)
+            got = q._find_item(data, "a")
+            self.assertEqual(got["status"], "pending")
+            self.assertIsNone(got["startedAt"])
+            self.assertIsNone(got["doneAt"])
+
+    def test_retry_pending_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a")])
+            ok, err = q.apply_op(qp, "a", "retry")
+            self.assertFalse(ok)
+
+    def test_reorder_swaps_n_and_stays_dense(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a"), _item(2, "b"), _item(3, "c")])
+            ok, err = q.apply_op(qp, "c", "reorder", "up")
+            self.assertTrue(ok, err)
+            data, _ = q.load_queue(qp)
+            self.assertEqual(q._find_item(data, "c")["n"], 2)
+            self.assertEqual(q._find_item(data, "b")["n"], 3)
+            self.assertEqual(q.validate(data), [])   # still dense 1..3
+
+    def test_reorder_at_top_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a"), _item(2, "b")])
+            ok, err = q.apply_op(qp, "a", "reorder", "up")
+            self.assertFalse(ok)
+            self.assertIn("top", err)
+
+    def test_reorder_done_item_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a", "done"), _item(2, "b")])
+            ok, err = q.apply_op(qp, "a", "reorder", "down")
+            self.assertFalse(ok)
+
+    def test_unknown_slug_and_op_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = self._write(d, [_item(1, "a")])
+            self.assertFalse(q.apply_op(qp, "nope", "skip")[0])
+            self.assertFalse(q.apply_op(qp, "a", "frobnicate")[0])
+
+    def test_missing_queue_refused(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            qp = q.queue_path(d)   # never written
+            ok, err = q.apply_op(qp, "a", "skip")
+            self.assertFalse(ok)
+            self.assertIn("no dispatch queue", err)
+
+
 class QuarantineTest(unittest.TestCase):
     """A corrupt queue is moved aside (never silently treated as empty)."""
 

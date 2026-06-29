@@ -326,6 +326,72 @@ def cmd_skip(args):
     return _mark(args, "skipped")
 
 
+def apply_op(path, slug, op, direction=None):
+    """Apply a hub queue-control op atomically; returns (ok, error_or_None).
+
+    Importable (the server's POST /queue/op delegates here) so all queue mutation
+    goes through one atomic, schema-validated path. Ops:
+      * skip / cancel -> 'skipped'  (only from pending|failed)
+      * retry         -> 'pending'  (only from failed|skipped; clears started/doneAt)
+      * reorder + direction 'up'|'down' -> swap n with the nearest pending neighbour
+    Refuses an illegal transition, an unknown slug, and a missing/corrupt queue
+    (never mutates one we couldn't read), and re-validates the schema (dense n)
+    before saving."""
+    data, status = load_queue(path)
+    if status == "missing":
+        return False, "no dispatch queue"
+    if status in ("corrupt", "malformed"):
+        return False, "queue is " + status
+    it = _find_item(data, slug)
+    if it is None:
+        return False, "unknown slug"
+    cur = it.get("status")
+    if op in ("skip", "cancel"):
+        if cur not in ("pending", "failed"):
+            return False, "cannot %s an item that is %s" % (op, cur)
+        it["status"] = "skipped"
+        it["doneAt"] = _aipf.now_iso()
+    elif op == "retry":
+        if cur not in ("failed", "skipped"):
+            return False, "cannot retry an item that is %s" % cur
+        it["status"] = "pending"
+        it["startedAt"] = None
+        it["doneAt"] = None
+    elif op == "reorder":
+        if direction not in ("up", "down"):
+            return False, "reorder needs direction up|down"
+        if cur != "pending":
+            return False, "can only reorder a pending item"
+        pend = sorted((x for x in data["items"] if x.get("status") == "pending"),
+                      key=lambda x: x.get("n", 0))
+        idx = next((i for i, x in enumerate(pend) if x is it), None)
+        swap = idx - 1 if direction == "up" else idx + 1
+        if idx is None or swap < 0 or swap >= len(pend):
+            return False, "already at the %s of the pending list" % (
+                "top" if direction == "up" else "bottom")
+        other = pend[swap]
+        it["n"], other["n"] = other["n"], it["n"]
+        # keep items[] in ranked order so the dense-n invariant (position == n-1) holds
+        data["items"].sort(key=lambda x: x.get("n", 0))
+    else:
+        return False, "unknown op %r" % (op,)
+    errs = validate(data)
+    if errs:
+        return False, "refusing: would break queue schema (%s)" % "; ".join(errs)
+    _save(path, data)
+    return True, None
+
+
+def cmd_op(args):
+    path = queue_path(args.root or find_root())
+    ok, err = apply_op(path, args.slug, args.op, getattr(args, "dir", None))
+    if not ok:
+        print("error: " + (err or "failed"), file=sys.stderr)
+        return 1
+    print("%s -> %s%s" % (args.slug, args.op, (" " + args.dir) if args.dir else ""))
+    return 0
+
+
 def cmd_status(args):
     path = queue_path(args.root or find_root())
     data, status = load_queue(path)
@@ -442,6 +508,13 @@ def build_parser():
     a.add_argument("--cand-id", default=None, dest="cand_id")
     a.add_argument("--prism", default=None)
     a.set_defaults(func=cmd_append)
+
+    op = sub.add_parser("op", help="apply a control op (skip|cancel|retry|reorder)")
+    op.add_argument("slug")
+    op.add_argument("op", choices=["skip", "cancel", "retry", "reorder"])
+    op.add_argument("--dir", choices=["up", "down"], default=None,
+                    help="direction for reorder")
+    op.set_defaults(func=cmd_op)
 
     v = sub.add_parser("validate", help="check the queue against the schema")
     v.set_defaults(func=cmd_validate)
