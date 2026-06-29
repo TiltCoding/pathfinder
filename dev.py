@@ -28,7 +28,9 @@ def cmd_test(args):
     base = [sys.executable, "-m", "unittest"]
     if args.targets:
         return _run(base + args.targets)
-    return _run(base + ["discover", "-s", "tests"])
+    # -t . (top-level dir = repo root) so `tests` is imported as a package and
+    # tests/__init__.py runs first, putting scripts/ on sys.path for every module.
+    return _run(base + ["discover", "-s", "tests", "-t", "."])
 
 
 def cmd_serve(args):

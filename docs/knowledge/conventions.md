@@ -55,9 +55,14 @@
 - **Оффлайн stdlib-`unittest`, без внешних зависимостей и сети.** Все тесты в `tests/*.py` —
   чистый `unittest`; ни git, ни HTTP, ни диск вне tempfile. Цель — покрывать «тихие критические
   пути» (маппинг событий, чтение хвоста, парсеры) детерминированно.
-- **`sys.path`-хак для импорта `scripts/`** в шапке каждого файла (одинаковый блок):
-  `_SCRIPTS = .../scripts; sys.path.insert(0, _SCRIPTS)` → `import _aipf` и т. п. Файлы работают и как
-  `python3 tests/test_x.py`, и как `python3 -m unittest tests.test_x`.
+- **Импорт `scripts/` — централизованно через `tests/__init__.py`.** Пакетный bootstrap кладёт
+  `scripts/` в `sys.path` один раз; новым тестам per-файловый `sys.path`-хак больше не нужен — просто
+  `import server` / `import _aipf` / `import queue`. Запуск: **`python dev.py test`** (или
+  `python -m unittest discover -s tests -t .` — флаг `-t .` обязателен, иначе discover импортирует
+  модули как top-level и минует `__init__.py`), либо точечно `python -m unittest tests.test_x` (форма
+  `-m unittest` тоже исполняет пакетный `__init__`). **Голый `python tests/test_x.py` больше НЕ
+  само-бутстрапит `scripts/`** — запускайте через `-m unittest`. Прим.: `conftest.py` здесь не годится —
+  его авто-загружает pytest, а CI/`dev.py test` работают на `unittest`.
 - **Изоляция через tempfile + cleanup.** Где нужен диск — `tempfile.mkdtemp()` + `addCleanup`
   (или `shutil.rmtree(..., ignore_errors=True)`). **Windows-флейк (важно):** голый
   `with tempfile.TemporaryDirectory() as d:` на Windows **КИДАЕТ** на очистке, если файл ещё держит

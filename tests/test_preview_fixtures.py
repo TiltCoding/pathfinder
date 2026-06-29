@@ -35,7 +35,6 @@ import unittest
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _FIXTURES = os.path.join(_REPO, "templates", "fixtures")
 
-sys.path.insert(0, os.path.join(_REPO, "scripts"))
 import preview  # noqa: E402  (scripts/preview.py — the harness under test)
 
 

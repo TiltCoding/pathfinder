@@ -37,8 +37,6 @@ from unittest import mock
 # (defensive sys.path hack, as is customary in this project's tooling).
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SCRIPTS = os.path.join(_REPO, "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
 
 import _aipf  # noqa: E402
 import server  # noqa: E402
