@@ -780,7 +780,7 @@
   </div>
 </div>
 
-<div id="sel-popover" role="dialog" aria-label="Comment on the selection">
+<div id="sel-popover" role="dialog" aria-modal="true" aria-label="Comment on the selection">
   <textarea id="sel-input" rows="1" placeholder="Comment on the selection…"></textarea>
   <div class="pending-strip" id="sel-pending"></div>
   <div class="sel-row">
@@ -806,7 +806,7 @@
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
   </div>
 </div>
-<aside class="chat-panel" id="chat-panel" role="dialog" aria-label="Chat with agent" hidden>
+<aside class="chat-panel" id="chat-panel" role="dialog" aria-modal="true" aria-label="Chat with agent" hidden>
   <div class="chat-head">
     <span>Chat with agent</span>
     <span class="chat-hint">steering at checkpoints</span>
@@ -2571,6 +2571,23 @@ let selTarget = null;
 let popReturnFocus = null;   // element focus came from, restored when the popover closes
 function anchorOf(node){ const el = node && (node.nodeType === 1 ? node : node.parentElement); return el ? el.closest("[data-anchor]") : null; }
 function renderSelPending(){ renderPendingStrip($("#sel-pending"), selTarget ? selTarget.anchor : null); }
+// Focus trap for the role="dialog" overlays (chat panel, selection popover): on
+// Tab/Shift+Tab cycle focus among the dialog's own focusable controls instead of
+// letting it escape to the background (WCAG 2.4.3 / dialog APG, with the existing
+// aria-modal + Escape + return-focus).
+function _focusables(c){
+  return Array.from(c.querySelectorAll(
+    'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetWidth > 0 || el.offsetHeight > 0 || el === document.activeElement);
+}
+function trapTab(c, e){
+  if(e.key !== "Tab") return;
+  const f = _focusables(c);
+  if(!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
 function hidePopover(){
   // restore focus only when closing FROM the popover (Escape / Send) — not when
   // focus already moved away (click-away / tab switch), to avoid yanking it back
@@ -2603,6 +2620,7 @@ popInput.addEventListener("keydown", e => {
   if(e.key === "Escape"){ e.preventDefault(); hidePopover(); }
   else if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendComment(); }
 });
+pop.addEventListener("keydown", e => trapTab(pop, e));   // keep Tab focus inside the popover
 $("#sel-send").onclick = sendComment;
 // select-to-comment popover attach controls (keyed by the active selection's anchor)
 $("#sel-attach-btn").onclick = (e) => { e.preventDefault(); $("#sel-attach-input").click(); };
@@ -4217,7 +4235,10 @@ function toggleChat(open){
 $("#btn-chat-toggle").onclick = () => toggleChat();
 $("#chat-close").onclick = () => toggleChat(false);
 // Escape anywhere in the panel closes it (focus returns to the trigger via toggleChat)
-$("#chat-panel").addEventListener("keydown", e => { if(e.key === "Escape"){ e.preventDefault(); toggleChat(false); } });
+$("#chat-panel").addEventListener("keydown", e => {
+  if(e.key === "Escape"){ e.preventDefault(); toggleChat(false); return; }
+  trapTab($("#chat-panel"), e);   // keep Tab focus inside the modal dialog
+});
 
 let lastChatOffset = 0;   // feat-10: byte cursor for the incremental /chat tail
 async function chatTick(){
