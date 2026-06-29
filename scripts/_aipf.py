@@ -560,6 +560,10 @@ def parse_transcript_usage(path):
     return dict(result)
 
 
+_MSG_CACHE = {}
+_MSG_CACHE_MAX = 256
+
+
 def parse_transcript_messages(path):
     """Collect assistant text messages from one transcript (the prose).
 
@@ -569,7 +573,17 @@ def parse_transcript_messages(path):
     on an explicit per-agent request (lazy) — never on the hot feed path. Opens
     utf-8 (transcripts are utf-8; console mojibake is a cp1251 stdout issue, not
     file corruption) and is robust to broken lines.
+
+    Memoized by (path, mtime, size) — an unchanged transcript is never re-parsed
+    (mirrors parse_transcript_usage's _USAGE_CACHE). A growing transcript whose
+    `/trace/messages` is retried (feedTick pending) would otherwise be fully
+    re-read each time. Returns fresh dicts so a caller can't mutate the cache.
     """
+    key = _usage_key(path)
+    if key is not None:
+        hit = _MSG_CACHE.get(key)
+        if hit is not None:
+            return [dict(m) for m in hit]
     out = []
     for line in _iter_lines(path):
         try:
@@ -589,7 +603,11 @@ def parse_transcript_messages(path):
             text = block.get("text")
             if text:
                 out.append({"ts": ts, "text": text})
-    return out
+    if key is not None:
+        if len(_MSG_CACHE) >= _MSG_CACHE_MAX:
+            _MSG_CACHE.clear()
+        _MSG_CACHE[key] = out
+    return [dict(m) for m in out]
 
 
 # Per-tool "key argument" field for the lazy actions list, mirroring the hook's
