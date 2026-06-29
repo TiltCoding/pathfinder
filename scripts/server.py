@@ -520,6 +520,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, data)
         if path == "/hub.json":           # cross-task aggregate (no slug)
             return self._json_conditional(self._hub())
+        if path == "/hub/cost":           # opt-in cross-run cost roll-up (no slug)
+            return self._json(200, self._hub_cost())
         if path == "/hub":                # the hub page (no slug)
             return self._send(200, HUB_PAGE.encode("utf-8"),
                               "text/html; charset=utf-8")
@@ -1160,6 +1162,55 @@ class Handler(BaseHTTPRequestHandler):
             # TTL >= the hub page's 3s poll interval, so each poll lands in the
             # cache instead of re-walking every task's telemetry.jsonl.
             Handler._hub_cache["hub"] = {"exp": now + 3.0, "data": data}
+        return data
+
+    def _hub_cost(self):
+        """Opt-in cross-run cost/token roll-up (feat-19). Deliberately SEPARATE
+        from /hub.json: the default cross-task aggregate (`_hub_analytics`) leaves
+        cost/tokens out by design (ADR-0010, expensive + unavailable from a
+        worktree). This endpoint is fetched only on explicit human request, sums
+        each task's trace `totals.costUsd`/`out` (reusing the memoized transcript
+        usage), and groups by the /improve queue's `improveSlug`. Cached 30s
+        behind the hub lock; degrades to zeros on any error so it never 500s."""
+        now = time.time()
+        with Handler._hub_lock:
+            cached = Handler._hub_cache.get("cost")
+            if cached and now < cached["exp"]:
+                return cached["data"]
+        runs = []
+        total_cost = 0.0
+        total_out = 0
+        for slug in self._list_tasks():
+            try:
+                tot = (_aipf.build_trace(self.workspace.root, slug)
+                       or {}).get("totals") or {}
+                cost = tot.get("costUsd") or 0
+                out = tot.get("out") or 0
+            except Exception:
+                cost, out = 0, 0
+            if cost or out:
+                runs.append({"slug": slug, "costUsd": round(cost, 4), "out": out})
+                total_cost += cost
+                total_out += out
+        by_slug = {r["slug"]: r for r in runs}
+        by_queue = {}
+        q = self.workspace.read_json(
+            os.path.join(self.workspace.base, "dispatch-queue.json"), {})
+        if isinstance(q, dict) and isinstance(q.get("items"), list):
+            imp = q.get("improveSlug") or "queue"
+            agg = {"costUsd": 0.0, "out": 0, "runs": 0}
+            for it in q["items"]:
+                r = by_slug.get(it.get("slug"))
+                if r:
+                    agg["costUsd"] += r["costUsd"]
+                    agg["out"] += r["out"]
+                    agg["runs"] += 1
+            agg["costUsd"] = round(agg["costUsd"], 4)
+            by_queue[imp] = agg
+        data = {"runs": runs, "totalCostUsd": round(total_cost, 4),
+                "totalOut": total_out, "byQueue": by_queue}
+        with Handler._hub_lock:
+            Handler._hub_cache["cost"] = {"exp": now + 30.0, "data": data}
         return data
 
     def _queue(self):
@@ -2134,6 +2185,10 @@ HUB_PAGE = r"""<!doctype html>
   .stat .n.ok { color:var(--ok); }
   .stat .l { font-size:10px; color:var(--muted2); letter-spacing:.03em; text-transform:uppercase; margin-top:2px; }
   .barcard { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:15px 16px; }
+  .cost-box { margin-top:12px; border-top:1px solid var(--line); padding-top:10px; font:12px var(--font-mono); }
+  .cost-total { margin-bottom:6px; color:var(--muted); } .cost-total b { color:var(--ink); }
+  .cost-row { display:flex; justify-content:space-between; padding:2px 0; color:var(--muted); }
+  .cost-row.q { color:var(--ink); font-weight:600; } .cost-row b { color:var(--ink); }
   .phasebar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .phasebar:last-of-type { margin-bottom:0; }
   .phasebar .name { width:88px; font:11px var(--font-mono); color:var(--muted); flex:none; }
@@ -2269,6 +2324,8 @@ const STR = {
     "hub.stat.sessions": "sessions",
     "hub.stat.medianDur": "median dur.",
     "hub.tokensNote": "Tokens and cost are not part of the cross-task aggregate (expensive and unavailable from a worktree) — they open lazily on the task dashboard.",
+    "hub.costLoad": "≈ Load run cost",
+    "hub.costTotal": "Total ≈ cost:",
     "hub.updated": "updated",
     "hub.autoRefresh": "auto-refresh",
     "hub.steps": "steps",
@@ -2353,6 +2410,8 @@ const STR = {
     "hub.stat.sessions": "сессий",
     "hub.stat.medianDur": "медиана длит.",
     "hub.tokensNote": "Токены и стоимость не входят в кросс-задачный агрегат (дорого и недоступно из worktree) — открываются лениво на дашборде задачи.",
+    "hub.costLoad": "≈ Загрузить стоимость прогона",
+    "hub.costTotal": "Суммарно ≈ стоимость:",
     "hub.updated": "обновлено",
     "hub.autoRefresh": "автообновление",
     "hub.steps": "шагов",
@@ -2727,7 +2786,7 @@ function render(data){
     ${histHtml}
     <div class="sec"><span class="title">${esc(t("hub.secAnalytics"))}</span></div>
     <div class="statgrid">${stats}</div>
-    <div class="barcard">${phaseBars(a.phases)}<div class="note">${esc(t("hub.tokensNote"))}</div></div>`;
+    <div class="barcard">${phaseBars(a.phases)}<div class="note">${esc(t("hub.tokensNote"))}</div>${costSection()}</div>`;
   document.getElementById("updated").textContent =
     t("hub.updated") + " " + fmtDate(new Date().toISOString());
 }
@@ -2832,6 +2891,35 @@ function initFilter(){
   });
 }
 initFilter();
+
+// Opt-in cross-run cost (feat-19): lazily loaded on click, then re-rendered into
+// the analytics barcard on every poll (hubCost survives the root-tail rebuild).
+// Default /hub.json stays cost-free (ADR-0010).
+let hubCost = null;
+function costSection(){
+  if(!hubCost){
+    return `<button class="copy" id="cost-load">${esc(t("hub.costLoad"))}</button>`;
+  }
+  const usd = n => "$" + Number(n || 0).toFixed(2);
+  const rows = (hubCost.runs || []).slice()
+    .sort((a, b) => (b.costUsd || 0) - (a.costUsd || 0))
+    .map(r => `<div class="cost-row"><span>${esc(r.slug)}</span><b>${usd(r.costUsd)}</b></div>`).join("");
+  const q = Object.keys(hubCost.byQueue || {}).map(k => {
+    const v = hubCost.byQueue[k];
+    return `<div class="cost-row q"><span>↳ ${esc(k)} (${esc(v.runs)})</span><b>${usd(v.costUsd)}</b></div>`;
+  }).join("");
+  return `<div class="cost-box">
+    <div class="cost-total">${esc(t("hub.costTotal"))} <b>${usd(hubCost.totalCostUsd)}</b></div>
+    ${q}${rows}</div>`;
+}
+document.getElementById("root-tail").addEventListener("click", async (e) => {
+  const btn = e.target.closest("#cost-load");
+  if(!btn) return;
+  btn.disabled = true;
+  try { hubCost = await (await fetch("/hub/cost")).json(); }
+  catch(err){ hubCost = null; btn.disabled = false; return; }
+  if(lastData) render(lastData);   // re-render the barcard immediately with the cost
+});
 
 let last = "";
 async function tick(){
