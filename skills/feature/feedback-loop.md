@@ -82,6 +82,10 @@ When you reach a checkpoint (end of an iteration where you want human input, or 
      `submissions/<latest>.json` and process it (below).
    - Read `signals.json`. If an `approve-plan`, `run-code-review`, `run-security-review` (or other
      relevant) signal arrived past `lastSignalCount`, act on it; update `lastSignalCount`.
+   - **Approve absorbs the final answers.** At the plan gate, «Утвердить план» auto-submits any unsent
+     answers, so one wake can carry **both** a new submission and an `approve-plan` signal. Process the
+     submission first (apply the answers), **then** honor `approve-plan` and advance — **do not re-park**
+     at `awaiting-batch` just because a submission was present (see step 3).
    - **Read `chat.jsonl`.** If there are `role:"human"` messages newer than `state.json.lastChatTs`,
      handle them (see «Chat» below); update `lastChatTs`.
    - If nothing new (a rare spurious return), re-park (repeat steps 1–2).
@@ -97,7 +101,9 @@ When you reach a checkpoint (end of an iteration where you want human input, or 
    the same `blockId`/`questionId` with a one- to two-sentence note on what you did, written in the **same
    language as the comment/answer you are replying to** (auto-detect; this is a human-facing reply
    channel, so the message language overrides the global default). Update `lastSubmission`, bump `iteration`,
-   rewrite `dashboard.json` (status back to `working`, then to `awaiting-batch` for the next round).
+   rewrite `dashboard.json` (status back to `working`, then to `awaiting-batch` for the next round) —
+   **unless** an `approve-plan` signal arrived in the same wake, in which case skip re-parking: apply the
+   answers, then advance straight to IMPLEMENT (the plan gate) per `phases.md` §4.
 
 `replies.json` shape:
 

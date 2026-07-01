@@ -280,7 +280,7 @@
   .actionbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgba(0,0,0,.06); }
   /* «ваш ход»: контекстная подсветка actionbar при awaiting (токены из обеих тем, ADR-0015) */
   .actionbar.awaiting { background: var(--warn-soft); border-top-color: var(--warn); }
-  /* подсказка порядка Submit→Approve — видна только в awaiting (тоггл .awaiting на рендере) */
+  /* подсказка гейта — видна только в awaiting (тоггл .awaiting на рендере) */
   .actionbar-hint { font-size: 12px; font-weight: 600; color: var(--warn); }
   .actionbar:not(.awaiting) .actionbar-hint { display: none; }
   .actionbar-inner { max-width: 1200px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
@@ -291,10 +291,12 @@
   #btn-submit.attn { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
   /* живой счётчик «N из M отмечено Делаем» на SELECT GATE — те же токены, что и .queue */
   .bulk-pick:not([hidden]) { display: flex; gap: 8px; }
-  /* Submit→Approve stepper: number the two-step flow and flag the armed confirm */
-  #btn-submit::before { content: "① "; opacity: .75; }
-  #btn-approve::before { content: "② "; opacity: .75; }
+  /* armed confirm (improve gate): flag the second-click dispatch */
   #btn-approve.armed { background: var(--warn-soft); border-color: var(--warn); color: var(--warn); font-weight: 600; }
+  /* approve-ask row (plan gate): shown when the human left a free-form correction or
+     an open thread — choose apply-and-implement vs revise-first before approving */
+  .approve-ask:not([hidden]) { display: flex; align-items: center; gap: 8px; }
+  .approve-ask .aa-lbl { font-size: 12px; font-weight: 600; color: var(--warn); }
   .dispatch-chip { font-size: 13px; color: var(--muted); }
   .dispatch-chip b { color: var(--ink); }
   /* dispatch preview (feat-9): ranked list of what Approve will queue */
@@ -794,7 +796,7 @@
 <div class="actionbar" id="actionbar">
   <div class="dispatch-preview" id="dispatch-preview" hidden></div>
   <div class="actionbar-inner">
-    <div class="actionbar-hint">Mark features → Submit → Approve. No answer = Skip.</div>
+    <div class="actionbar-hint">Answer, then Approve — or send for revision.</div>
     <div class="queue">Edit queue: <b id="queue-count">0</b></div>
     <div class="unsent-hint" id="unsent-hint" role="status" aria-live="polite" hidden></div>
     <div class="bulk-pick" id="bulk-pick" hidden>
@@ -802,6 +804,11 @@
       <button class="ghost" id="btn-clear-all" type="button">Clear all</button>
     </div>
     <div class="dispatch-chip" id="dispatch-chip" hidden><b id="dispatch-done">0</b> of <b id="dispatch-total">0</b> <span class="dispatch-lbl">marked Do</span></div>
+    <div class="approve-ask" id="approve-ask" role="group" hidden>
+      <span class="aa-lbl">You left changes —</span>
+      <button class="primary" id="btn-apply-go" type="button">Apply &amp; implement</button>
+      <button class="ghost" id="btn-revise-first" type="button">Send for revision first</button>
+    </div>
     <button class="ghost" id="btn-approve">Approve plan</button>
     <button class="primary" id="btn-submit" disabled>Send to agent for revision</button>
   </div>
@@ -828,8 +835,8 @@
 const SLUG = new URLSearchParams(location.search).get("slug") || "";
 const $ = (s, r=document) => r.querySelector(s);
 let draftItems = [];
-let dispatchPreview = null;   // snapshot of «Делаем» picks taken at Submit (feat-9), shown until Approve
-let submittedOnce = false;    // Submit→Approve stepper: a batch was sent this session (improve gate)
+let dispatchPreview = null;   // snapshot of «Делаем» picks taken at flush (feat-9), shown until Approve
+let approveAsking = false;    // plan gate: the apply-and-implement / revise-first choice is showing
 let approveArmed = false, approveTimer = null;   // two-click confirm before the irreversible dispatch
 let lastDataStamp = "";
 let lastData = null, lastReplies = null;
@@ -1116,13 +1123,16 @@ const STR = {
     "pop.placeholder": "Comment on the selection…",
     "pop.hint": "Enter — send · Esc — cancel",
     "pop.send": "Send",
-    "actionbar.hint": "Mark features → Submit → Approve. No answer = Skip.",
+    "actionbar.hint": "Answer, then Approve — or send for revision.",
     "actionbar.queue": "Edit queue:",
     "actionbar.unsent": "unsent — press Send",   // + count prefix
     "actionbar.dispatchOf": "of",
     "actionbar.dispatchCount": "marked Do",
     "actionbar.approve": "Approve plan",
     "actionbar.submit": "Send to agent for revision",
+    "actionbar.approveAsk": "You left changes —",
+    "actionbar.applyGo": "Apply & implement",
+    "actionbar.reviseFirst": "Send for revision first",
     "actionbar.markAll": "Mark all Do",
     "actionbar.clearAll": "Clear all",
     "actionbar.approveConfirm": "Confirm: dispatch {n} →",
@@ -1182,7 +1192,6 @@ const STR = {
     "toast.sentToAgent": "Sent to agent",
     "toast.sendFailed": "Couldn't send — try again",
     "toast.sentBatch": "Sent to agent ✓ Batch #",   // + n
-    "toast.submitFirst": "Press Send first — otherwise the agent won't see your choice",
     "toast.planApproved": "Plan approved ✓",
     "toast.reviewRequested": "Requested ",          // + kind + suffix
     "toast.reviewRequestedSuffix": " — the agent will run it at a checkpoint",
@@ -1376,13 +1385,16 @@ const STR = {
     "pop.placeholder": "Комментарий к выделенному…",
     "pop.hint": "Enter — отправить · Esc — отмена",
     "pop.send": "Отправить",
-    "actionbar.hint": "Отметьте фичи → «Отправить» → «Утвердить». Без ответа = Пропускаем.",
+    "actionbar.hint": "Ответь на вопросы → «Утвердить». Или отправь на доработку.",
     "actionbar.queue": "Очередь правок:",
     "actionbar.unsent": "не отправлено — нажмите «Отправить»",   // + count prefix
     "actionbar.dispatchOf": "из",
     "actionbar.dispatchCount": "отмечено Делаем",
     "actionbar.approve": "Утвердить план",
     "actionbar.submit": "Отправить агенту на доработку",
+    "actionbar.approveAsk": "Есть правки —",
+    "actionbar.applyGo": "Применить и в бой",
+    "actionbar.reviseFirst": "Сначала на доработку",
     "actionbar.markAll": "Делаем все",
     "actionbar.clearAll": "Снять все",
     "actionbar.approveConfirm": "Подтвердить: в очередь {n} →",
@@ -1437,7 +1449,6 @@ const STR = {
     "toast.sentToAgent": "Отправлено агенту",
     "toast.sendFailed": "Не удалось отправить — попробуйте ещё раз",
     "toast.sentBatch": "Отправлено агенту ✓ Пачка #",
-    "toast.submitFirst": "Сначала нажмите «Отправить» — иначе агент не увидит выбор",
     "toast.planApproved": "План утверждён ✓",
     "toast.reviewRequested": "Запрошен ",
     "toast.reviewRequestedSuffix": " — агент запустит на чекпоинте",
@@ -1597,6 +1608,9 @@ function applyStaticStrings(){
   set(".actionbar-hint", t("actionbar.hint"));
   set("#btn-approve", t("actionbar.approve"));
   set("#btn-submit", t("actionbar.submit"));
+  set(".approve-ask .aa-lbl", t("actionbar.approveAsk"));
+  set("#btn-apply-go", t("actionbar.applyGo"));
+  set("#btn-revise-first", t("actionbar.reviseFirst"));
   set("#btn-mark-all", t("actionbar.markAll"));
   set("#btn-clear-all", t("actionbar.clearAll"));
   set("#chat-text", t("chat.inputPlaceholder"), "placeholder");
@@ -2492,15 +2506,53 @@ function disarmApprove(){
   const btn = $("#btn-approve");
   if(btn){ btn.classList.remove("armed"); btn.textContent = t("actionbar.approve"); }
 }
-// Submit→Approve stepper: «Утвердить» is step 2 — disabled until step 1 (Submit)
-// has frozen a batch. Unsent edits always block it; on the improve gate it also
-// requires a submission this session (the picks aren't readable until submitted).
+// Send the accumulated answers to the agent (the /submit contract) and clear the local
+// draft. Snapshots the ranked picks into dispatchPreview so the improve gate can show
+// what Approve will dispatch. Returns { ok, submission }. A no-op (ok) when empty.
+async function flushDraft(){
+  if(!draftItems.length) return { ok: true, submission: null };
+  const picks = markedFeatures();   // snapshot BEFORE clearing (feat-9)
+  const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
+  if(r && r.ok === false){ toast(t("toast.sendFailed")); return { ok: false }; }
+  if(picks.length) dispatchPreview = picks;
+  draftItems = []; rerender();
+  return { ok: true, submission: r && r.submission };
+}
+// The plan gate asks before approving when the human left substantive feedback that is
+// not a clean pick: a free-form answer (text differs from every option), a comment
+// item, or an open discussion thread (agent asked, human hasn't answered yet).
+function needsApproveAsk(){
+  const qById = {};
+  ((lastData && lastData.questions) || []).forEach(q => { qById[q.id] = q; });
+  const freeform = draftItems.some(i => {
+    if(i.kind === "comment") return true;
+    if(i.kind !== "answer") return false;
+    const txt = (i.text || "").trim();
+    if(!txt) return false;
+    const opts = ((qById[i.questionId] || {}).options || []).map(o => (o || "").trim());
+    return !opts.includes(txt);   // a pick equals one of the options; else it's a correction
+  });
+  const openThreads = openThreadAnchors(anchoredThreads()).length > 0;
+  return freeform || openThreads;
+}
+function showApproveAsk(){ approveAsking = true; const el = $("#approve-ask"); if(el) el.hidden = false; }
+function hideApproveAsk(){ approveAsking = false; const el = $("#approve-ask"); if(el) el.hidden = true; }
+// Raise the approve-plan signal (the plan is frozen / the batch is dispatched server-side
+// by the orchestrator). Assumes the draft was already flushed by the caller.
+async function doApprove(){
+  disarmApprove();
+  const r = await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
+  if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // signal didn't land — don't falsely confirm
+  dispatchPreview = null; renderDispatchPreview();   // dispatched → drop the preview (feat-9)
+  toast(t("toast.planApproved"));
+}
+// «Утвердить» now absorbs the pending draft itself (auto-/submit on click), so it is
+// never disabled by unsent edits. Changing the draft after arming/asking invalidates
+// the confirm snapshot, so reset those states when the picks change.
 function updateApproveGate(){
   const btn = $("#btn-approve"); if(!btn) return;
-  const improveGate = featChoiceQuestions().length > 0;
-  const blocked = draftItems.length > 0 || (improveGate && !submittedOnce);
-  btn.disabled = blocked;
-  if(blocked && approveArmed) disarmApprove();   // never stay armed while blocked
+  btn.disabled = false;
+  if(draftItems.length && approveArmed) disarmApprove();   // picks changed → stale dispatch count
 }
 // Preview (feat-9): after Submit froze the picks (draftItems cleared) and before
 // Approve, list exactly what will be dispatched, in ranked order — so the human
@@ -2692,40 +2744,55 @@ $("#btn-clear-all").onclick = () => bulkPick(false);
 $("#btn-submit").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
   if(!draftItems.length) return;
-  const picks = markedFeatures();   // snapshot BEFORE clearing the draft (feat-9)
-  const r = await api("/submit", { method:"POST", body: JSON.stringify({ slug:SLUG }) });
-  if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // keep draft on failure — nothing was sent
-  dispatchPreview = picks.length ? picks : null;
-  submittedOnce = true;             // step 1 done → «Утвердить» (step 2) unlocks
-  draftItems = []; rerender(); toast(t("toast.sentBatch") + r.submission);
+  const res = await flushDraft();   // keeps the draft on failure — nothing was sent
+  if(res.ok) toast(t("toast.sentBatch") + (res.submission != null ? res.submission : ""));
 };
 $("#btn-approve").onclick = async () => {
   if("Notification" in window && Notification.permission === "default"){ try { Notification.requestPermission(); } catch(e){} }
-  if(draftItems.length){    // unsent edits — Submit first (step 1 before step 2)
-    toast(t("toast.submitFirst"));
-    const sb = $("#btn-submit");
-    if(sb){ sb.classList.remove("flash"); void sb.offsetWidth; sb.classList.add("flash"); setTimeout(() => sb.classList.remove("flash"), 1200); }
+  const improveGate = featChoiceQuestions().length > 0;
+
+  if(improveGate){
+    // Two-click armed confirm before the irreversible dispatch. First click absorbs the
+    // picks (auto-/submit) and arms with the count; a second within 5s confirms.
+    if(!approveArmed){
+      const res = await flushDraft();
+      if(!res.ok) return;
+      const n = (dispatchPreview || markedFeatures()).length;
+      approveArmed = true;
+      const btn = $("#btn-approve");
+      btn.classList.add("armed");
+      btn.textContent = t("actionbar.approveConfirm").replace("{n}", n);
+      if(approveTimer) clearTimeout(approveTimer);
+      approveTimer = setTimeout(() => { if(approveArmed){ disarmApprove(); toast(t("toast.approveCancelled")); } }, 5000);
+      return;   // wait for the confirming click
+    }
+    await doApprove();
     return;
   }
-  // Inline two-click confirm before the irreversible dispatch (improve gate only):
-  // first click arms with the count, a second within 5s confirms; otherwise it
-  // disarms itself (cancel). The /feature/new-product plan gate dispatches at once.
-  const improveGate = featChoiceQuestions().length > 0;
-  if(improveGate && !approveArmed){
-    const n = (dispatchPreview || markedFeatures()).length;
-    approveArmed = true;
-    const btn = $("#btn-approve");
-    btn.classList.add("armed");
-    btn.textContent = t("actionbar.approveConfirm").replace("{n}", n);
-    if(approveTimer) clearTimeout(approveTimer);
-    approveTimer = setTimeout(() => { if(approveArmed){ disarmApprove(); toast(t("toast.approveCancelled")); } }, 5000);
-    return;   // wait for the confirming click
+
+  // /feature (and /new-product) plan gate: Approve absorbs the pending answers and
+  // advances at once. When the human left a free-form correction or an open thread,
+  // ask whether to apply-and-implement or send for revision first.
+  if(needsApproveAsk()){
+    if(!approveAsking) showApproveAsk();
+    return;   // the ask row's two buttons drive the decision
   }
-  disarmApprove();
-  const r = await api("/signal", { method:"POST", body: JSON.stringify({ slug:SLUG, signal:"approve-plan" }) });
-  if(r && r.ok === false){ toast(t("toast.sendFailed")); return; }   // signal didn't land — don't falsely confirm
-  dispatchPreview = null; renderDispatchPreview();   // dispatched → drop the preview (feat-9)
-  toast(t("toast.planApproved"));
+  hideApproveAsk();   // condition cleared → drop any stale ask row
+  const res = await flushDraft();
+  if(!res.ok) return;
+  await doApprove();
+};
+// approve-ask choice (plan gate): apply-and-implement vs revise-first.
+$("#btn-apply-go").onclick = async () => {
+  hideApproveAsk();
+  const res = await flushDraft();
+  if(!res.ok) return;
+  await doApprove();
+};
+$("#btn-revise-first").onclick = async () => {
+  hideApproveAsk();
+  const res = await flushDraft();
+  if(res.ok) toast(t("toast.sentBatch") + (res.submission != null ? res.submission : ""));
 };
 
 // ----- tabs + trace -----

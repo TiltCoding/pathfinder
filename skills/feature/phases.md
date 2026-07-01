@@ -121,13 +121,19 @@ Goal: turn understanding into a concrete, reviewable plan plus the questions you
 Goal: converge on a plan the human approves. This is an iteration loop driven by batched feedback.
 
 - Park at a checkpoint and wait (see `feedback-loop.md`): the human comments on plan blocks and
-  answers questions in the dashboard, then clicks **«Отправить агенту на доработку»**.
+  answers questions in the dashboard, then either clicks **«Отправить агенту на доработку»** (revise
+  and come back) or **«Утвердить план»** to approve.
 - When a new `submissions/<n>.json` appears: read every item, revise `plan.md` / questions, and write
   a short `replies.json` entry per item (reference the block/question id) so the human sees the change.
   Bump `iteration`, refresh `dashboard.json`, park again.
 - A **chosen demo variant** arrives as an answer keyed to the demo's `selectionId`. Record it in
   `state.json.questions`, fold the picked design into `plan.md` (and drop the alternatives from `demo`,
   or keep `selected` set to it), and reply under the variant so the human sees it's locked in.
+- **Approve absorbs the pending answers.** «Утвердить план» auto-submits any unsent answers, so an
+  `approve-plan` signal often arrives **together with** a fresh `submissions/<n>.json` in the same
+  `/wait` return. When both are present: **first apply that submission** (record answers, fold the
+  picked variants into `plan.md`, reply as above), **then advance straight to IMPLEMENT** — do **not**
+  re-park at `awaiting-batch`. Answers are inputs to the build, not a separate revision round.
 - Repeat until the human clicks **«Утвердить план»** (an `approve-plan` signal). Then freeze
   `plan.md`, finalize `workstreams[]` in `state.json` (independent, parallelizable units, each with an
   id/title/status `todo`), and advance to IMPLEMENT.

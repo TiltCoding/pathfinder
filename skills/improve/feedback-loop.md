@@ -69,6 +69,10 @@ When you reach a checkpoint (the SELECT GATE, where you want the human to pick f
      `submissions/<latest>.json` and process it (below).
    - Read `signals.json`. If an `approve-plan` (or other relevant) signal arrived past `lastSignalCount`,
      act on it (at the SELECT GATE: dispatch the picked features); update `lastSignalCount`.
+   - **Approve absorbs the picks.** «Утвердить план» auto-submits the pending picks before the
+     `approve-plan` signal, so one wake typically carries **both** a fresh submission and the signal.
+     Process the submission first (read the `feat-K` picks), then honor `approve-plan` → dispatch — do not
+     re-park just because a submission arrived.
    - **Read `chat.jsonl`.** If there are `role:"human"` messages newer than `state.json.lastChatTs`,
      handle them (see «Chat» below); update `lastChatTs`.
    - If nothing new (a rare spurious return), re-park (repeat steps 1–2).

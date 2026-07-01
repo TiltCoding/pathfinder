@@ -13,7 +13,7 @@ Write `.workflow/tasks/<slug>/dashboard.json` after every phase/iteration. Schem
   "phase": "PROPOSE",
   "status": "awaiting-batch",
   "iteration": 1,
-  "summary": "Markdown. Как выбирать: отметьте «Делаем»/«Пропускаем» по каждой фиче, затем Отправить → Утвердить.",
+  "summary": "Markdown. Как выбирать: отметьте «Делаем»/«Пропускаем» по каждой фиче, затем «Утвердить план» (×2 — подтвердить диспатч).",
   "planBlocks": [
     { "id": "feat-1", "title": "Кэшировать /changes", "body": "Markdown: призма / проблема / изменение / объём·риск·impact / файлы." }
   ],
@@ -126,11 +126,14 @@ existing `questions[kind:"choice"]` + `approve-plan` machinery with **zero edits
 - **Default: no answer = Пропускаем.** A feature the human never answered simply doesn't appear in the
   submission (`saveAnswer` ignores empty input). Treat a missing `feat-K` answer as **Пропускаем** — the
   human never has to click every radio, only the ones they want to keep. State this in the `summary`.
-- **Mandatory order: Submit → Approve.** `draft.json` is **not** in the server's `READABLE_FILES`, so the
-  agent cannot see the picks until they are submitted. The human must click **«Отправить»** first (which
-  freezes the choices into `submissions/<n>.json`), **then** **«Утвердить план»** (the `approve-plan`
-  signal). If `approve-plan` arrives with no fresh submission, you have no picks to read — re-ask the
-  human to Submit first. State this order in the `summary` too.
+- **Approve absorbs the picks (no separate Submit needed).** `draft.json` is **not** in the server's
+  `READABLE_FILES`, so the agent still reads picks only from `submissions/<n>.json` — but the dashboard's
+  **«Утвердить план»** now **auto-submits** the pending picks before raising `approve-plan` (the first of
+  its two confirm clicks freezes the choices into `submissions/<n>.json`). So a normal approve carries a
+  fresh submission with it. The explicit **«Отправить»** button remains for a deliberate revision round.
+  Safety net: if `approve-plan` ever arrives with no fresh submission at all, you have no picks to read —
+  re-ask the human to pick and approve again. The `summary` no longer needs to prescribe a Submit→Approve
+  order.
 - **`approve-plan` means "dispatch the picked ones."** The button text «Утвердить план» is fixed in the
   HTML; here it means the human finished picking → take the latest submission, collect every `feat-K`
   whose `answer.text` is «Делаем» (or a free-form "делаем…"), record them in `state.json.selected[]`, and

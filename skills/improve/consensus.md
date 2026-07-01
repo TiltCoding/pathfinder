@@ -106,8 +106,8 @@ not a black box.
 
 The top-K render into the dashboard as feature-pick cards + choice questions under the **`feat-K`
 contract** — one `planBlocks[]` card and one `questions[kind:"choice"]` per candidate, **both keyed by
-`feat-K`**, with `options:["Делаем","Пропускаем"]`. The full render/contract (defaults, Submit→Approve
-order, free-form answers) lives in `dashboard-guide.md` §SELECT GATE; the stage flow is in `phases.md`
+`feat-K`**, with `options:["Делаем","Пропускаем"]`. The full render/contract (defaults, approve-absorbs-
+picks flow, free-form answers) lives in `dashboard-guide.md` §SELECT GATE; the stage flow is in `phases.md`
 §PROPOSE/SELECT GATE. The human's picked `feat-K`s land in `state.json.selected[]` and drive DISPATCH.
 
 ## 6. DISPATCH — queue-and-drain (the exact sequence)
