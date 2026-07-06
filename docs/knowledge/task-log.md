@@ -4,6 +4,36 @@
 
 <!-- Новые записи — сверху. -->
 
+## 2026-07-05 — code-review-wizard: под-фаза REVIEW + визард ревью диффа — ADR-0027
+- **Что:** новая **под-фаза REVIEW** между VERIFY и DONE у `/feature`. После зелёного VERIFY оркестратор
+  берёт `git diff <baseCommit>` в worktree, **ранжирует файлы по важности** и внутри каждого — **ханки по
+  важности** (комбинированная эвристика: публичный контракт/API + объём логики + риск → выше;
+  переименования/формат/проброс/фикстуры → `kind:"cosmetic"`), приписывает «что/зачем» и публикует
+  структуру в **новом поле `dashboard.json.review`**. Человека ведёт **новая 6-я вкладка «Ревью»** — рельс
+  ранжированных файлов/блоков, чипы важности + logic/cosmetic, встроенный дифф ханка, поле комментария.
+  Комментарии человека едут по **существующему каналу anchored-тредов** (якоря `rev:<path>` и
+  `rev:<path>#<hunkIdx>`); агент правит код и отвечает тем же якорем; «N ждут ответа» = открытые `rev:*`;
+  закрытие — сигнал `approve-plan` (кнопка «Завершить ревью», реюз plan-gate approve/`flushDraft`, ADR-0026).
+- **Зачем:** вкладка «Изменения» даёт **плоский** дифф без важности/аннотаций/тред-цикла. Ревью
+  собственного изменения — ранжированное, пошаговое, с «что/зачем» и петлёй комментов к агенту — раньше
+  человеку было негде провести перед приземлением. Сделано **поверх контракта**, без роста сервера.
+- **Как:** **0 правок `server.py`** (ride-the-contract) — `review` едет как новое агностичное поле в
+  `/data`; тела ханков — из существующего `/changes?file=` (не дублируются в модель, режутся `hunkSlice`);
+  комменты — `POST /chat` c verbatim `anchor`; закрытие — `approve-plan`. Якорь стабилен **по индексу
+  ханка** (`rev:<path>#<idx>`), не по диапазону строк (диапазоны плывут между итерациями). FE целиком в
+  `templates/dashboard.html`: вкладка `#tab-review`/`#review`, `renderReview`/`renderReviewRail`/
+  `renderReviewStep`/`renderReviewStepper`/`reviewTick`/`gotoStep`/`hunkSlice`/`kindChip`; свои
+  `captureReviewInput`/`restoreReviewInput` (scoped к `#review`); sig-гард с курсором шага; a11y —
+  ARIA-tab + объявление шага в `#phase-announce`; 25 ключей `STR` `tab.review`/`review.*` в обоих словарях.
+  Скилл: `phases.md` §6.5 REVIEW, `feedback-loop.md` «Review wizard cycle», поле `review` в
+  `dashboard-guide.md`, нетерминальная фаза `REVIEW` в `state-schema.md`; `_shared/dashboard-contract.md`
+  НЕ тронут (`review` feature-specific). Инвариант паритета `index.html`↔шаблон (ADR-0024) соблюдён.
+- **Проверка:** `tests/test_review_wizard.py` (проза + DOM + STR). Версия плагина 0.25.0 → 0.26.0. Долг —
+  пред-существующая flaky `tests/test_hub.py::HubCardCacheTest` (не связана с этой фичей).
+- **План:** `.workflow/tasks/code-review-wizard/plan.md`
+- **ADR:** `decisions/ADR-0027-code-review-wizard-review-subphase-ride-contract.md`; новая область
+  `areas/dashboard-review-wizard.md`; обновлён feature-stage-map в `areas/orchestrator-skills.md`.
+
 ## 2026-07-01 — plan-gate «Утвердить» вбирает ответы (без принудительной доработки) — ADR-0026
 - **Что:** «Утвердить план» на гейте больше **не** блокируется неотправленным черновиком. Раньше ответ на
   вопрос / выбор варианта попадал в `draft.json` и `updateApproveGate()` дизейблил approve, пока черновик

@@ -34,7 +34,10 @@ The dashboard renders from `dashboard.json` and `replies.json`, which **you** wr
 `signals.json` is an append-only log; the buttons in the dashboard `POST /signal` to it and wake your
 `/wait`. Recognized signals:
 
-- **`approve-plan`** — the human approved the plan at the gate (freeze `plan.md`, advance to IMPLEMENT).
+- **`approve-plan`** — interpreted by phase: at the **plan gate** it means the human approved the plan
+  (freeze `plan.md`, advance to IMPLEMENT); in **REVIEW** it is the «Завершить ревью» button — the human
+  ended the code-review wizard (set `review.status:"resolved"`, advance to DONE). See §"Review wizard
+  cycle" and `phases.md` §6.5.
 - **`run-code-review`** / **`run-security-review`** — re-run that review skill over the current diff and
   append a fresh entry to `reviews.json` (see VERIFY in `phases.md`). Safe to receive in any phase;
   honor it at your next checkpoint.
@@ -156,6 +159,38 @@ draft-comment cards.
 - `needsAnswer` is **agent-only**: the human's POST never sets it (it only appears on a `role:"agent"`
   line). So a block is "ждёт ответа" exactly when your latest anchored turn asked something and the human
   hasn't answered yet.
+
+### Review wizard cycle (REVIEW phase)
+
+The same anchored-chat channel drives the REVIEW wizard (see `phases.md` §6.5). The anchors are the
+review anchors from `dashboard.json.review`: `rev:<path>` for a file step and `rev:<path>#<idx>` for a
+hunk block. The «Ревью» tab renders a step-by-step walk over the ranked `steps[]`, and the human comments
+on a file or a hunk exactly like a plan block — the comment lands as a `chat.jsonl` line carrying that
+`rev:` anchor.
+
+- **On a `/wait` wake**, read the open anchored threads on the review anchors from `chat.jsonl` — this is
+  the batch of the human's comments on files/hunks. A thread is open when the latest turn on that anchor
+  is the human's (or your last agent turn asked with `needsAnswer:true` and they answered).
+- **Act on each.** Fix the code — an `Edit` yourself for a small change, a `wf-coder` for a large one —
+  then **reply on the same `anchor`** with a `role:"agent"` `chat.jsonl` line. Omit `needsAnswer` to mean
+  "учтено" (done); add `"needsAnswer": true` if you're asking a question back:
+
+  ```json
+  {"role":"agent","text":"Вынес проверку в _guard(), покрыл тестом.","anchor":"rev:scripts/server.py#0","ts":"<iso>"}
+  ```
+
+- **After the fixes**, bump `review.iteration`, **re-rank the affected steps/blocks** — the diff changed,
+  so hunk indices and `+N/−M` counts shift; re-derive them from a fresh `git diff <state.baseCommit>` and
+  keep the ranking honest. Rewrite `dashboard.json` **atomically**, then park again (steps 1–2 above).
+- **Completion — «Завершить ревью».** The button raises an **`approve-plan`** signal (the same gate
+  signal, interpreted by phase — here "review is done"). Per ADR-0026, «Завершить ревью» also auto-submits
+  any unsent comments, so one wake can carry **both** the human's final comments and `approve-plan`:
+  **apply the comments first** (fix + reply on their anchors), **then** advance to DONE **without
+  re-parking**. The header's «N ждут ответа» counter is a *recommendation* to the human, not a hard block —
+  an explicit `approve-plan` ends the wizard even with threads still open. On completion set
+  `review.status:"resolved"` and go to DONE.
+- **Eval / autonomous:** no parking — publish the review structure and go straight to DONE (see
+  `phases.md` §6.5).
 
 ## Don't busy-wait
 

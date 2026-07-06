@@ -44,7 +44,9 @@ Field notes:
 
 - **`status`**: `working` (you are acting) or `awaiting-batch` (parked, waiting for the human). The
   header badge reflects this, so keep it honest — it's how the human knows whether a click will be seen.
-- **`phase`**: one of INTAKE / EXPLORE / ELABORATE / PLAN GATE / IMPLEMENT / VERIFY / DONE.
+- **`phase`**: one of INTAKE / EXPLORE / ELABORATE / PLAN GATE / IMPLEMENT / VERIFY / REVIEW / DONE.
+  REVIEW (the code-review wizard, after a green VERIFY) is **non-terminal** — the task stays active in
+  the hub while the wizard runs; see the «Ревью» tab below and `phases.md` §6.5.
 - **`progress`**: usually work-streams done/total during IMPLEMENT; drives the top bar.
 - **`now`** / **`nowAt`** (optional, back-compatible): a one-line **human** description of what you are
   doing right now (e.g. `"исследую server.py"`) plus an ISO timestamp. The header shows it as «Сейчас: …».
@@ -105,6 +107,47 @@ A tab that turns the dashboard into a control panel for the change itself. Two p
   `run-security-review` signals (see `feedback-loop.md`) which you honor at your next checkpoint. Each
   run shows its status, summary, and ranked findings with clickable `file:line` (which opens that file's
   diff). See `phases.md` §VERIFY for when to populate it and `feedback-loop.md` for the JSON shape.
+
+## The «Ревью» tab (the code-review wizard — `review` field)
+
+The 6th tab. After VERIFY is green you publish a **`review`** object into `dashboard.json` (written in
+REVIEW — see `phases.md` §6.5); the wizard reads it from `GET /data?slug=<slug>` and pulls each hunk's
+diff body on demand from `GET /changes?file=<path>` (the same endpoint the «Изменения» tab uses — the
+model never duplicates the diff text). The FE (the tab, the step-by-step walk) lives in the template;
+**you write only the `review` field** — the server is agnostic to it, so this is **0 server changes**.
+
+```jsonc
+"review": {
+  "summary": "markdown — what the feature is, diff size, what to look at first",
+  "status": "open",            // "open" | "resolved" (set to "resolved" on «Завершить ревью»)
+  "iteration": 1,               // bump each fix round
+  "steps": [                    // FILES ranked by importance (array order = ranking)
+    { "file": "scripts/server.py", "anchor": "rev:scripts/server.py",
+      "status": "modified", "added": 42, "removed": 5,
+      "rank": 1, "kind": "logic",           // kind: "logic" | "cosmetic"
+      "comment": "markdown — what/why for the file",
+      "blocks": [                           // HUNKS ranked by importance
+        { "anchor": "rev:scripts/server.py#0",   // "<fileAnchor>#<hunkIdx>", stable across ticks
+          "hunkHeader": "@@ -120,7 +120,9 @@ def do_GET",
+          "range": [120,128], "rank": 1, "kind": "logic",
+          "comment": "markdown — what/why for the hunk" } ] } ]
+}
+```
+
+- **`steps[]`** are the files you changed, **array order = the importance ranking** (rank 1 first); each
+  step's `blocks[]` are its hunks, again ranked. `kind` is `"logic"` (real behavior — public
+  contract/API, semantic logic, security/write/parse risk) or `"cosmetic"` (rename, reformat, param
+  pass-through, test/fixture). See the combined-importance heuristic in `phases.md` §6.5.
+- **`anchor`** is a stable **string keyed to the hunk index** (`rev:<path>` / `rev:<path>#<idx>`), **not**
+  the line range — ranges drift between fix iterations, the index doesn't, so a human's anchored thread
+  stays attached to the right hunk across ticks. It is also the `chat.jsonl` anchor the human comments on
+  and you reply under — see «Review wizard cycle» in `feedback-loop.md`.
+- **`comment`** is markdown in the run language (`state.lang`); the header machine keys (`anchor`, `kind`,
+  `status`) stay stable/English. **Hunk bodies are not in the model** — the wizard fetches them from
+  `GET /changes?file=`.
+- **`status`** flips `open` → `resolved` when the human clicks «Завершить ревью» (an `approve-plan`
+  signal); **`iteration`** bumps each fix round, and you **re-rank** the affected steps/blocks after
+  fixes because the diff moved. Update `updatedAt` on every write.
 
 ## The chat panel (free-form steering)
 

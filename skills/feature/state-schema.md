@@ -37,6 +37,11 @@ Field notes:
 
 - **`phase`** / **`checkpoint`**: `checkpoint` is `working` while you act and `awaiting-batch` while
   parked waiting for a human batch. Together with `phase` they tell a resumed session what to do next.
+  Phases run INTAKE → EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → **REVIEW** → DONE.
+  **`REVIEW` is non-terminal** — it is the code-review wizard after a green VERIFY (`phases.md` §6.5), and
+  while it runs the task must stay **active in the hub** (a resumed/parked `REVIEW` keeps the task out of
+  the hub's «История» so the wizard isn't hidden mid-flight), mirroring the non-terminal `ANSWER` phase of
+  `/ask`. Only `DONE` is terminal.
 - **`lane`**: `"fast"` | `"full"` — which lane the TRIAGE gate (`phases.md` §0) chose. `"fast"` means
   the primitive-task path (no server/dashboard, no sub-agent swarm, no plan gate); a resumed session
   stays on it. Promoted to `"full"` if the fast lane escalates. Absent on older tasks = treat as

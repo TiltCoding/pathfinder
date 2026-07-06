@@ -195,6 +195,72 @@ Goal: confirm the change actually works.
   refresh `INDEX.md` and the root `CLAUDE.md` pointer.
 - Update `dashboard.json` with verification status.
 
+## 6.5 REVIEW (the code-review wizard)
+
+Goal: walk the human through your own change, ranked, before it lands. After VERIFY is green (and the
+`/code-review` + `/security-review` gates in §6 have run), you become the reviewer of your **own diff**:
+you rank what you touched, annotate each part with *what/why*, park, and lead the human through a
+step-by-step wizard. The human comments on files/hunks (anchored threads), you fix the code and reply on
+the **same anchor** — a loop until there are no open comments left. The human ends it with **«Завершить
+ревью»** (an `approve-plan` signal). This is a **separate «Ревью» tab** (the 6th tab; the FE lives in the
+template). **Zero server changes** — it rides the existing `/data`, `/changes`, `/chat`, `/signal`
+contract; the server stays agnostic to the `review` payload (lineage ADR-0008/0013/0016/0026).
+
+**Publish the review.** After the gates are green:
+
+1. **Take the diff.** `git diff <state.baseCommit>` in the task's worktree (`state.worktreePath`) — the
+   same tree the **Changes** tab diffs. This is your change, file by file.
+2. **Rank it by the combined-importance heuristic.** Rank **files** (the wizard step) and, inside each,
+   the **hunks/blocks**, high → low. A file/hunk ranks **higher** when it carries a **public
+   contract/API**, more **semantic logic** (real behavior, not plumbing), or **risk** (edits to
+   security/auth, writes/persistence, parsing). It's **cosmetic** (`kind:"cosmetic"`) when it is a
+   rename, a reformat, a parameter pass-through, or a test/fixture tweak. Everything with real behavior
+   is `kind:"logic"`. Array order **is** the ranking — put rank 1 first.
+3. **Write `dashboard.json.review`** (schema below) with a `summary` (what the feature is, the diff size,
+   what to look at first), plus a minimal run line into `reviews.json`
+   (`{kind:"review", status:"done", ts, summary, findings:[]}`) — written **atomically** with the same
+   writer as the gates (`scripts/_aipf.py` `write_json` → `atomic_write`, ADR-0021). Do **not** disturb
+   the VERIFY entries or their `startedAt` / stale-`running` / atomic invariants — the review line is
+   **additive** (see §6 and `feedback-loop.md`; pinned by `tests/test_review_gate_contract.py`).
+4. **Park.** Set `phase:"REVIEW"`, `status:"awaiting-batch"`, and park on `/wait` exactly like the PLAN
+   GATE (see `feedback-loop.md`). REVIEW is **non-terminal** — the task stays **active in the hub**
+   (History would hide the wizard mid-flight), same as the non-terminal `ANSWER` of `/ask`.
+
+The `review` field (`dashboard.json`, described in `dashboard-guide.md`):
+
+```jsonc
+"review": {
+  "summary": "markdown — what the feature is, diff size, what to look at first",
+  "status": "open",            // "open" | "resolved" (set to "resolved" on approve-plan)
+  "iteration": 1,               // bump each fix round
+  "steps": [                    // FILES ranked by importance (array order = ranking)
+    { "file": "scripts/server.py", "anchor": "rev:scripts/server.py",
+      "status": "modified", "added": 42, "removed": 5,
+      "rank": 1, "kind": "logic",           // kind: "logic" | "cosmetic"
+      "comment": "markdown — what/why for the file",
+      "blocks": [                           // HUNKS ranked by importance
+        { "anchor": "rev:scripts/server.py#0",   // "<fileAnchor>#<hunkIdx>", stable across ticks
+          "hunkHeader": "@@ -120,7 +120,9 @@ def do_GET",
+          "range": [120,128], "rank": 1, "kind": "logic",
+          "comment": "markdown — what/why for the hunk" } ] } ]
+}
+```
+
+The `anchor` is a **string keyed to the hunk index** (`rev:<path>#<idx>`), **not** the line range —
+ranges drift between fix iterations, the index is stable across ticks so a human thread stays attached to
+the right hunk. Hunk **bodies are not duplicated** into the model — the wizard pulls them from
+`GET /changes?file=<path>` (the same diff the Changes tab shows). `comment` is markdown in the run
+language. Because the server never inspects `review`, this is **0 server changes**.
+
+**Autonomous / eval.** Publish the review structure exactly as above, but do **not** park — advance
+straight to DONE (the same way the PLAN GATE park is skipped). In the DONE narrative, list the published
+steps so the human sees the ranked review even though nobody drove the wizard live.
+
+For the loop mechanics — reading anchored threads, fixing, replying on the same anchor, re-ranking, and
+ending on «Завершить ревью» — see `feedback-loop.md` §"Review wizard cycle". The importance heuristic,
+the granularity (step = file, ranked blocks inside), the wizard form (a «Ревью» tab), and the completion
+control (a «Завершить ревью» button + an open-comment counter) are the approved shape.
+
 ## 7. DONE
 
 - Write a final summary into `dashboard.json` (what changed, where, how it was verified, follow-ups)

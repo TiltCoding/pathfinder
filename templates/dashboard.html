@@ -76,6 +76,9 @@
     --ph-none: rgba(148,163,184,.12);     --ph-none-line: #94a3b8;
   }
   * { box-sizing: border-box; }
+  /* Hide all scroll indicators across the dashboard (scrolling still works). */
+  * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+  *::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.55 var(--font-sans); padding-bottom: 96px; -webkit-font-smoothing: antialiased;
@@ -124,6 +127,9 @@
   /* left info sidebar (relocated from the header) */
   .page-grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 860px) { .page-grid { grid-template-columns: 1fr; } }
+  /* Review tab: hide the task sidebar and give the wizard the full width. */
+  body.review-wide .page-grid { grid-template-columns: 1fr; }
+  body.review-wide #task-aside { display: none; }
   .task-sidebar { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     padding: 14px; display: flex; flex-direction: column; gap: 12px;
     position: sticky; top: 92px; max-height: calc(100vh - 108px); overflow: auto; }
@@ -705,6 +711,61 @@
   .art-diff .dl .code { flex: 1 1 auto; min-width: 0; }
   .art-diff .dl.add { background: rgba(22,163,74,.10); } .art-diff .dl.add .sg { color: var(--ok); }
   .art-diff .dl.del { background: rgba(239,68,68,.10); } .art-diff .dl.del .sg { color: var(--err); }
+
+  /* ===== review wizard (code-review-wizard) ===== */
+  .rv-wrap { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .rv-wrap { grid-template-columns: 1fr; } }
+  .rv-rail { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; position: sticky; top: 92px; max-height: calc(100vh - 120px); overflow-y: auto; }
+  .rv-rail-head { padding: 11px 13px; border-bottom: 1px solid var(--line); font: 700 11px var(--font-sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .rv-file { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .rv-file:hover { background: var(--line3); }
+  .rv-file.active { background: var(--accent-soft); border-left: 3px solid var(--accent); padding-left: 9px; }
+  .rv-file-top { display: flex; align-items: center; gap: 7px; }
+  .rv-path { font: 13px var(--font-mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .rv-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 6px; font: 700 11px var(--font-mono); background: var(--chip); color: var(--muted); border: 1px solid var(--line); flex: none; }
+  .rv-rank.r1 { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+  .rv-kind { font: 600 10px var(--font-sans); padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: .04em; flex: none; }
+  .rv-kind.logic { background: var(--warn-soft); color: var(--warn); }
+  .rv-kind.cosm { background: var(--chip); color: var(--muted); }
+  .rv-meta { display: flex; gap: 8px; align-items: center; margin-top: 5px; padding-left: 27px; font: 11px var(--font-mono); color: var(--muted); }
+  .rv-add { color: var(--ok); } .rv-del { color: var(--err); }
+  .rv-status { margin-left: auto; font-size: 11px; }
+  .rv-status.ok { color: var(--ok); } .rv-status.wait { color: var(--warn); } .rv-status.none { color: var(--muted2); }
+  .rv-fsum { margin: 6px 0 0 27px; font: 12px/1.45 var(--font-sans); color: var(--muted);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .rv-stage { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+  .rv-stepper { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .rv-prog { flex: 1; height: 6px; background: var(--chip); border-radius: 999px; overflow: hidden; }
+  .rv-prog > i { display: block; height: 100%; background: var(--accent); }
+  .rv-stepno { font: 13px var(--font-sans); color: var(--muted); white-space: nowrap; }
+  .rv-stepno b { color: var(--ink); }
+  .rv-nav { white-space: nowrap; }
+  .rv-body { padding: 20px 22px; }
+  .rv-hero { display: flex; align-items: center; gap: 10px; margin-bottom: 3px; }
+  .rv-hero .rv-rank { min-width: 24px; height: 24px; font-size: 12px; }
+  .rv-h2 { margin: 0; font: 600 17px var(--font-mono); color: var(--ink); }
+  .rv-file-meta { color: var(--muted); font: 12px var(--font-mono); margin: 2px 0 14px 34px; }
+  .rv-note { background: var(--accent-soft); border: 1px solid var(--accent2); border-radius: 10px; padding: 11px 14px; margin-bottom: 18px; }
+  .rv-who { font: 700 10px var(--font-sans); color: var(--accent); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .rv-blk { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; margin-bottom: 18px; background: var(--panel); }
+  .rv-blk-head { display: flex; align-items: center; gap: 9px; padding: 10px 13px; background: var(--line3); border-bottom: 1px solid var(--line); }
+  .rv-blk-head .rv-rank { min-width: 18px; height: 18px; font-size: 10px; }
+  .rv-blk-title { font: 12px var(--font-mono); color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-blk-note { padding: 10px 13px; color: var(--ink); border-bottom: 1px solid var(--line); }
+  .rv-blk .diff { border: 0; border-radius: 0; border-bottom: 1px solid var(--line); max-height: 50vh; }
+  .rv-blk-thread, .rv-file-thread { padding: 11px 13px; background: var(--line3); }
+  .rv-file-thread { border: 1px solid var(--line); border-radius: 11px; margin-bottom: 18px; }
+
+  .rv-foot { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .rv-spacer { flex: 1 1 auto; }
+  .rv-cnt { font: 12px var(--font-sans); color: var(--warn); }
+  .btn.done { background: var(--ok); color: #fff; border: 1px solid var(--ok); border-radius: 8px; padding: 9px 18px; font: 600 13px var(--font-sans); cursor: pointer; }
+  .btn.done:hover:not(:disabled) { opacity: .9; }
+  .rv-confirm { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--warn-soft); border: 1px solid var(--warn); border-radius: 8px; }
+  .rv-confirm .btn { border-radius: 8px; padding: 6px 12px; font: 600 12px var(--font-sans); cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  .rv-confirm .btn.ghost { background: transparent; }
+  .rv-confirm-lbl { font: 12px var(--font-sans); color: var(--warn); }
 </style>
 </head>
 <body>
@@ -730,6 +791,7 @@
   <div class="top-inner"><nav class="tabbar" role="tablist" aria-label="Dashboard sections">
     <button class="tab active" id="tab-work" data-tab="work" role="tab" aria-selected="true" aria-controls="content" tabindex="0">Workflow</button>
     <button class="tab" id="tab-changes" data-tab="changes" role="tab" aria-selected="false" aria-controls="changes" tabindex="-1">Changes</button>
+    <button class="tab" id="tab-review" data-tab="review" role="tab" aria-selected="false" aria-controls="review" tabindex="-1">Review</button>
     <button class="tab" id="tab-docs" data-tab="docs" role="tab" aria-selected="false" aria-controls="docs" tabindex="-1">Documentation</button>
     <button class="tab" id="tab-trace" data-tab="trace" role="tab" aria-selected="false" aria-controls="trace" tabindex="-1">Tracing</button>
     <button class="tab" id="tab-artifacts" data-tab="artifacts" role="tab" aria-selected="false" aria-controls="artifacts" tabindex="-1">Artifacts</button>
@@ -762,6 +824,10 @@
 
     <main class="wrap" id="changes" role="tabpanel" aria-labelledby="tab-changes" hidden>
       <p class="empty">Loading changes…</p>
+    </main>
+
+    <main class="wrap wide" id="review" role="tabpanel" aria-labelledby="tab-review" hidden>
+      <p class="empty">Loading review…</p>
     </main>
 
     <main class="wrap wide" id="docs" role="tabpanel" aria-labelledby="tab-docs" hidden>
@@ -1095,6 +1161,31 @@ const STR = {
     "artifacts.diff": "Diff vs prev",
     "artifacts.diffLoading": "Computing diff…",
     "artifacts.diffTooBig": "Too large to diff inline.",
+    // review wizard (code-review-wizard)
+    "tab.review": "Review",
+    "review.summary": "Review",
+    "review.step": "Step",
+    "review.of": "of",
+    "review.prev": "← Back",
+    "review.next": "Next →",
+    "review.file": "file",
+    "review.files": "files by importance",
+    "review.blocks": "blocks",
+    "review.rankLogic": "logic",
+    "review.rankCosmetic": "cosmetic",
+    "review.done": "Finish review",
+    "review.openComments": "awaiting reply",
+    "review.confirmOpen": "There are unresolved comments — finish anyway?",
+    "review.confirmYes": "Finish anyway",
+    "review.confirmNo": "Keep reviewing",
+    "review.empty": "Review has not been published yet — it appears after the agent finishes VERIFY.",
+    "review.annotation": "Agent comment",
+    "review.annotationFile": "Agent comment · file",
+    "review.annotationBlock": "Agent comment · block",
+    "review.handled": "✓ addressed",
+    "review.waiting": "🔸 awaiting",
+    "review.nocomments": "— no comments",
+    "review.rank": "importance",
     // loading placeholders
     "loading.work": "Loading…",
     "loading.changes": "Loading changes…",
@@ -1359,6 +1450,31 @@ const STR = {
     "artifacts.diff": "Дифф с пред.",
     "artifacts.diffLoading": "Считаю дифф…",
     "artifacts.diffTooBig": "Слишком большой для inline-диффа.",
+    // review wizard (code-review-wizard)
+    "tab.review": "Ревью",
+    "review.summary": "Ревью",
+    "review.step": "Шаг",
+    "review.of": "из",
+    "review.prev": "← Назад",
+    "review.next": "Далее →",
+    "review.file": "файл",
+    "review.files": "файла по важности",
+    "review.blocks": "блоки",
+    "review.rankLogic": "логика",
+    "review.rankCosmetic": "косметика",
+    "review.done": "Завершить ревью",
+    "review.openComments": "ждут ответа",
+    "review.confirmOpen": "Есть незакрытые комментарии — всё равно завершить?",
+    "review.confirmYes": "Всё равно завершить",
+    "review.confirmNo": "Продолжить ревью",
+    "review.empty": "Ревью ещё не опубликовано — оно появится после того, как агент пройдёт VERIFY.",
+    "review.annotation": "Комментарий агента",
+    "review.annotationFile": "Комментарий агента · файл",
+    "review.annotationBlock": "Комментарий агента · блок",
+    "review.handled": "✓ учтено",
+    "review.waiting": "🔸 ждёт",
+    "review.nocomments": "— без комментариев",
+    "review.rank": "важность",
     "loading.work": "Загрузка…",
     "loading.changes": "Загрузка изменений…",
     "loading.docs": "Загрузка документации…",
@@ -1597,6 +1713,7 @@ function applyStaticStrings(){
   set(".tabbar", t("tab.sections"), "aria-label");
   set("#chat-toggle-label", t("header.chat"));
   set("#tab-work", t("tab.work")); set("#tab-changes", t("tab.changes"));
+  set("#tab-review", t("tab.review"));
   set("#tab-docs", t("tab.docs")); set("#tab-trace", t("tab.trace"));
   set("#tab-artifacts", t("tab.artifacts"));
   set("#tab-cands", t("tab.cands"));
@@ -2395,7 +2512,9 @@ function flashTo(sel){
   el.scrollIntoView({ behavior:"smooth", block:"center" });
   el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1100);
 }
-function rerender(){ if(lastData) render(lastData, lastReplies || { replies: [] }); else updateQueue(); }
+function rerender(){ if(lastData) render(lastData, lastReplies || { replies: [] }); else updateQueue();
+  if(activeTab === "review") renderReview();   // keep the wizard's thread counters/replies live on chat ticks
+}
 
 async function saveAnswer(qid, val){
   if(!val || !val.trim()) return;
@@ -2797,7 +2916,7 @@ $("#btn-revise-first").onclick = async () => {
 
 // ----- tabs + trace -----
 let activeTab = "work";
-let traceTimer = null, changesTimer = null, artifactsTimer = null;
+let traceTimer = null, changesTimer = null, artifactsTimer = null, reviewTimer = null;
 function switchTab(name){
   activeTab = name;
   document.querySelectorAll(".tab").forEach(t => {
@@ -2808,11 +2927,13 @@ function switchTab(name){
   });
   $("#content").hidden = name !== "work";
   $("#changes").hidden = name !== "changes";
+  $("#review").hidden = name !== "review";
   $("#docs").hidden = name !== "docs";
   $("#trace").hidden = name !== "trace";
   $("#artifacts").hidden = name !== "artifacts";
   $("#cands").hidden = name !== "cands";
   $("#actionbar").hidden = name !== "work";
+  document.body.classList.toggle("review-wide", name === "review");
   hidePopover();
   if(name === "cands") candsTick();
   if(name === "trace"){
@@ -2824,6 +2945,10 @@ function switchTab(name){
     changesTick();
     if(!changesTimer) changesTimer = setInterval(changesTick, 4000);
   } else if(changesTimer){ clearInterval(changesTimer); changesTimer = null; }
+  if(name === "review"){
+    reviewTick();
+    if(!reviewTimer) reviewTimer = setInterval(reviewTick, 5000);
+  } else if(reviewTimer){ clearInterval(reviewTimer); reviewTimer = null; }
   if(name === "artifacts"){
     artifactsTick();
     if(!artifactsTimer) artifactsTimer = setInterval(artifactsTick, 5000);
@@ -3255,6 +3380,284 @@ function renderArtifacts(items){
       if(a){ const prev = g.versions[g.versions.indexOf(a) + 1]; if(prev) openArtDiff(a, prev); break; }
     }
   });
+}
+
+// ===== review wizard (code-review-wizard) =====================================
+// A full-screen, step-by-step code-review pass over the /feature diff. Source of
+// truth is dashboard.json.review (polled via /data → lastData); hunk bodies come
+// from the existing /changes?file= endpoint and are sliced client-side. The human's
+// comment channel reuses the anchored-thread machinery (postAnchored/regionFooter),
+// so it is zero server changes. Step position (reviewCursor) + collapse state ride
+// through the 5s poll via a signature guard, so re-renders never lose the human's place.
+let reviewCursor = 0;                 // index of the current step (file)
+let reviewModel = null;               // the review object from lastData.review
+let selectedReviewDiff = "";          // full unified diff of the current step's file (from /changes?file=)
+let selectedReviewFile = null;        // which file selectedReviewDiff belongs to (avoid stale slices)
+const reviewCollapsed = new Set();    // block anchors the human collapsed
+let lastReviewSig = null;             // DOM no-op guard
+let reviewConfirmOpen = false;        // inline "unresolved comments — finish anyway?" prompt shown
+
+async function reviewTick(){
+  if(document.hidden) return;
+  reviewModel = (lastData && lastData.review) || null;
+  if(reviewModel && Array.isArray(reviewModel.steps) && reviewModel.steps.length){
+    // clamp the cursor if the step count shrank between iterations
+    if(reviewCursor >= reviewModel.steps.length) reviewCursor = reviewModel.steps.length - 1;
+    if(reviewCursor < 0) reviewCursor = 0;
+    const step = reviewModel.steps[reviewCursor];
+    // fetch the current file's full diff once per file selection (reused across re-renders)
+    if(step && step.file && step.file !== selectedReviewFile){
+      selectedReviewFile = step.file;
+      selectedReviewDiff = "";
+      try {
+        const r = await api("/changes?slug=" + encodeURIComponent(SLUG) + "&file=" + encodeURIComponent(step.file));
+        selectedReviewDiff = (r && r.diff) || "";
+      } catch(e){ /* server may be restarting — leave diff empty, retry next tick */ }
+    }
+  }
+  renderReview();
+}
+
+// Slice one hunk out of a full unified diff: from the matching @@ header up to (but
+// excluding) the next @@ header. Falls back to the whole diff if the header is absent.
+function hunkSlice(diffText, hunkHeader){
+  if(!diffText) return "";
+  if(!hunkHeader) return diffText;
+  const lines = String(diffText).split("\n");
+  const want = String(hunkHeader).trim();
+  let start = -1;
+  for(let i = 0; i < lines.length; i++){
+    if(lines[i].startsWith("@@")){
+      // match on the @@ ... @@ prefix, tolerant of a differing trailing context label
+      const head = (lines[i].match(/^@@[^@]*@@/) || [lines[i]])[0].trim();
+      const wantHead = (want.match(/^@@[^@]*@@/) || [want])[0].trim();
+      if(lines[i].trim() === want || head === wantHead){ start = i; break; }
+    }
+  }
+  if(start < 0) return diffText;            // header not found → show the whole file diff
+  let end = lines.length;
+  for(let i = start + 1; i < lines.length; i++){
+    if(lines[i].startsWith("@@")){ end = i; break; }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+// Small integer importance chip (1..N) — the file/block rank is a plain ordinal here,
+// unlike the structured rankChip() used on the improve gate.
+function reviewRankChip(n){
+  const v = (n == null) ? "•" : String(n);
+  return `<span class="rv-rank${n === 1 ? " r1" : ""}" title="${esc(t("review.rank"))}">${esc(v)}</span>`;
+}
+// logic / cosmetic label
+function kindChip(kind){
+  const cosmetic = kind === "cosmetic";
+  const lbl = cosmetic ? t("review.rankCosmetic") : t("review.rankLogic");
+  return `<span class="rv-kind ${cosmetic ? "cosm" : "logic"}">${esc(lbl)}</span>`;
+}
+function reviewDelta(step){
+  const a = step.added || 0, r = step.removed || 0;
+  return `<span class="rv-add">+${a}</span> <span class="rv-del">−${r}</span>`;
+}
+
+function gotoStep(i){
+  const steps = (reviewModel && reviewModel.steps) || [];
+  if(!steps.length) return;
+  const n = Math.max(0, Math.min(i, steps.length - 1));
+  if(n === reviewCursor) return;
+  reviewCursor = n;
+  reviewConfirmOpen = false;
+  selectedReviewFile = null;            // force a diff re-fetch for the new file
+  const step = steps[n];
+  const ann = $("#phase-announce");
+  if(ann) ann.textContent = t("review.step") + " " + (n + 1) + " " + t("review.of") + " " + steps.length + ": " + (step.file || "");
+  reviewTick();
+}
+
+// Condense an agent file/block comment (markdown) into a short plain-text line
+// for the rail — strips code fences, emphasis and links, collapses whitespace,
+// and trims to a few lines (the CSS also line-clamps to 3).
+function reviewFileSummary(s){
+  const raw = String(s.comment || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\*\*([^*]*)\*\*/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[#>*_~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if(!raw) return "";
+  const max = 170;
+  const txt = raw.length > max ? raw.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : raw;
+  return `<div class="rv-fsum">${esc(txt)}</div>`;
+}
+
+function renderReviewRail(steps, threadsByAnchor, openSet){
+  const rows = steps.map((s, i) => {
+    const open = new Set(openSet);
+    const anchors = [s.anchor, ...(s.blocks || []).map(b => b.anchor)];
+    const anyOpen = anchors.some(a => open.has(a));
+    // any comment thread at all on this file or its blocks (open or already replied)?
+    const hasThread = anchors.some(a => ((threadsByAnchor || {})[a] || []).length > 0);
+    const status = anyOpen
+      ? `<span class="rv-status wait">${esc(t("review.waiting"))}</span>`
+      : hasThread
+        ? `<span class="rv-status ok">${esc(t("review.handled"))}</span>`
+        : `<span class="rv-status none">${esc(t("review.nocomments"))}</span>`;
+    const summary = reviewFileSummary(s);
+    return `<div class="rv-file${i === reviewCursor ? " active" : ""}" data-goto="${i}" role="button" tabindex="0" aria-current="${i === reviewCursor ? "true" : "false"}">
+      <div class="rv-file-top">${reviewRankChip(s.rank)}<span class="rv-path">${esc(s.file || "")}</span>${kindChip(s.kind)}</div>
+      <div class="rv-meta">${reviewDelta(s)}${status}</div>
+      ${summary}
+    </div>`;
+  }).join("");
+  return `<aside class="rv-rail">
+    <div class="rv-rail-head">${esc(t("review.summary"))} · ${steps.length} ${esc(t("review.files"))}</div>
+    ${rows}
+  </aside>`;
+}
+
+function renderReviewStep(step, repliesByBlock, threadsByAnchor){
+  if(!step) return `<p class="empty">${esc(t("review.empty"))}</p>`;
+  const total = (reviewModel.steps || []).length;
+  const hero = `<div class="rv-hero">${reviewRankChip(step.rank)}<h2 class="rv-h2">${esc(step.file || "")}</h2></div>
+    <div class="rv-file-meta">${reviewDelta(step)} · ${esc(step.status || "")} · ${esc(t("review.rank"))} ${(step.rank || "?")}/${total}</div>`;
+  const note = step.comment ? `<div class="rv-note">
+      <div class="rv-who">${esc(t("review.annotationFile"))}</div>
+      <div class="md">${md(step.comment)}</div>
+    </div>` : "";
+  const fileThread = `<div class="rv-file-thread" data-anchor="${esc(step.anchor)}">${regionFooter(step.anchor, repliesByBlock, threadsByAnchor)}</div>`;
+  const blocks = (step.blocks || []).map(b => {
+    const diff = hunkSlice(selectedReviewDiff, b.hunkHeader);
+    const diffHtml = diff ? `<div class="diff">${renderDiff(diff, langFromPath(step.file))}</div>` : "";
+    const blockComment = b.comment ? `<div class="rv-blk-note"><div class="rv-who">${esc(t("review.annotationBlock"))}</div><div class="md">${md(b.comment)}</div></div>` : "";
+    return `<div class="rv-blk" data-anchor="${esc(b.anchor)}">
+      <div class="rv-blk-head">${reviewRankChip(b.rank)}<span class="rv-blk-title">${esc(b.hunkHeader || "")}</span>${kindChip(b.kind)}</div>
+      ${blockComment}
+      ${diffHtml}
+      <div class="rv-blk-thread">${regionFooter(b.anchor, repliesByBlock, threadsByAnchor)}</div>
+    </div>`;
+  }).join("");
+  return hero + note + blocks + fileThread;
+}
+
+function renderReviewStepper(steps){
+  const total = steps.length;
+  const cur = reviewCursor + 1;
+  const pct = total ? Math.round((cur / total) * 100) : 0;
+  return `<div class="rv-stepper">
+    <button class="btn ghost rv-nav" id="rv-prev"${reviewCursor <= 0 ? " disabled" : ""}>${esc(t("review.prev"))}</button>
+    <div class="rv-prog"><i style="width:${pct}%"></i></div>
+    <span class="rv-stepno">${esc(t("review.step"))} <b>${cur}</b> ${esc(t("review.of"))} <b>${total}</b></span>
+    <button class="btn primary rv-nav" id="rv-next"${reviewCursor >= total - 1 ? " disabled" : ""}>${esc(t("review.next"))}</button>
+  </div>`;
+}
+
+function renderReview(){
+  const el = $("#review"); if(!el) return;
+  const model = reviewModel;
+  const threadsByAnchor = anchoredThreads();
+  if(!model || !Array.isArray(model.steps) || !model.steps.length){
+    const sig = "empty";
+    if(sig === lastReviewSig) return;
+    lastReviewSig = sig;
+    el.innerHTML = `<p class="empty">${esc(t("review.empty"))}</p>`;
+    return;
+  }
+  const steps = model.steps;
+  const openList = openThreadAnchors(threadsByAnchor);
+  const openSet = new Set(openList);
+  // count open threads that belong to review anchors only (rev:*)
+  const reviewOpen = openList.filter(a => /^rev:/.test(a)).length;
+  // signature: iteration + cursor + collapse + open-thread count + loaded diff length +
+  // confirm-prompt visibility → poll re-render keeps the step position & thread state.
+  const sig = [model.iteration || 0, reviewCursor, selectedReviewFile || "",
+    selectedReviewDiff.length, [...reviewCollapsed].sort().join(","),
+    openList.join("|"), reviewConfirmOpen ? 1 : 0].join("#");
+  if(sig === lastReviewSig) return;
+  lastReviewSig = sig;
+
+  // preserve the focused thread textarea inside #review across this re-render
+  const snap = captureReviewInput();
+
+  const repliesByBlock = {};   // review threads use /chat only; no legacy replies.json anchors
+  const step = steps[reviewCursor];
+  const cntTxt = reviewOpen > 0 ? `<span class="rv-cnt">🔸 ${reviewOpen} ${esc(t("review.openComments"))}</span>` : "";
+  const confirm = reviewConfirmOpen
+    ? `<div class="rv-confirm" role="alertdialog" aria-label="${esc(t("review.confirmOpen"))}">
+        <span class="rv-confirm-lbl">${esc(t("review.confirmOpen"))}</span>
+        <button class="btn" id="rv-confirm-yes">${esc(t("review.confirmYes"))}</button>
+        <button class="btn ghost" id="rv-confirm-no">${esc(t("review.confirmNo"))}</button>
+      </div>`
+    : "";
+
+  el.innerHTML = `<div class="rv-wrap">
+    ${renderReviewRail(steps, threadsByAnchor, openSet)}
+    <section class="rv-stage">
+      ${renderReviewStepper(steps)}
+      <div class="rv-body">${renderReviewStep(step, repliesByBlock, threadsByAnchor)}</div>
+      <div class="rv-foot">
+        ${cntTxt}
+        <span class="rv-spacer"></span>
+        ${confirm}
+        <button class="btn done rv-done" id="btn-review-done">${esc(t("review.done"))}</button>
+      </div>
+    </section>
+  </div>`;
+
+  wireReview();
+  restoreReviewInput(snap);
+}
+
+// Snapshot/restore the focused thread textarea inside #review (parallels
+// captureActiveInput, which is scoped to #content and driven by render()).
+function captureReviewInput(){
+  const el = document.activeElement;
+  if(!el || el.tagName !== "TEXTAREA" || !(el.closest && el.closest("#review"))) return null;
+  if(el.getAttribute("data-thread") === null) return null;
+  return { key: el.getAttribute("data-thread"), value: el.value, start: el.selectionStart, end: el.selectionEnd };
+}
+function restoreReviewInput(snap){
+  if(!snap) return;
+  const el = document.querySelector(`#review textarea[data-thread="${cssesc(snap.key)}"]`);
+  if(!el) return;
+  el.value = snap.value;
+  el.focus();
+  try { const len = el.value.length; el.setSelectionRange(Math.min(snap.start, len), Math.min(snap.end, len)); } catch(e){}
+}
+
+function wireReview(){
+  const el = $("#review"); if(!el) return;
+  el.querySelectorAll("[data-goto]").forEach(n => {
+    n.onclick = () => gotoStep(parseInt(n.getAttribute("data-goto"), 10));
+    n.onkeydown = (e) => {
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); gotoStep(parseInt(n.getAttribute("data-goto"), 10)); }
+    };
+  });
+  const prev = $("#rv-prev"); if(prev) prev.onclick = () => gotoStep(reviewCursor - 1);
+  const next = $("#rv-next"); if(next) next.onclick = () => gotoStep(reviewCursor + 1);
+  const done = $("#btn-review-done"); if(done) done.onclick = () => reviewDone();
+  const yes = $("#rv-confirm-yes"); if(yes) yes.onclick = () => { reviewConfirmOpen = false; finishReview(); };
+  const no = $("#rv-confirm-no"); if(no) no.onclick = () => { reviewConfirmOpen = false; lastReviewSig = ""; renderReview(); };
+  // thread reply textareas (Enter to send) + image-attach controls — wireBlocks selectors
+  // are document-wide, so reuse them for the review panel's regionFooter widgets.
+  wireBlocks();
+}
+
+// "Finish review": reuse the plan-gate approve path (flushDraft + approve-plan, ADR-0026).
+// If open review threads remain, ask for inline confirmation first.
+function reviewDone(){
+  const open = openThreadAnchors(anchoredThreads()).filter(a => /^rev:/.test(a));
+  if(open.length > 0){
+    reviewConfirmOpen = true;
+    lastReviewSig = ""; renderReview();
+    return;
+  }
+  finishReview();
+}
+async function finishReview(){
+  await flushDraft();
+  await doApprove();
+  lastReviewSig = ""; renderReview();
 }
 
 // ----- live action feed (incremental, delta-only) -----

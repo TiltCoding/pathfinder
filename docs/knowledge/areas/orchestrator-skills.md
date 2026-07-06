@@ -13,7 +13,11 @@
 Пять команд:
 
 - **`/feature`** — работа в **существующей** кодовой базе: EXPLORE кода → план → один проход IMPLEMENT
-  (`skills/feature/SKILL.md:14`). **Перед INTAKE — гейт TRIAGE** (`skills/feature/phases.md` §0): примитивная
+  → VERIFY → **REVIEW** → DONE (`skills/feature/SKILL.md:14`). **Под-фаза REVIEW** (`phases.md` §6.5,
+  нетерминальна, активна в хабе) — после зелёного VERIFY оркестратор ревьюит **собственный дифф**: ранжирует
+  файлы/ханки по важности, аннотирует «что/зачем», публикует структуру в `dashboard.json.review` и ведёт
+  человека по 6-й вкладке «Ревью» (anchored-треды `rev:<path>`, закрытие = `approve-plan`); 0 правок сервера
+  (ADR-0027, area `dashboard-review-wizard.md`). **Перед INTAKE — гейт TRIAGE** (`skills/feature/phases.md` §0): примитивная
   задача (один модуль; **без** новой функциональности; тривиальная проверка; без решения для человека;
   низкий риск) идёт по **Fast Lane** — оркестратор правит сам, без сервера/дашборда, без роя под-агентов
   и без гейта плана. Задача **сложна** (→ полная машина), если затрагивает несколько модулей, добавляет
@@ -274,9 +278,9 @@ INTAKE → DISCOVER → PRD → PRD-GATE → PHASE-PLAN → PLAN-GATE → BUILD 
   STOP_PLATEAU / ESCALATE). Гибридный гейт «тесты — стена, судья — руль», вердикт-объект, заморозка
   тестов, стоп-условия — см. ADR-0007.
 
-Контраст с `/feature`: там стадии `EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY`, **один**
-гейт (план), один проход IMPLEMENT параллельными кодерами, без эволюционного цикла и без судьи
-(`skills/feature/SKILL.md:26`).
+Контраст с `/feature`: там стадии `EXPLORE → ELABORATE → PLAN GATE → IMPLEMENT → VERIFY → REVIEW`, **один**
+гейт (план) + пост-VERIFY код-ревью визард (`REVIEW` §6.5), один проход IMPLEMENT параллельными кодерами,
+без эволюционного цикла и без судьи (`skills/feature/SKILL.md:26`).
 
 ## Карта `/improve`: рой → консенсус → выбор → диспетч
 
@@ -433,4 +437,4 @@ lineage ADR-0008/0013/0016. Ростер `ds-*` без пина модели —
   `wf-improver` совмещает scout и vote, `agents/wf-improver.md:9`). Отдельный файл нужен только когда
   режимам требуются **разные модели** (`model` глобальна для `subagent_type`) или несовместимые `tools`.
 
-_updated: 2026-06-25 (design-command: пятая команда `/design` — фокусный UI/UX-аудит одного компонента, рой `ds-auditor` по 7 призмам → единый аннотированный демо «Вариант А» → гейт согласия per-finding `f<k>` дефолт «Применить» → `ds-coder`; новый ростер `ds-*` без пина модели, 0 правок сервера, ADR-0023. Предыдущее — request-language-wins: язык вывода = язык запроса человека (ADR-0022). Ранее — feature-fast-lane: гейт TRIAGE §0, Fast Lane, `state.json.lane`)_
+_updated: 2026-07-05 (code-review-wizard: у `/feature` появилась под-фаза **REVIEW** между VERIFY и DONE — пост-VERIFY код-ревью визард над собственным диффом, `dashboard.json.review`, 6-я вкладка «Ревью», anchored-треды `rev:<path>`, закрытие `approve-plan`, нетерминальна/активна в хабе, 0 правок сервера; ADR-0027, area `dashboard-review-wizard.md`. Предыдущее — design-command: пятая команда `/design` — фокусный UI/UX-аудит одного компонента, рой `ds-auditor` по 7 призмам → единый аннотированный демо «Вариант А» → гейт согласия per-finding `f<k>` дефолт «Применить» → `ds-coder`; новый ростер `ds-*` без пина модели, 0 правок сервера, ADR-0023. Предыдущее — request-language-wins: язык вывода = язык запроса человека (ADR-0022). Ранее — feature-fast-lane: гейт TRIAGE §0, Fast Lane, `state.json.lane`)_
